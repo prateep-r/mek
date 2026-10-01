@@ -1,0 +1,39 @@
+# mek configuration — https://github.com/prateep-r/mek
+#
+# Each context is one cloud target. Switch with `mek use <name>`.
+# Do NOT commit real account IDs / SSO URLs to a public repository.
+
+contexts:
+  # AWS via IAM Identity Center (SSO).
+  # Contexts sharing the same sso_start_url share one login.
+  example-uat:
+    provider: aws
+    sso_start_url: https://your-org.awsapps.com/start
+    sso_region: ap-southeast-1      # region of IAM Identity Center
+    account_id: "111122223333"
+    role: ReadOnlyAccess
+    region: ap-southeast-1          # default region for commands
+
+  # Production: write operations ask for confirmation,
+  # destructive ones (delete/terminate/...) require typing the context name.
+  example-prod:
+    provider: aws
+    sso_start_url: https://your-org.awsapps.com/start
+    sso_region: ap-southeast-1
+    account_id: "444455556666"
+    role: ReadOnlyAccess
+    region: ap-southeast-1
+    protected: true
+    readonly: true                  # block write/destructive commands entirely
+
+  # AWS using a profile you already have in ~/.aws/config.
+  # example-legacy:
+  #   provider: aws
+  #   aws_profile: my-existing-profile
+
+  # GCP project. Each context gets its own isolated gcloud config dir.
+  # example-gcp:
+  #   provider: gcp
+  #   project: my-project-id
+  #   region: asia-southeast1
+  #   account: you@example.com      # optional

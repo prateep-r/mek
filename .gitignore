@@ -1,0 +1,7 @@
+/mek
+/bin/
+/dist/
+*.test
+.DS_Store
+# never commit real configs
+config.yaml
