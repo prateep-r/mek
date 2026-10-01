@@ -2,14 +2,15 @@ package provider
 
 import (
 	"fmt"
+	"maps"
 	"net/url"
-	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/prateep-r/mek/internal/config"
+	"github.com/prateep-r/mek/internal/fsutil"
 )
 
 // AWS wraps the aws CLI v2.
@@ -68,7 +69,7 @@ func WriteAWSConfig(path string, cfg *config.Config) error {
 	sessions := map[string]*config.Context{}
 	for _, name := range cfg.Names() {
 		c := cfg.Contexts[name]
-		if c.Provider != config.ProviderAWS || c.AWSProfile != "" {
+		if !c.IsSSO() {
 			continue
 		}
 		s := SessionName(c.SSOStartURL)
@@ -80,28 +81,12 @@ func WriteAWSConfig(path string, cfg *config.Config) error {
 		}
 		b.WriteString("output = json\n")
 	}
-	names := make([]string, 0, len(sessions))
-	for s := range sessions {
-		names = append(names, s)
-	}
-	sort.Strings(names)
-	for _, s := range names {
+	for _, s := range slices.Sorted(maps.Keys(sessions)) {
 		c := sessions[s]
-		region := c.SSORegion
-		if region == "" {
-			region = c.Region
-		}
 		fmt.Fprintf(&b, "\n[sso-session %s]\nsso_start_url = %s\nsso_region = %s\nsso_registration_scopes = sso:account:access\n",
-			s, c.SSOStartURL, region)
+			s, c.SSOStartURL, c.SSORegionOrDefault())
 	}
-	if err := mkdirFor(filepath.Dir(path)); err != nil {
-		return err
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(b.String()), 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return fsutil.WriteFileAtomic(path, []byte(b.String()), 0o600)
 }
 
 var nonAlnum = regexp.MustCompile(`[^a-z0-9]+`)

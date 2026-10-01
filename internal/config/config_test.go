@@ -20,22 +20,40 @@ func TestExampleConfigIsValid(t *testing.T) {
 }
 
 func TestValidate(t *testing.T) {
-	cases := map[string]string{
-		"contexts:\n  a:\n    provider: aws\n":                       "sso_start_url",
-		"contexts:\n  a:\n    provider: gcp\n":                       "project",
-		"contexts:\n  a:\n    provider: azure\n":                     "unknown provider",
-		"contexts:\n  a:\n    region: x\n":                           "provider is required",
-		"contexts:\n  a b:\n    provider: aws\n    aws_profile: p\n": "must not contain spaces",
+	// two joins SSO contexts into one config.
+	two := func(a, b string) string { return a + strings.TrimPrefix(b, "contexts:\n") }
+	cases := []struct{ in, want string }{
+		{"contexts:\n  a:\n    provider: aws\n", "sso_start_url"},
+		{"contexts:\n  a:\n    provider: gcp\n", "project"},
+		{"contexts:\n  a:\n    provider: azure\n", "unknown provider"},
+		{"contexts:\n  a:\n    region: x\n", "provider is required"},
+		{"contexts:\n  a b:\n    provider: aws\n    aws_profile: p\n", "may only contain"},
+		{"contexts:\n  ..:\n    provider: gcp\n    project: p\n", "may only contain"},
+		{"contexts:\n  a:\n    provider: gcp\n    project: \"p\\nx = y\"\n", "line breaks"},
+		{sso("a", "123", "ap-southeast-1"), "12 digits"},
+		{sso("a", "111122223333", ""), "sso_region"},
+		{two(sso("a", "111122223333", "us-east-1"), sso("b", "444455556666", "eu-west-1")), "different sso_region"},
 	}
-	for in, want := range cases {
-		_, err := Parse([]byte(in))
-		if err == nil || !strings.Contains(err.Error(), want) {
-			t.Errorf("Parse(%q) err=%v, want containing %q", in, err, want)
+	for _, c := range cases {
+		_, err := Parse([]byte(c.in))
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("Parse(%q) err=%v, want containing %q", c.in, err, c.want)
 		}
 	}
-	if _, err := Parse([]byte("contexts:\n  a:\n    provider: aws\n    aws_profile: p\n")); err != nil {
-		t.Errorf("aws_profile context should be valid: %v", err)
+	for _, ok := range []string{
+		"contexts:\n  a:\n    provider: aws\n    aws_profile: p\n",
+		two(sso("team.prod_1", "111122223333", "ap-southeast-1"), sso("b", "444455556666", "ap-southeast-1")),
+	} {
+		if _, err := Parse([]byte(ok)); err != nil {
+			t.Errorf("Parse(%q) should be valid: %v", ok, err)
+		}
 	}
+}
+
+// sso renders a minimal SSO context on the shared test portal.
+func sso(name, account, ssoRegion string) string {
+	return "contexts:\n  " + name + ":\n    provider: aws\n    sso_start_url: https://x.awsapps.com/start\n" +
+		"    account_id: \"" + account + "\"\n    role: r\n    sso_region: \"" + ssoRegion + "\"\n"
 }
 
 func TestResolvePrecedence(t *testing.T) {

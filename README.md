@@ -91,6 +91,10 @@ contexts:
     region: asia-southeast1
 ```
 
+Rules checked on load: context names use letters, digits, `.`, `_` and `-`;
+`account_id` is the 12-digit AWS account ID (quote it); SSO contexts need
+`sso_region` (or `region`), and contexts sharing an `sso_start_url` must agree on it.
+
 > Never commit real account IDs or SSO URLs to a public repository. Share team configs from a private repo.
 
 ## Usage

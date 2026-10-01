@@ -4,12 +4,16 @@ package config
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/goccy/go-yaml"
+
+	"github.com/prateep-r/mek/internal/fsutil"
 )
 
 const (
@@ -86,7 +90,10 @@ func Parse(b []byte) (*Config, error) {
 	if c.Contexts == nil {
 		c.Contexts = map[string]*Context{}
 	}
-	for name, ctx := range c.Contexts {
+	// Validate in name order so the same bad config always reports the same error.
+	ssoRegions := map[string]*Context{} // sso_start_url -> first context using it
+	for _, name := range c.Names() {
+		ctx := c.Contexts[name]
 		if ctx == nil {
 			return nil, fmt.Errorf("context %q is empty", name)
 		}
@@ -94,13 +101,51 @@ func Parse(b []byte) (*Config, error) {
 		if err := ctx.Validate(); err != nil {
 			return nil, fmt.Errorf("context %q: %w", name, err)
 		}
+		if !ctx.IsSSO() {
+			continue
+		}
+		// Contexts on one portal share one [sso-session], which has one region.
+		if first, ok := ssoRegions[ctx.SSOStartURL]; !ok {
+			ssoRegions[ctx.SSOStartURL] = ctx
+		} else if first.SSORegionOrDefault() != ctx.SSORegionOrDefault() {
+			return nil, fmt.Errorf("contexts %q and %q share sso_start_url %s but have different sso_region (%s vs %s)",
+				first.Name, name, ctx.SSOStartURL, first.SSORegionOrDefault(), ctx.SSORegionOrDefault())
+		}
 	}
 	return &c, nil
 }
 
+var (
+	validName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+	accountID = regexp.MustCompile(`^[0-9]{12}$`)
+)
+
+// IsSSO reports whether the context logs in through IAM Identity Center
+// (as opposed to an existing aws_profile or a non-AWS provider).
+func (c *Context) IsSSO() bool { return c.Provider == ProviderAWS && c.AWSProfile == "" }
+
+// SSORegionOrDefault is the IAM Identity Center region, defaulting to region.
+func (c *Context) SSORegionOrDefault() string {
+	if c.SSORegion != "" {
+		return c.SSORegion
+	}
+	return c.Region
+}
+
 func (c *Context) Validate() error {
-	if strings.ContainsAny(c.Name, " /\\:") {
-		return errors.New("name must not contain spaces, slashes or colons")
+	// The name becomes a file path (gcloud config dir) and an AWS profile name.
+	if !validName.MatchString(c.Name) {
+		return errors.New("name may only contain letters, digits, '.', '_' and '-'")
+	}
+	// Values are written into a generated AWS config file, one per line.
+	for _, f := range []struct{ key, val string }{
+		{"region", c.Region}, {"sso_start_url", c.SSOStartURL}, {"sso_region", c.SSORegion},
+		{"account_id", c.AccountID}, {"role", c.Role}, {"aws_profile", c.AWSProfile},
+		{"project", c.Project}, {"account", c.Account},
+	} {
+		if strings.ContainsAny(f.val, "\r\n") {
+			return fmt.Errorf("%s must not contain line breaks", f.key)
+		}
 	}
 	switch c.Provider {
 	case ProviderAWS:
@@ -108,14 +153,21 @@ func (c *Context) Validate() error {
 			return nil
 		}
 		var missing []string
-		for k, v := range map[string]string{"sso_start_url": c.SSOStartURL, "account_id": c.AccountID, "role": c.Role} {
-			if v == "" {
-				missing = append(missing, k)
+		for _, f := range []struct{ key, val string }{
+			{"account_id", c.AccountID}, {"role", c.Role}, {"sso_start_url", c.SSOStartURL},
+		} {
+			if f.val == "" {
+				missing = append(missing, f.key)
 			}
 		}
 		if len(missing) > 0 {
-			sort.Strings(missing)
 			return fmt.Errorf("aws context needs aws_profile, or %s", strings.Join(missing, ", "))
+		}
+		if !accountID.MatchString(c.AccountID) {
+			return fmt.Errorf("account_id must be 12 digits, got %q", c.AccountID)
+		}
+		if c.SSORegionOrDefault() == "" {
+			return errors.New("aws sso context needs sso_region (or region)")
 		}
 	case ProviderGCP:
 		if c.Project == "" {
@@ -130,14 +182,7 @@ func (c *Context) Validate() error {
 }
 
 // Names returns context names sorted.
-func (c *Config) Names() []string {
-	names := make([]string, 0, len(c.Contexts))
-	for n := range c.Contexts {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	return names
-}
+func (c *Config) Names() []string { return slices.Sorted(maps.Keys(c.Contexts)) }
 
 // Get returns a context by name.
 func (c *Config) Get(name string) (*Context, error) {
@@ -177,13 +222,11 @@ func Current() string {
 }
 
 // SetCurrent persists the current context name.
+// Atomic, so a shell prompt running `mek ctx --short` never reads a half-written file.
 func SetCurrent(name string) error {
-	if err := os.MkdirAll(Dir(), 0o700); err != nil {
-		return err
-	}
 	b, err := yaml.Marshal(state{Current: name})
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(statePath(), b, 0o600)
+	return fsutil.WriteFileAtomic(statePath(), b, 0o600)
 }

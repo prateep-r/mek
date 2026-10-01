@@ -6,8 +6,8 @@ package provider
 
 import (
 	"fmt"
-	"os"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/prateep-r/mek/internal/config"
@@ -21,7 +21,7 @@ type Env struct {
 
 // Apply returns base with Unset removed and Set applied.
 func (e Env) Apply(base []string) []string {
-	drop := map[string]bool{}
+	drop := make(map[string]bool, len(e.Unset)+len(e.Set))
 	for _, k := range e.Unset {
 		drop[k] = true
 	}
@@ -35,12 +35,7 @@ func (e Env) Apply(base []string) []string {
 			out = append(out, kv)
 		}
 	}
-	keys := make([]string, 0, len(e.Set))
-	for k := range e.Set {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
+	for _, k := range slices.Sorted(maps.Keys(e.Set)) {
 		out = append(out, k+"="+e.Set[k])
 	}
 	return out
@@ -52,12 +47,7 @@ func (e Env) Shell() string {
 	for _, k := range e.Unset {
 		fmt.Fprintf(&b, "unset %s\n", k)
 	}
-	keys := make([]string, 0, len(e.Set))
-	for k := range e.Set {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
+	for _, k := range slices.Sorted(maps.Keys(e.Set)) {
 		fmt.Fprintf(&b, "export %s=%s\n", k, shellQuote(e.Set[k]))
 	}
 	return b.String()
@@ -88,8 +78,4 @@ func For(cfg *config.Config, ctx *config.Context) (Provider, error) {
 		return &GCP{ctx: ctx, dir: config.Dir()}, nil
 	}
 	return nil, fmt.Errorf("unsupported provider %q", ctx.Provider)
-}
-
-func mkdirFor(path string) error {
-	return os.MkdirAll(path, 0o700)
 }

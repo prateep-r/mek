@@ -22,7 +22,7 @@ func (g *GCP) configDir() string { return filepath.Join(g.dir, "gcloud", g.ctx.N
 
 func (g *GCP) Prepare() (Env, error) {
 	dir := g.configDir()
-	if err := mkdirFor(dir); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return Env{}, err
 	}
 	env := Env{Set: map[string]string{

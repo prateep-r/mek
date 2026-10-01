@@ -15,8 +15,6 @@ import (
 	"github.com/prateep-r/mek/internal/ui"
 )
 
-func environ() []string { return os.Environ() }
-
 // runPlain runs a helper command (login, whoami) without guard or audit.
 func runPlain(argv, env []string) error {
 	code, err := runner.Run(argv, env)
@@ -125,7 +123,7 @@ func guarded(l *loaded, argv []string, class guard.Class) error {
 	}
 
 	start := time.Now()
-	code, err := runner.Run(argv, l.env.Apply(environ()))
+	code, err := runner.Run(argv, l.env.Apply(os.Environ()))
 	entry.ExitCode = code
 	entry.DurationMS = time.Since(start).Milliseconds()
 	if werr := audit.Write(entry); werr != nil {

@@ -55,7 +55,7 @@ credentials, plus a safety guard and audit log for protected contexts.`,
 	return root
 }
 
-// loaded bundles what most commands need.
+// loaded bundles what most commands need. env is only set by load.
 type loaded struct {
 	cfg  *config.Config
 	ctx  *config.Context
@@ -63,8 +63,9 @@ type loaded struct {
 	env  provider.Env
 }
 
-// load resolves the context (explicit name > --context > $MEK_CONTEXT > saved) and prepares its env.
-func load(name string) (*loaded, error) {
+// resolve loads the config and picks the context (explicit name > --context >
+// $MEK_CONTEXT > saved) without touching disk, for commands that only display.
+func resolve(name string) (*loaded, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, err
@@ -80,12 +81,21 @@ func load(name string) (*loaded, error) {
 	if err != nil {
 		return nil, err
 	}
-	env, err := prov.Prepare()
+	return &loaded{cfg: cfg, ctx: ctx, prov: prov}, nil
+}
+
+// load resolves the context and prepares its environment (writing provider
+// files such as the generated AWS config), for commands that run a CLI.
+func load(name string) (*loaded, error) {
+	l, err := resolve(name)
 	if err != nil {
 		return nil, err
 	}
-	env.Set["MEK_CONTEXT"] = ctx.Name
-	return &loaded{cfg: cfg, ctx: ctx, prov: prov, env: env}, nil
+	if l.env, err = l.prov.Prepare(); err != nil {
+		return nil, err
+	}
+	l.env.Set["MEK_CONTEXT"] = l.ctx.Name
+	return l, nil
 }
 
 func completeContexts(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
@@ -97,13 +107,13 @@ func completeContexts(*cobra.Command, []string, string) ([]string, cobra.ShellCo
 }
 
 // tags renders [protected] [readonly] markers.
-func tags(c *config.Context) string {
+func tags(p ui.Palette, c *config.Context) string {
 	var t []string
 	if c.Protected {
-		t = append(t, ui.Red("[protected]"))
+		t = append(t, p.Red("[protected]"))
 	}
 	if c.ReadOnly {
-		t = append(t, ui.Yellow("[readonly]"))
+		t = append(t, p.Yellow("[readonly]"))
 	}
 	return strings.Join(t, " ")
 }
@@ -113,5 +123,5 @@ func banner(l *loaded) {
 	if !l.ctx.Protected && !l.ctx.ReadOnly {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "%s %s %s %s\n", ui.Red("●"), ui.Bold(l.ctx.Name), tags(l.ctx), ui.Dim(l.prov.Describe()))
+	fmt.Fprintf(os.Stderr, "%s %s %s %s\n", ui.Red("●"), ui.Bold(l.ctx.Name), tags(ui.Err(), l.ctx), ui.Dim(l.prov.Describe()))
 }

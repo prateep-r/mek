@@ -41,14 +41,14 @@ func TestAWSPrepareWritesSharedSession(t *testing.T) {
     provider: aws
     sso_start_url: https://my-org.awsapps.com/start
     sso_region: ap-southeast-1
-    account_id: "111"
+    account_id: "111122223333"
     role: Dev
     region: ap-southeast-1
   prod:
     provider: aws
     sso_start_url: https://my-org.awsapps.com/start
     sso_region: ap-southeast-1
-    account_id: "222"
+    account_id: "444455556666"
     role: ReadOnly
   legacy:
     provider: aws
@@ -77,7 +77,7 @@ func TestAWSPrepareWritesSharedSession(t *testing.T) {
 	if strings.Count(out, "[sso-session mek-my-org]") != 1 {
 		t.Errorf("want exactly one shared sso-session:\n%s", out)
 	}
-	for _, want := range []string{"[profile mek-uat]", "[profile mek-prod]", "sso_account_id = 222"} {
+	for _, want := range []string{"[profile mek-uat]", "[profile mek-prod]", "sso_account_id = 444455556666"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
 		}

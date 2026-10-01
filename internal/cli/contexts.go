@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -49,7 +50,12 @@ func newUseCmd() *cobra.Command {
 				return err
 			}
 			p, _ := provider.For(cfg, ctx)
-			ui.Info("%s switched to %s %s %s", ui.Green("✓"), ui.Bold(ctx.Name), ui.Dim(p.Describe()), tags(ctx))
+			ui.Info("%s switched to %s %s %s", ui.Green("✓"), ui.Bold(ctx.Name), ui.Dim(p.Describe()), tags(ui.Err(), ctx))
+			// $MEK_CONTEXT wins over the saved context (e.g. after eval "$(mek env x)").
+			if env := os.Getenv("MEK_CONTEXT"); env != "" && env != ctx.Name {
+				ui.Info("%s MEK_CONTEXT=%s is set in this shell and still takes precedence — run: unset MEK_CONTEXT",
+					ui.Yellow("note:"), env)
+			}
 			return nil
 		},
 	}
@@ -62,7 +68,7 @@ func newCtxCmd() *cobra.Command {
 		Short: "Show the current context (use `mek ctx ls` to list all)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			l, err := load("")
+			l, err := resolve("") // runs on every prompt: no disk writes
 			if err != nil {
 				return err
 			}
@@ -70,7 +76,8 @@ func newCtxCmd() *cobra.Command {
 				fmt.Fprintln(cmd.OutOrStdout(), l.ctx.Name)
 				return nil
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s  %s %s\n", ui.Bold(l.ctx.Name), l.prov.Describe(), tags(l.ctx))
+			out := ui.Out()
+			fmt.Fprintf(cmd.OutOrStdout(), "%s  %s %s\n", out.Bold(l.ctx.Name), l.prov.Describe(), tags(out, l.ctx))
 			return nil
 		},
 	}
@@ -86,15 +93,15 @@ func newCtxCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cur := config.Current()
+			cur, out := config.Current(), ui.Out()
 			for _, n := range cfg.Names() {
 				c := cfg.Contexts[n]
 				p, _ := provider.For(cfg, c)
 				mark := " "
 				if n == cur {
-					mark = ui.Green("*")
+					mark = out.Green("*")
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "%s %-20s %-45s %s\n", mark, n, p.Describe(), tags(c))
+				fmt.Fprintf(cmd.OutOrStdout(), "%s %-20s %-45s %s\n", mark, n, p.Describe(), tags(out, c))
 			}
 			return nil
 		},
@@ -125,7 +132,7 @@ add --adc to also create Application Default Credentials for SDKs/terraform.`,
 				return err
 			}
 			ui.Info("→ logging in to %s %s", ui.Bold(l.ctx.Name), ui.Dim(l.prov.Describe()))
-			env := l.env.Apply(environ())
+			env := l.env.Apply(os.Environ())
 			for _, argv := range l.prov.LoginCommands(adc) {
 				if err := runPlain(argv, env); err != nil {
 					return err

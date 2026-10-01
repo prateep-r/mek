@@ -120,7 +120,7 @@ func fetch(url string) ([]byte, error) {
 func verify(data, sums []byte, name string) error {
 	sum := sha256.Sum256(data)
 	got := hex.EncodeToString(sum[:])
-	sc := bufio.NewScanner(strings.NewReader(string(sums)))
+	sc := bufio.NewScanner(bytes.NewReader(sums))
 	for sc.Scan() {
 		f := strings.Fields(sc.Text())
 		if len(f) == 2 && strings.TrimPrefix(f[1], "*") == name {

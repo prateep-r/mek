@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 )
 
 func isTTY(f *os.File) bool {
@@ -15,21 +16,42 @@ func isTTY(f *os.File) bool {
 	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
 
-// Color reports whether stderr should be colored.
-func Color() bool { return os.Getenv("NO_COLOR") == "" && isTTY(os.Stderr) }
+func colorFor(f *os.File) bool { return os.Getenv("NO_COLOR") == "" && isTTY(f) }
 
-func paint(code, s string) string {
-	if !Color() {
+// Palette colors text for one output stream; colors are off when that stream
+// is not a terminal or NO_COLOR is set, so pipes and files get plain text.
+type Palette struct{ on bool }
+
+var (
+	stdout = sync.OnceValue(func() Palette { return Palette{colorFor(os.Stdout)} })
+	stderr = sync.OnceValue(func() Palette { return Palette{colorFor(os.Stderr)} })
+)
+
+// Out is the palette for command output on stdout.
+func Out() Palette { return stdout() }
+
+// Err is the palette for status messages on stderr.
+func Err() Palette { return stderr() }
+
+func (p Palette) paint(code, s string) string {
+	if !p.on {
 		return s
 	}
 	return "\033[" + code + "m" + s + "\033[0m"
 }
 
-func Red(s string) string    { return paint("1;31", s) }
-func Yellow(s string) string { return paint("33", s) }
-func Green(s string) string  { return paint("32", s) }
-func Dim(s string) string    { return paint("2", s) }
-func Bold(s string) string   { return paint("1", s) }
+func (p Palette) Red(s string) string    { return p.paint("1;31", s) }
+func (p Palette) Yellow(s string) string { return p.paint("33", s) }
+func (p Palette) Green(s string) string  { return p.paint("32", s) }
+func (p Palette) Dim(s string) string    { return p.paint("2", s) }
+func (p Palette) Bold(s string) string   { return p.paint("1", s) }
+
+// Shortcuts for stderr, where mek prints its own status lines.
+func Red(s string) string    { return Err().Red(s) }
+func Yellow(s string) string { return Err().Yellow(s) }
+func Green(s string) string  { return Err().Green(s) }
+func Dim(s string) string    { return Err().Dim(s) }
+func Bold(s string) string   { return Err().Bold(s) }
 
 // Info prints a status line to stderr (stdout stays clean for command output).
 func Info(format string, a ...any) { fmt.Fprintf(os.Stderr, format+"\n", a...) }
@@ -55,6 +77,10 @@ func readLine(prompt string) (string, error) {
 	defer tty.Close()
 	fmt.Fprint(os.Stderr, prompt)
 	line, err := bufio.NewReader(tty).ReadString('\n')
+	if errors.Is(err, io.EOF) && line == "" {
+		fmt.Fprintln(os.Stderr) // Ctrl-D: end the prompt line, treat as "no"
+		return "", nil
+	}
 	if err != nil && line == "" {
 		return "", err
 	}
