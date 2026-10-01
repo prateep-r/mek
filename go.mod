@@ -1,6 +1,6 @@
 module github.com/prateep-r/mek
 
-go 1.24
+go 1.27.1
 
 require (
 	github.com/goccy/go-yaml v1.19.2
