@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/prateep-r/mek/internal/config"
+	"github.com/prateep-r/mek/internal/runner"
 )
 
 type Entry struct {
@@ -28,15 +29,48 @@ type Entry struct {
 
 func Path() string { return filepath.Join(config.Dir(), "audit.jsonl") }
 
+// Recorder is a runner.Decorator that writes one entry per invocation after
+// the rest of the chain ran — including commands the guard blocked. A failed
+// write is reported to onError but never fails the user's command.
+func Recorder(onError func(error)) runner.Decorator {
+	return func(next runner.Runner) runner.Runner {
+		return runner.Func(func(inv *runner.Invocation) error {
+			start := time.Now()
+			err := next.Run(inv)
+			if werr := Write(Entry{
+				Time: start, Context: inv.Context.Name, Provider: inv.Context.Provider,
+				Command: inv.Argv, Class: inv.Class.String(), Decision: inv.Decision,
+				ExitCode: inv.ExitCode, DurationMS: inv.Duration.Milliseconds(),
+			}); werr != nil && onError != nil {
+				onError(werr)
+			}
+			return err
+		})
+	}
+}
+
+// username prefers the environment: on macOS the first user.Current() call
+// in a process goes through Directory Services and costs ~1.5–2.5 ms, which
+// is most of an audit write.
+func username() string {
+	for _, k := range []string{"USER", "LOGNAME"} {
+		if u := os.Getenv(k); u != "" {
+			return u
+		}
+	}
+	if u, err := user.Current(); err == nil {
+		return u.Username
+	}
+	return ""
+}
+
 // Write appends an entry. Errors are returned but callers may ignore them:
 // auditing must never break the user's command.
 func Write(e Entry) error {
 	if e.Time.IsZero() {
 		e.Time = time.Now()
 	}
-	if u, err := user.Current(); err == nil {
-		e.User = u.Username
-	}
+	e.User = username()
 	e.Command = Mask(e.Command)
 	if err := os.MkdirAll(config.Dir(), 0o700); err != nil {
 		return err

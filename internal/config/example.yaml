@@ -37,3 +37,17 @@ contexts:
   #   project: my-project-id
   #   region: asia-southeast1
   #   account: you@example.com      # optional
+
+  # Azure subscription. Each context gets its own isolated az config dir.
+  # example-azure:
+  #   provider: azure
+  #   tenant_id: your-org.onmicrosoft.com
+  #   subscription_id: 00000000-0000-0000-0000-000000000000
+  #   region: southeastasia
+
+  # Huawei Cloud, using a KooCLI profile you created with `hcloud configure set`
+  # (mek never edits KooCLI's profiles — see `mek login --help`).
+  # example-huawei:
+  #   provider: huawei
+  #   hcloud_profile: my-sso-profile
+  #   region: ap-southeast-2

@@ -10,6 +10,7 @@ import (
 
 	"github.com/prateep-r/mek/internal/config"
 	"github.com/prateep-r/mek/internal/provider"
+	"github.com/prateep-r/mek/internal/runner"
 	"github.com/prateep-r/mek/internal/ui"
 )
 
@@ -20,34 +21,44 @@ type globalOpts struct {
 	confirm string // --confirm <ctx> : accept typed confirmations non-interactively
 }
 
-var opts globalOpts
+// app holds the state one command tree shares, instead of package globals, so
+// every NewRoot (each test, each run) starts clean.
+type app struct {
+	opts globalOpts
+	exec runner.Runner // runs processes; tests swap in a fake
+}
 
 // NewRoot builds the command tree.
 func NewRoot() *cobra.Command {
+	a := &app{exec: runner.Exec}
 	root := &cobra.Command{
 		Use:   "mek",
-		Short: "Log in, switch and run commands across AWS, GCP and other clouds",
-		Long: `mek (เมฆ, "cloud") manages cloud contexts — an AWS account+role or a GCP
-project — and runs the official CLIs (aws, gcloud) with the right
-credentials, plus a safety guard and audit log for protected contexts.`,
+		Short: "Log in, switch and run commands across AWS, GCP, Azure and Huawei Cloud",
+		Long: `mek (เมฆ, "cloud") manages cloud contexts — an AWS account+role, a GCP
+project, an Azure subscription or a Huawei Cloud profile — and runs the
+official CLIs (aws, gcloud, az, hcloud) with the right credentials, plus a
+safety guard and audit log for protected contexts.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 	pf := root.PersistentFlags()
-	pf.StringVarP(&opts.context, "context", "c", "", "context for this command (overrides the current context and $MEK_CONTEXT)")
-	pf.BoolVarP(&opts.yes, "yes", "y", false, "answer yes to write confirmations on protected contexts")
-	pf.StringVar(&opts.confirm, "confirm", "", "confirm destructive commands non-interactively by passing the context name")
+	pf.StringVarP(&a.opts.context, "context", "c", "", "context for this command (overrides the current context and $MEK_CONTEXT)")
+	pf.BoolVarP(&a.opts.yes, "yes", "y", false, "answer yes to write confirmations on protected contexts")
+	pf.StringVar(&a.opts.confirm, "confirm", "", "confirm destructive commands non-interactively by passing the context name")
 	_ = root.RegisterFlagCompletionFunc("context", completeContexts)
 
 	root.AddCommand(
 		newInitCmd(),
 		newUseCmd(),
-		newCtxCmd(),
-		newLoginCmd(),
-		newPassthroughCmd("aws", "Run any aws CLI command in the current context"),
-		newPassthroughCmd("gcloud", "Run any gcloud command in the current context"),
-		newExecCmd(),
-		newEnvCmd(),
+		a.newCtxCmd(),
+		a.newLoginCmd(),
+	)
+	for _, c := range provider.Clouds() {
+		root.AddCommand(a.newPassthroughCmd(c))
+	}
+	root.AddCommand(
+		a.newExecCmd(),
+		a.newEnvCmd(),
 		newDoctorCmd(),
 		newVersionCmd(),
 		newSelfUpdateCmd(),
@@ -65,13 +76,13 @@ type loaded struct {
 
 // resolve loads the config and picks the context (explicit name > --context >
 // $MEK_CONTEXT > saved) without touching disk, for commands that only display.
-func resolve(name string) (*loaded, error) {
-	cfg, err := config.Load()
+func (a *app) resolve(name string) (*loaded, error) {
+	cfg, err := provider.Load()
 	if err != nil {
 		return nil, err
 	}
 	if name == "" {
-		name = opts.context
+		name = a.opts.context
 	}
 	ctx, err := cfg.Resolve(name)
 	if err != nil {
@@ -86,8 +97,8 @@ func resolve(name string) (*loaded, error) {
 
 // load resolves the context and prepares its environment (writing provider
 // files such as the generated AWS config), for commands that run a CLI.
-func load(name string) (*loaded, error) {
-	l, err := resolve(name)
+func (a *app) load(name string) (*loaded, error) {
+	l, err := a.resolve(name)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +110,7 @@ func load(name string) (*loaded, error) {
 }
 
 func completeContexts(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
-	cfg, err := config.Load()
+	cfg, err := config.Load() // lenient: list names even if a context is invalid
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}

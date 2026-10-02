@@ -47,7 +47,7 @@ homebrew_casks:
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Casks
     homepage: https://github.com/prateep-r/mek
-    description: Log in, switch and run commands across AWS, GCP and other clouds
+    description: Log in, switch and run commands across AWS, GCP, Azure and Huawei Cloud
     skip_upload: auto # don't publish pre-releases (v0.2.0-rc1) to the tap
     hooks:
       post:

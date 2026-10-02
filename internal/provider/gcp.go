@@ -1,12 +1,29 @@
 package provider
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/prateep-r/mek/internal/config"
+	"github.com/prateep-r/mek/internal/guard"
 )
+
+var gcpCloud = Cloud{
+	Name: config.ProviderGCP, CLI: "gcloud", Title: "Google Cloud CLI",
+	New: func(_ *config.Config, ctx *config.Context, dir string) Provider {
+		return &GCP{ctx: ctx, dir: dir}
+	},
+	Classify: guard.ClassifyGCloud,
+	Validate: func(c *config.Context) error {
+		if c.Project == "" {
+			return errors.New("gcp context needs project")
+		}
+		return nil
+	},
+	Tool: Tool{VersionArgs: []string{"--version"}, URL: "https://cloud.google.com/sdk/docs/install"},
+}
 
 // GCP wraps gcloud. Each context gets its own CLOUDSDK_CONFIG directory so
 // accounts, projects and credentials never leak between contexts or into the
@@ -44,7 +61,7 @@ func (g *GCP) Prepare() (Env, error) {
 	return env, nil
 }
 
-func (g *GCP) LoginCommands(adc bool) [][]string {
+func (g *GCP) LoginCommands(adc bool) ([][]string, error) {
 	login := []string{"gcloud", "auth", "login"}
 	if g.ctx.Account != "" {
 		login = append(login, g.ctx.Account)
@@ -53,7 +70,7 @@ func (g *GCP) LoginCommands(adc bool) [][]string {
 	if adc {
 		cmds = append(cmds, []string{"gcloud", "auth", "application-default", "login"})
 	}
-	return cmds
+	return cmds, nil
 }
 
 func (g *GCP) WhoAmICommand() []string {

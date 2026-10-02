@@ -38,7 +38,7 @@ func newUseCmd() *cobra.Command {
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeContexts,
 		RunE: func(_ *cobra.Command, args []string) error {
-			cfg, err := config.Load()
+			cfg, err := provider.Load()
 			if err != nil {
 				return err
 			}
@@ -61,14 +61,14 @@ func newUseCmd() *cobra.Command {
 	}
 }
 
-func newCtxCmd() *cobra.Command {
+func (a *app) newCtxCmd() *cobra.Command {
 	var short bool
 	cmd := &cobra.Command{
 		Use:   "ctx",
 		Short: "Show the current context (use `mek ctx ls` to list all)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			l, err := resolve("") // runs on every prompt: no disk writes
+			l, err := a.resolve("") // runs on every prompt: no disk writes
 			if err != nil {
 				return err
 			}
@@ -89,7 +89,7 @@ func newCtxCmd() *cobra.Command {
 		Short:   "List all contexts",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := config.Load()
+			cfg, err := provider.Load()
 			if err != nil {
 				return err
 			}
@@ -109,17 +109,25 @@ func newCtxCmd() *cobra.Command {
 	return cmd
 }
 
-func newLoginCmd() *cobra.Command {
+func (a *app) newLoginCmd() *cobra.Command {
 	var adc bool
 	cmd := &cobra.Command{
 		Use:   "login [context]",
-		Short: "Log in to a context (AWS IAM Identity Center / gcloud auth)",
+		Short: "Log in to a context (AWS IAM Identity Center / gcloud / az / hcloud SSO)",
 		Long: `Log in to a context using the official CLI's own login flow.
 
 AWS: runs "aws sso login". Contexts that share the same sso_start_url share
 one login, so you usually log in once per day for all accounts.
 GCP: runs "gcloud auth login" in the context's isolated config dir;
-add --adc to also create Application Default Credentials for SDKs/terraform.`,
+add --adc to also create Application Default Credentials for SDKs/terraform.
+Azure: runs "az login --tenant" and "az account set --subscription" in the
+context's isolated AZURE_CONFIG_DIR.
+Huawei Cloud: runs "hcloud configure sso" for the context's KooCLI profile.
+mek never edits KooCLI's profiles; create an SSO profile once with:
+
+  hcloud configure set --cli-profile=<name> --cli-mode=SSO --cli-region=<region> \
+    --cli-sso-start-url=<portal-url> --cli-sso-region=<region> \
+    --cli-sso-account-name=<account> --cli-sso-permission-set-name=<permission-set>`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: completeContexts,
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -127,19 +135,23 @@ add --adc to also create Application Default Credentials for SDKs/terraform.`,
 			if len(args) == 1 {
 				name = args[0]
 			}
-			l, err := load(name)
+			l, err := a.load(name)
 			if err != nil {
 				return err
 			}
 			ui.Info("→ logging in to %s %s", ui.Bold(l.ctx.Name), ui.Dim(l.prov.Describe()))
+			cmds, err := l.prov.LoginCommands(adc)
+			if err != nil {
+				return err
+			}
 			env := l.env.Apply(os.Environ())
-			for _, argv := range l.prov.LoginCommands(adc) {
-				if err := runPlain(argv, env); err != nil {
+			for _, argv := range cmds {
+				if err := a.runPlain(argv, env); err != nil {
 					return err
 				}
 			}
 			ui.Info("%s logged in — identity:", ui.Green("✓"))
-			return runPlain(l.prov.WhoAmICommand(), env)
+			return a.runPlain(l.prov.WhoAmICommand(), env)
 		},
 	}
 	cmd.Flags().BoolVar(&adc, "adc", false, "GCP: also run `gcloud auth application-default login`")

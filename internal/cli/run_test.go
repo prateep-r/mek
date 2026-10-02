@@ -17,17 +17,16 @@ func TestTakeGlobalFlags(t *testing.T) {
 		{"--region x s3 ls", "--region x s3 ls", "", "", false}, // aws flags are left alone
 	}
 	for _, c := range cases {
-		opts = globalOpts{}
-		rest, err := takeGlobalFlags(strings.Fields(c.in))
+		a := &app{}
+		rest, err := a.takeGlobalFlags(strings.Fields(c.in))
 		if err != nil {
 			t.Fatalf("%q: %v", c.in, err)
 		}
-		if strings.Join(rest, " ") != c.rest || opts.context != c.ctx || opts.confirm != c.confirm || opts.yes != c.yes {
-			t.Errorf("%q -> rest=%q opts=%+v", c.in, rest, opts)
+		if strings.Join(rest, " ") != c.rest || a.opts.context != c.ctx || a.opts.confirm != c.confirm || a.opts.yes != c.yes {
+			t.Errorf("%q -> rest=%q opts=%+v", c.in, rest, a.opts)
 		}
 	}
-	opts = globalOpts{}
-	if _, err := takeGlobalFlags([]string{"-c"}); err == nil {
+	if _, err := (&app{}).takeGlobalFlags([]string{"-c"}); err == nil {
 		t.Error("expected error for -c without value")
 	}
 }

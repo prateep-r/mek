@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/prateep-r/mek/internal/config"
+	"github.com/prateep-r/mek/internal/provider"
 	"github.com/prateep-r/mek/internal/ui"
 )
 
@@ -22,13 +23,18 @@ type tool struct {
 	brew, url    string
 }
 
-var tools = []tool{
-	{"aws", "AWS CLI v2", []string{"--version"}, config.ProviderAWS,
-		"brew install awscli", "https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"},
+// tools are every cloud's CLI (from the provider registry) plus optional extras.
+func tools() []tool {
+	var ts []tool
+	for _, c := range provider.Clouds() {
+		ts = append(ts, tool{c.CLI, c.Title, c.Tool.VersionArgs, c.Name, c.Tool.Brew, c.Tool.URL})
+	}
+	return append(ts, extraTools...)
+}
+
+var extraTools = []tool{
 	{"session-manager-plugin", "AWS SSM tunnels/shell (upcoming `mek tunnel`/`mek shell`)", []string{"--version"}, "",
 		"brew install --cask session-manager-plugin", "https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html"},
-	{"gcloud", "Google Cloud CLI", []string{"--version"}, config.ProviderGCP,
-		"", "https://cloud.google.com/sdk/docs/install"},
 	{"kubectl", "Kubernetes CLI", []string{"version", "--client"}, "",
 		"brew install kubectl", "https://kubernetes.io/docs/tasks/tools/"},
 	{"k9s", "Kubernetes TUI", []string{"version", "--short"}, "",
@@ -46,11 +52,12 @@ func newDoctorCmd() *cobra.Command {
 
 			// Version probes are slow (gcloud alone takes ~1s), so start them all now
 			// and print the results in order once the config section is done.
-			probes := probeTools(tools)
+			ts := tools()
+			probes := probeTools(ts)
 
 			fmt.Fprintln(out, p.Bold("Config"))
 			needed := map[string]bool{}
-			cfg, err := config.Load()
+			cfg, err := provider.Load()
 			switch {
 			case errors.Is(err, config.ErrNoConfig):
 				fmt.Fprintf(out, "  %s no config at %s — run `mek init`\n", p.Red("✗"), config.Path())
@@ -70,7 +77,7 @@ func newDoctorCmd() *cobra.Command {
 			}
 
 			fmt.Fprintln(out, p.Bold("\nTools"))
-			for i, t := range tools {
+			for i, t := range ts {
 				pr := <-probes[i]
 				if pr.path == "" {
 					mark, label := p.Dim("–"), "optional"

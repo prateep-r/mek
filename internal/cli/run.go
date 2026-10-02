@@ -5,62 +5,52 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/prateep-r/mek/internal/audit"
 	"github.com/prateep-r/mek/internal/guard"
+	"github.com/prateep-r/mek/internal/provider"
 	"github.com/prateep-r/mek/internal/runner"
 	"github.com/prateep-r/mek/internal/ui"
 )
 
 // runPlain runs a helper command (login, whoami) without guard or audit.
-func runPlain(argv, env []string) error {
-	code, err := runner.Run(argv, env)
-	if err != nil {
-		return err
-	}
-	if code != 0 {
-		return &runner.ExitError{Code: code}
-	}
-	return nil
+func (a *app) runPlain(argv, env []string) error {
+	inv := &runner.Invocation{Argv: argv, Env: env}
+	return inv.Err(a.exec.Run(inv))
 }
 
 // newPassthroughCmd forwards everything after `mek <cli>` to the real CLI.
 // mek's own flags (-c/--context, -y/--yes, --confirm) must come before <cli>.
-func newPassthroughCmd(cli, short string) *cobra.Command {
+func (a *app) newPassthroughCmd(c provider.Cloud) *cobra.Command {
 	return &cobra.Command{
-		Use:                cli + " [args...]",
-		Short:              short,
+		Use:                c.CLI + " [args...]",
+		Short:              "Run any " + c.Title + " command in the current context",
 		DisableFlagParsing: true, // every flag belongs to the wrapped CLI
 		RunE: func(_ *cobra.Command, args []string) error {
-			args, err := takeGlobalFlags(args)
+			args, err := a.takeGlobalFlags(args)
 			if err != nil {
 				return err
 			}
-			l, err := load("")
+			l, err := a.load("")
 			if err != nil {
 				return err
 			}
-			if l.prov.CLI() != cli {
+			if l.ctx.Provider != c.Name {
 				return fmt.Errorf("context %s is %s — `mek %s` needs a context with provider %s (try: mek -c <name> %s ...)",
-					l.ctx.Name, l.ctx.Provider, cli, cliProvider(cli), cli)
+					l.ctx.Name, l.ctx.Provider, c.CLI, c.Name, c.CLI)
 			}
-			argv := append([]string{cli}, args...)
-			return guarded(l, argv, guard.Classify(cli, args))
+			class := c.Classify(args)
+			if r, ok := l.prov.(provider.ArgsRewriter); ok {
+				args = r.RewriteArgs(args)
+			}
+			return a.guarded(l, append([]string{c.CLI}, args...), class)
 		},
 	}
 }
 
-func cliProvider(cli string) string {
-	if cli == "gcloud" {
-		return "gcp"
-	}
-	return cli
-}
-
-func newExecCmd() *cobra.Command {
+func (a *app) newExecCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "exec -- <command> [args...]",
 		Short: "Run any command (terraform, kubectl, scripts...) with the context's credentials",
@@ -73,16 +63,16 @@ mek cannot tell whether an arbitrary command reads or writes, so on a
 protected context it always asks first, and on a readonly context it refuses.`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			l, err := load("")
+			l, err := a.load("")
 			if err != nil {
 				return err
 			}
-			return guarded(l, args, guard.Unknown)
+			return a.guarded(l, args, guard.Unknown)
 		},
 	}
 }
 
-func newEnvCmd() *cobra.Command {
+func (a *app) newEnvCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "env [context]",
 		Short: `Print shell exports for a context: eval "$(mek env)"`,
@@ -99,7 +89,7 @@ Note: commands run this way bypass mek's guard and audit log.`,
 			if len(args) == 1 {
 				name = args[0]
 			}
-			l, err := load(name)
+			l, err := a.load(name)
 			if err != nil {
 				return err
 			}
@@ -109,57 +99,54 @@ Note: commands run this way bypass mek's guard and audit log.`,
 	}
 }
 
-// guarded applies the context's safety policy, runs argv and writes an audit entry.
-func guarded(l *loaded, argv []string, class guard.Class) error {
+// guarded runs argv through the pipeline audit → guard → exec, so a blocked
+// or declined command is audited just like one that ran.
+func (a *app) guarded(l *loaded, argv []string, class guard.Class) error {
 	banner(l)
-	entry := audit.Entry{Context: l.ctx.Name, Provider: l.ctx.Provider, Command: argv, Class: class.String()}
+	inv := &runner.Invocation{Context: l.ctx, Argv: argv, Env: l.env.Apply(os.Environ()), Class: class}
+	pipeline := runner.Chain(a.exec, audit.Recorder(warnAudit), a.guard)
+	return inv.Err(pipeline.Run(inv))
+}
 
-	decision, err := decide(l, argv, class)
-	entry.Decision = decision
-	if err != nil {
-		entry.ExitCode = -1
-		_ = audit.Write(entry)
-		return err
-	}
+func warnAudit(err error) { ui.Info("%s audit log: %v", ui.Yellow("warning:"), err) }
 
-	start := time.Now()
-	code, err := runner.Run(argv, l.env.Apply(os.Environ()))
-	entry.ExitCode = code
-	entry.DurationMS = time.Since(start).Milliseconds()
-	if werr := audit.Write(entry); werr != nil {
-		ui.Info("%s audit log: %v", ui.Yellow("warning:"), werr)
-	}
-	if err != nil {
-		return err
-	}
-	if code != 0 {
-		return &runner.ExitError{Code: code}
-	}
-	return nil
+// guard is the runner.Decorator applying the context's safety policy: it
+// records the decision and stops the chain unless the command may run.
+func (a *app) guard(next runner.Runner) runner.Runner {
+	return runner.Func(func(inv *runner.Invocation) error {
+		decision, err := a.decide(inv)
+		inv.Decision = decision
+		if err != nil {
+			inv.ExitCode = -1 // never ran
+			return err
+		}
+		return next.Run(inv)
+	})
 }
 
 // decide returns the audit decision label and an error if the command must not run.
-func decide(l *loaded, argv []string, class guard.Class) (string, error) {
-	cmdline := strings.Join(audit.Mask(argv), " ")
-	switch guard.Decide(l.ctx, class) {
+func (a *app) decide(inv *runner.Invocation) (string, error) {
+	name, class := inv.Context.Name, inv.Class
+	cmdline := strings.Join(audit.Mask(inv.Argv), " ")
+	switch guard.Decide(inv.Context, class) {
 	case guard.Allow:
 		return "allowed", nil
 	case guard.Block:
-		return "blocked", fmt.Errorf("%s is readonly — blocked %s command: %s", l.ctx.Name, class, cmdline)
+		return "blocked", fmt.Errorf("%s is readonly — blocked %s command: %s", name, class, cmdline)
 	case guard.Confirm:
-		if opts.yes || opts.confirm == l.ctx.Name {
+		if a.opts.yes || a.opts.confirm == name {
 			return "confirmed", nil
 		}
 		ok, err := ui.Confirm(fmt.Sprintf("%s %s command on %s:\n  %s\nContinue?",
-			ui.Yellow("⚠"), class, ui.Bold(l.ctx.Name), cmdline))
+			ui.Yellow("⚠"), class, ui.Bold(name), cmdline))
 		return confirmResult(ok, err, "--yes")
 	case guard.ConfirmTyped:
-		if opts.confirm == l.ctx.Name {
+		if a.opts.confirm == name {
 			return "confirmed", nil
 		}
 		ok, err := ui.ConfirmTyped(fmt.Sprintf("%s DESTRUCTIVE command on %s:\n  %s",
-			ui.Red("⚠"), ui.Bold(l.ctx.Name), cmdline), l.ctx.Name)
-		return confirmResult(ok, err, "--confirm "+l.ctx.Name)
+			ui.Red("⚠"), ui.Bold(name), cmdline), name)
+		return confirmResult(ok, err, "--confirm "+name)
 	}
 	return "blocked", errors.New("unknown guard decision")
 }
@@ -179,10 +166,9 @@ func confirmResult(ok bool, err error, flag string) (string, error) {
 
 // takeGlobalFlags parses mek flags that appear before the wrapped CLI's
 // arguments (cobra hands them to us raw because DisableFlagParsing is on).
-func takeGlobalFlags(args []string) ([]string, error) {
+func (a *app) takeGlobalFlags(args []string) ([]string, error) {
 	for len(args) > 0 {
-		a := args[0]
-		name, val, hasVal := strings.Cut(a, "=")
+		name, val, hasVal := strings.Cut(args[0], "=")
 		switch name {
 		case "-c", "--context", "--confirm":
 			if !hasVal {
@@ -192,12 +178,12 @@ func takeGlobalFlags(args []string) ([]string, error) {
 				val, args = args[1], args[1:]
 			}
 			if name == "--confirm" {
-				opts.confirm = val
+				a.opts.confirm = val
 			} else {
-				opts.context = val
+				a.opts.context = val
 			}
 		case "-y", "--yes":
-			opts.yes = true
+			a.opts.yes = true
 		default:
 			return args, nil
 		}

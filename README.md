@@ -1,20 +1,27 @@
-# mek
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/mek-logo-dark.svg">
+    <img src="assets/logo/mek-logo-light.svg" alt="mek" width="300">
+  </picture>
+</h1>
 
 **mek** (เมฆ — Thai for *cloud*) logs you in, switches between cloud accounts
-and runs the official CLIs with the right credentials — for AWS, GCP and more
-clouds later. Think *K9s/Lens, but for cloud accounts*.
+and runs the official CLIs with the right credentials — for AWS, GCP, Azure and
+Huawei Cloud. Think *K9s/Lens, but for cloud accounts*.
 
 ```bash
 mek login baas-uat          # SSO once, covers every account behind the same portal
 mek use baas-uat            # switch context
 mek aws s3 ls               # any aws command, in that context
 mek gcloud compute instances list
+mek az vm list
+mek hcloud ECS ListServersDetails
 mek exec -- terraform plan  # any tool, same credentials
 ```
 
-- **Every CLI feature, day one** — `mek aws …` / `mek gcloud …` pass everything through to the real CLI.
-- **No long-lived keys** — AWS uses IAM Identity Center (SSO) via the AWS CLI's own token cache; GCP uses an isolated gcloud config per context.
-- **Your files stay untouched** — mek writes its own AWS config (`~/.config/mek/aws/config`) instead of editing `~/.aws/config`.
+- **Every CLI feature, day one** — `mek aws …` / `mek gcloud …` / `mek az …` / `mek hcloud …` pass everything through to the real CLI.
+- **No long-lived keys** — AWS and Huawei Cloud use IAM Identity Center (SSO) through their CLIs' own token caches; GCP and Azure use an isolated CLI config per context.
+- **Your files stay untouched** — mek writes its own AWS config (`~/.config/mek/aws/config`) instead of editing `~/.aws/config`, and never edits KooCLI profiles.
 - **Prod guard** — `protected` contexts confirm writes and require typing the context name for destructive commands; `readonly` contexts block them.
 - **Audit log** — every command is recorded in `~/.config/mek/audit.jsonl` with secrets masked.
 
@@ -55,6 +62,8 @@ Update with `brew upgrade mek` (Homebrew) or `mek self-update` (script / manual 
 |---|---|
 | AWS contexts | [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) |
 | GCP contexts | [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) |
+| Azure contexts | [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) |
+| Huawei Cloud contexts | [KooCLI (`hcloud`)](https://support.huaweicloud.com/intl/en-us/qs-hcli/hcli_02_003.html) |
 | Upcoming `mek tunnel` / `mek shell` | [session-manager-plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html) |
 
 ## Configure
@@ -89,11 +98,37 @@ contexts:
     provider: gcp
     project: my-sandbox
     region: asia-southeast1
+
+  azure-dev:
+    provider: azure
+    tenant_id: your-org.onmicrosoft.com              # Entra tenant ID or domain
+    subscription_id: 00000000-0000-0000-0000-000000000000
+    region: southeastasia                            # default location
+
+  huawei-prod:
+    provider: huawei
+    hcloud_profile: my-sso-profile    # a KooCLI profile (see below)
+    region: ap-southeast-2
+    protected: true
 ```
+
+**Huawei Cloud:** KooCLI keeps its profiles in `~/.hcloud/config.json`, and
+`hcloud configure set` also changes your current profile, so mek never edits it.
+Create an SSO profile once, then point a context at it:
+
+```bash
+hcloud configure set --cli-profile=my-sso-profile --cli-mode=SSO --cli-region=ap-southeast-2 \
+  --cli-sso-start-url=https://your-portal-url --cli-sso-region=ap-southeast-1 \
+  --cli-sso-account-name=your-account --cli-sso-permission-set-name=ReadOnly
+```
+
+mek adds `--cli-profile` / `--cli-region` to each `mek hcloud …` command (KooCLI has
+no environment variable for them) and sets `HW_PROFILE` / `HW_REGION_NAME` for terraform.
 
 Rules checked on load: context names use letters, digits, `.`, `_` and `-`;
 `account_id` is the 12-digit AWS account ID (quote it); SSO contexts need
-`sso_region` (or `region`), and contexts sharing an `sso_start_url` must agree on it.
+`sso_region` (or `region`), and contexts sharing an `sso_start_url` must agree on it;
+Azure `subscription_id` is a GUID.
 
 > Never commit real account IDs or SSO URLs to a public repository. Share team configs from a private repo.
 
@@ -105,8 +140,8 @@ Rules checked on load: context names use letters, digits, `.`, `_` and `-`;
 | `mek ctx ls` | list contexts (`*` = current) |
 | `mek use <ctx>` | switch the current context |
 | `mek ctx` / `mek ctx --short` | show the current context (`--short` for shell prompts) |
-| `mek login [ctx] [--adc]` | `aws sso login` / `gcloud auth login` (+ application-default with `--adc`) |
-| `mek aws …` / `mek gcloud …` | run the CLI in the context, through the guard and audit log |
+| `mek login [ctx] [--adc]` | `aws sso login` / `gcloud auth login` (+ application-default with `--adc`) / `az login` / `hcloud configure sso` |
+| `mek aws …` / `mek gcloud …` / `mek az …` / `mek hcloud …` | run the CLI in the context, through the guard and audit log |
 | `mek exec -- <cmd>` | run any command with the context's credentials |
 | `eval "$(mek env [ctx])"` | export the context into your shell (bypasses guard/audit) |
 | `mek doctor` | check config and tools, with install hints |
@@ -133,9 +168,9 @@ Commands are classified from their operation name:
 
 | Class | Examples | `protected` | `readonly` |
 |---|---|---|---|
-| read | `describe-*`, `list-*`, `get-*`, `s3 ls`, `--dry-run` | run | run |
-| write | `create-*`, `update-*`, `s3 cp`, unknown verbs | confirm y/N | blocked |
-| destructive | `delete-*`, `terminate-*`, `stop-*`, `s3 rm`, `sync --delete` | type context name | blocked |
+| read | `describe-*`, `list-*`, `get-*`, `show`, `List*`/`Show*` (hcloud), `s3 ls`, `--dry-run` | run | run |
+| write | `create-*`, `update-*`, `Create*`/`Update*`, `s3 cp`, unknown verbs | confirm y/N | blocked |
+| destructive | `delete-*`, `terminate-*`, `stop-*`, `deallocate`, `Delete*`/`BatchStop*`, `s3 rm`, `sync --delete` | type context name | blocked |
 | unknown | anything via `mek exec` | confirm y/N | blocked |
 
 **This is a seatbelt, not a security boundary.** It prevents mistakes; real
@@ -146,6 +181,8 @@ enforcement belongs in IAM roles, SCPs and org policies.
 - Needs the official CLIs installed; passthrough speed equals the CLI's speed.
 - mek can't grant more than your IAM role/permissions allow.
 - AWS login supports IAM Identity Center (SSO) and existing profiles; SAML-only IdPs without Identity Center are not built in (use `aws_profile` with your existing tooling).
+- Azure contexts each have their own `az login` (isolated config dirs), so several subscriptions in one tenant mean one login per context.
+- Huawei Cloud contexts need a KooCLI profile you create yourself; `mek login` only logs in SSO profiles (AK/SK profiles are used as-is).
 - The Homebrew cask is macOS-only; use `install.sh` or `go install` on Linux.
 - Windows is not supported yet.
 
@@ -153,11 +190,21 @@ enforcement belongs in IAM roles, SCPs and org policies.
 
 1. ✅ Contexts, SSO login, passthrough, exec/env, guard, audit, doctor, self-update
 2. `mek tunnel` (RDS/MSK via SSM), `mek shell`, `mek kube` (EKS kubeconfig with exec credentials for kubectl / K9s / FreeLens)
-3. TUI with a resource catalog generated from AWS/GCP API models
-4. More GCP features (Cloud SQL proxy, IAP, GKE)
+3. TUI with a resource catalog generated from AWS/GCP/Azure/Huawei API models
+4. More GCP / Azure / Huawei features (Cloud SQL proxy, IAP, GKE, AKS, CCE)
 5. Desktop GUI (Wails)
 
 ## Development
+
+How the code fits together:
+
+- **One file per cloud** (`internal/provider/<cloud>.go`). Each defines a `Cloud`: an
+  Abstract Factory for that cloud's Provider (an Adapter from a mek context to the
+  official CLI), its command classifier (a Strategy from `internal/guard`) and its
+  config rules. Adding a cloud = one new file plus an entry in `clouds` (`cloud.go`).
+- **Every guarded command is a `runner.Invocation`** (a Command) passed through
+  Decorators: `audit → guard → exec`, so blocked commands are audited too, and
+  tests swap `exec` for a fake.
 
 ```bash
 make             # list all targets

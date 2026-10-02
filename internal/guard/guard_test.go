@@ -69,6 +69,60 @@ func TestClassifyGCloud(t *testing.T) {
 	}
 }
 
+func TestClassifyAzure(t *testing.T) {
+	cases := map[string]Class{
+		"":                                      Read,
+		"vm list":                               Read,
+		"vm show -g rg -n vm1":                  Read,
+		"-o table vm list":                      Read,
+		"aks get-credentials -g rg -n c":        Read,
+		"webapp log tail -g rg -n app":          Read,
+		"vm create -g rg -n vm1 --image Ubuntu": Write,
+		"vm restart -g rg -n vm1":               Write,
+		"group create -n rg -l eastus":          Write,
+		"vm delete -g rg -n vm1 --yes":          Destructive,
+		"vm deallocate -g rg -n vm1":            Destructive,
+		"storage account keys regenerate":       Destructive,
+		"account set --subscription s":          Read, // local only
+		"login --tenant t":                      Read,
+		"vm":                                    Read,
+		"vm delete --help":                      Read,
+		"foo bar baz":                           Write,
+	}
+	for in, want := range cases {
+		if got := ClassifyAzure(strings.Fields(in)); got != want {
+			t.Errorf("az %q = %s, want %s", in, got, want)
+		}
+	}
+}
+
+func TestClassifyHuawei(t *testing.T) {
+	cases := map[string]Class{
+		"":                             Read,
+		"ECS ListServersDetails":       Read,
+		"ECS ShowServer --server_id=x": Read,
+		"--cli-region ap-southeast-2 ECS ListServersDetails": Read,
+		"ECS NovaListServers":                                Read,
+		"ECS CreateServers --cli-jsonInput=a.json":           Write,
+		"ECS UpdateServer --server_id=x":                     Write,
+		"ECS DeleteServers --servers.1.id=x":                 Destructive,
+		"ECS BatchStopServers":                               Destructive,
+		"ECS BatchRebootServers":                             Destructive,
+		"ECS DeleteServers --dryrun":                         Read,
+		"obs ls obs://bucket":                                Read,
+		"obs cp a obs://bucket/a":                            Write,
+		"obs rm obs://bucket/a":                              Destructive,
+		"configure list":                                     Read,
+		"version":                                            Read,
+		"ECS":                                                Read,
+	}
+	for in, want := range cases {
+		if got := ClassifyHuawei(strings.Fields(in)); got != want {
+			t.Errorf("hcloud %q = %s, want %s", in, got, want)
+		}
+	}
+}
+
 func TestDecide(t *testing.T) {
 	plain := &config.Context{}
 	prot := &config.Context{Protected: true}

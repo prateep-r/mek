@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"net/url"
@@ -11,7 +12,77 @@ import (
 
 	"github.com/prateep-r/mek/internal/config"
 	"github.com/prateep-r/mek/internal/fsutil"
+	"github.com/prateep-r/mek/internal/guard"
 )
+
+var awsCloud = Cloud{
+	Name: config.ProviderAWS, CLI: "aws", Title: "AWS CLI",
+	New: func(cfg *config.Config, ctx *config.Context, dir string) Provider {
+		return &AWS{cfg: cfg, ctx: ctx, dir: dir}
+	},
+	Classify:    guard.ClassifyAWS,
+	Validate:    validateAWS,
+	ValidateAll: validateSSOSessions,
+	Tool: Tool{VersionArgs: []string{"--version"}, Brew: "brew install awscli",
+		URL: "https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"},
+}
+
+var accountID = regexp.MustCompile(`^[0-9]{12}$`)
+
+// isSSO reports whether an AWS context logs in through IAM Identity Center
+// (as opposed to reusing an existing aws_profile).
+func isSSO(c *config.Context) bool { return c.Provider == config.ProviderAWS && c.AWSProfile == "" }
+
+// ssoRegion is the IAM Identity Center region, defaulting to region.
+func ssoRegion(c *config.Context) string {
+	if c.SSORegion != "" {
+		return c.SSORegion
+	}
+	return c.Region
+}
+
+func validateAWS(c *config.Context) error {
+	if c.AWSProfile != "" {
+		return nil
+	}
+	var missing []string
+	for _, f := range []struct{ key, val string }{
+		{"account_id", c.AccountID}, {"role", c.Role}, {"sso_start_url", c.SSOStartURL},
+	} {
+		if f.val == "" {
+			missing = append(missing, f.key)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("aws context needs aws_profile, or %s", strings.Join(missing, ", "))
+	}
+	if !accountID.MatchString(c.AccountID) {
+		return fmt.Errorf("account_id must be 12 digits, got %q", c.AccountID)
+	}
+	if ssoRegion(c) == "" {
+		return errors.New("aws sso context needs sso_region (or region)")
+	}
+	return nil
+}
+
+// validateSSOSessions: contexts on one portal share one [sso-session], which
+// has one region.
+func validateSSOSessions(cfg *config.Config) error {
+	first := map[string]*config.Context{} // sso_start_url -> first context using it
+	for _, name := range cfg.Names() {
+		c := cfg.Contexts[name]
+		if !isSSO(c) {
+			continue
+		}
+		if f, ok := first[c.SSOStartURL]; !ok {
+			first[c.SSOStartURL] = c
+		} else if ssoRegion(f) != ssoRegion(c) {
+			return fmt.Errorf("contexts %q and %q share sso_start_url %s but have different sso_region (%s vs %s)",
+				f.Name, name, c.SSOStartURL, ssoRegion(f), ssoRegion(c))
+		}
+	}
+	return nil
+}
 
 // AWS wraps the aws CLI v2.
 //
@@ -69,7 +140,7 @@ func WriteAWSConfig(path string, cfg *config.Config) error {
 	sessions := map[string]*config.Context{}
 	for _, name := range cfg.Names() {
 		c := cfg.Contexts[name]
-		if !c.IsSSO() {
+		if !isSSO(c) {
 			continue
 		}
 		s := SessionName(c.SSOStartURL)
@@ -84,7 +155,7 @@ func WriteAWSConfig(path string, cfg *config.Config) error {
 	for _, s := range slices.Sorted(maps.Keys(sessions)) {
 		c := sessions[s]
 		fmt.Fprintf(&b, "\n[sso-session %s]\nsso_start_url = %s\nsso_region = %s\nsso_registration_scopes = sso:account:access\n",
-			s, c.SSOStartURL, c.SSORegionOrDefault())
+			s, c.SSOStartURL, ssoRegion(c))
 	}
 	return fsutil.WriteFileAtomic(path, []byte(b.String()), 0o600)
 }
@@ -102,8 +173,8 @@ func SessionName(startURL string) string {
 	return "mek-" + strings.Trim(nonAlnum.ReplaceAllString(host, "-"), "-")
 }
 
-func (a *AWS) LoginCommands(bool) [][]string {
-	return [][]string{{"aws", "sso", "login", "--profile", a.profile()}}
+func (a *AWS) LoginCommands(bool) ([][]string, error) {
+	return [][]string{{"aws", "sso", "login", "--profile", a.profile()}}, nil
 }
 
 func (a *AWS) WhoAmICommand() []string {

@@ -11,7 +11,6 @@ import (
 // run executes the mek command tree in-process and returns stdout.
 func run(t *testing.T, args ...string) string {
 	t.Helper()
-	opts = globalOpts{}
 	root := NewRoot()
 	var out bytes.Buffer
 	root.SetOut(&out)

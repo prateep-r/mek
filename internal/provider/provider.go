@@ -1,7 +1,8 @@
 // Package provider turns a mek context into the environment and commands
 // that the official cloud CLIs (aws, gcloud, ...) understand.
 //
-// Adding a new cloud = implementing Provider and registering it in For().
+// Adding a new cloud = one file that implements Provider (an Adapter from a
+// mek context to that CLI) and defines its Cloud, listed in clouds (cloud.go).
 package provider
 
 import (
@@ -9,8 +10,6 @@ import (
 	"maps"
 	"slices"
 	"strings"
-
-	"github.com/prateep-r/mek/internal/config"
 )
 
 // Env describes how to change the process environment for a context.
@@ -62,20 +61,15 @@ type Provider interface {
 	// Prepare writes any files the CLI needs and returns the environment for the context.
 	Prepare() (Env, error)
 	// LoginCommands returns the CLI invocations that log the user in.
-	LoginCommands(adc bool) [][]string
+	LoginCommands(adc bool) ([][]string, error)
 	// WhoAmICommand prints the active identity, used after login.
 	WhoAmICommand() []string
 	// Describe is a one-line human summary of the target.
 	Describe() string
 }
 
-// For returns the provider for a context.
-func For(cfg *config.Config, ctx *config.Context) (Provider, error) {
-	switch ctx.Provider {
-	case config.ProviderAWS:
-		return &AWS{cfg: cfg, ctx: ctx, dir: config.Dir()}, nil
-	case config.ProviderGCP:
-		return &GCP{ctx: ctx, dir: config.Dir()}, nil
-	}
-	return nil, fmt.Errorf("unsupported provider %q", ctx.Provider)
+// ArgsRewriter is implemented by providers whose CLI can't be pointed at a
+// context through the environment, so mek adds flags to each command instead.
+type ArgsRewriter interface {
+	RewriteArgs(args []string) []string
 }
