@@ -54,10 +54,16 @@ func (e Env) Shell() string {
 
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
+// orDash shows an unset value as "-" in one-line summaries.
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
+}
+
 // Provider is implemented once per cloud.
 type Provider interface {
-	// CLI is the official command-line tool this provider wraps ("aws", "gcloud").
-	CLI() string
 	// Prepare writes any files the CLI needs and returns the environment for the context.
 	Prepare() (Env, error)
 	// LoginCommands returns the CLI invocations that log the user in.

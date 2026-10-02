@@ -59,10 +59,13 @@ func Info(format string, a ...any) { fmt.Fprintf(os.Stderr, format+"\n", a...) }
 // ErrNoTTY is returned when confirmation is required but nobody can answer.
 var ErrNoTTY = errors.New("confirmation required but no terminal is available")
 
+// ttyPath is the controlling terminal; tests point it at a file of answers.
+var ttyPath = "/dev/tty"
+
 // openTTY reads answers from the controlling terminal, so confirmations still
 // work when stdin is piped into the wrapped command.
 func openTTY() (io.ReadCloser, error) {
-	f, err := os.Open("/dev/tty")
+	f, err := os.Open(ttyPath)
 	if err != nil {
 		return nil, ErrNoTTY
 	}

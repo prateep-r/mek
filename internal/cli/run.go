@@ -110,6 +110,12 @@ func (a *app) guarded(l *loaded, argv []string, class guard.Class) error {
 
 func warnAudit(err error) { ui.Info("%s audit log: %v", ui.Yellow("warning:"), err) }
 
+// Prompts, swapped out in tests.
+var (
+	confirm      = ui.Confirm
+	confirmTyped = ui.ConfirmTyped
+)
+
 // guard is the runner.Decorator applying the context's safety policy: it
 // records the decision and stops the chain unless the command may run.
 func (a *app) guard(next runner.Runner) runner.Runner {
@@ -137,18 +143,17 @@ func (a *app) decide(inv *runner.Invocation) (string, error) {
 		if a.opts.yes || a.opts.confirm == name {
 			return "confirmed", nil
 		}
-		ok, err := ui.Confirm(fmt.Sprintf("%s %s command on %s:\n  %s\nContinue?",
+		ok, err := confirm(fmt.Sprintf("%s %s command on %s:\n  %s\nContinue?",
 			ui.Yellow("⚠"), class, ui.Bold(name), cmdline))
 		return confirmResult(ok, err, "--yes")
-	case guard.ConfirmTyped:
+	default: // guard.ConfirmTyped
 		if a.opts.confirm == name {
 			return "confirmed", nil
 		}
-		ok, err := ui.ConfirmTyped(fmt.Sprintf("%s DESTRUCTIVE command on %s:\n  %s",
+		ok, err := confirmTyped(fmt.Sprintf("%s DESTRUCTIVE command on %s:\n  %s",
 			ui.Red("⚠"), ui.Bold(name), cmdline), name)
 		return confirmResult(ok, err, "--confirm "+name)
 	}
-	return "blocked", errors.New("unknown guard decision")
 }
 
 func confirmResult(ok bool, err error, flag string) (string, error) {

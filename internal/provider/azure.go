@@ -48,8 +48,6 @@ var azureUnset = []string{
 	"ARM_CLIENT_ID", "ARM_CLIENT_SECRET", "ARM_CLIENT_CERTIFICATE_PATH", "ARM_USE_MSI", "ARM_USE_OIDC",
 }
 
-func (z *Azure) CLI() string { return "az" }
-
 func (z *Azure) configDir() string { return filepath.Join(z.dir, "azure", z.ctx.Name) }
 
 func (z *Azure) Prepare() (Env, error) {
@@ -86,9 +84,5 @@ func (z *Azure) WhoAmICommand() []string {
 }
 
 func (z *Azure) Describe() string {
-	region := z.ctx.Region
-	if region == "" {
-		region = "-"
-	}
-	return fmt.Sprintf("azure %s / %s", z.ctx.SubscriptionID, region)
+	return fmt.Sprintf("azure %s / %s", z.ctx.SubscriptionID, orDash(z.ctx.Region))
 }

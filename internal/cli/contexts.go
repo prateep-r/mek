@@ -49,8 +49,8 @@ func newUseCmd() *cobra.Command {
 			if err := config.SetCurrent(ctx.Name); err != nil {
 				return err
 			}
-			p, _ := provider.For(cfg, ctx)
-			ui.Info("%s switched to %s %s %s", ui.Green("✓"), ui.Bold(ctx.Name), ui.Dim(p.Describe()), tags(ui.Err(), ctx))
+			ui.Info("%s switched to %s %s %s", ui.Green("✓"), ui.Bold(ctx.Name),
+				ui.Dim(provider.For(cfg, ctx).Describe()), tags(ui.Err(), ctx))
 			// $MEK_CONTEXT wins over the saved context (e.g. after eval "$(mek env x)").
 			if env := os.Getenv("MEK_CONTEXT"); env != "" && env != ctx.Name {
 				ui.Info("%s MEK_CONTEXT=%s is set in this shell and still takes precedence — run: unset MEK_CONTEXT",
@@ -96,12 +96,11 @@ func (a *app) newCtxCmd() *cobra.Command {
 			cur, out := config.Current(), ui.Out()
 			for _, n := range cfg.Names() {
 				c := cfg.Contexts[n]
-				p, _ := provider.For(cfg, c)
 				mark := " "
 				if n == cur {
 					mark = out.Green("*")
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "%s %-20s %-45s %s\n", mark, n, p.Describe(), tags(out, c))
+				fmt.Fprintf(cmd.OutOrStdout(), "%s %-20s %-45s %s\n", mark, n, provider.For(cfg, c).Describe(), tags(out, c))
 			}
 			return nil
 		},

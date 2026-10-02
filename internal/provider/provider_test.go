@@ -1,8 +1,10 @@
 package provider
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,8 +19,8 @@ func TestSessionName(t *testing.T) {
 		"https://sso.Example.com/start":             "mek-sso-example-com",
 	}
 	for in, want := range cases {
-		if got := SessionName(in); got != want {
-			t.Errorf("SessionName(%q)=%q want %q", in, got, want)
+		if got := sessionName(in); got != want {
+			t.Errorf("sessionName(%q)=%q want %q", in, got, want)
 		}
 	}
 }
@@ -62,7 +64,7 @@ func TestAWSPrepareWritesSharedSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, _ := For(cfg, cfg.Contexts["uat"])
+	p := For(cfg, cfg.Contexts["uat"])
 	env, err := p.Prepare()
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +89,7 @@ func TestAWSPrepareWritesSharedSession(t *testing.T) {
 		t.Errorf("aws_profile contexts must not be rendered:\n%s", out)
 	}
 
-	lp, _ := For(cfg, cfg.Contexts["legacy"])
+	lp := For(cfg, cfg.Contexts["legacy"])
 	lenv, _ := lp.Prepare()
 	if lenv.Set["AWS_PROFILE"] != "old" || lenv.Set["AWS_CONFIG_FILE"] != "" {
 		t.Errorf("legacy env: %+v", lenv.Set)
@@ -99,10 +101,7 @@ func TestAzurePrepare(t *testing.T) {
 	t.Setenv("MEK_HOME", home)
 	ctx := &config.Context{Name: "dev", Provider: config.ProviderAzure, TenantID: "t1",
 		SubscriptionID: "00000000-1111-2222-3333-444444444444", Region: "southeastasia"}
-	p, err := For(&config.Config{}, ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	p := For(&config.Config{}, ctx)
 	env, err := p.Prepare()
 	if err != nil {
 		t.Fatal(err)
@@ -172,4 +171,136 @@ func TestHuawei(t *testing.T) {
 	if _, err := h.LoginCommands(false); err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("unknown profile: %v", err)
 	}
+}
+
+func TestAWSProvider(t *testing.T) {
+	home := t.TempDir()
+	cfg := &config.Config{Contexts: map[string]*config.Context{}}
+	sso := &config.Context{Name: "uat", Provider: config.ProviderAWS, SSOStartURL: "https://o.awsapps.com/start",
+		SSORegion: "ap-southeast-1", AccountID: "111122223333", Role: "Dev"}
+	cfg.Contexts["uat"] = sso
+	a := &AWS{cfg: cfg, ctx: sso, dir: home}
+
+	if got := fmt.Sprint(must(a.LoginCommands(false))); got != "[[aws sso login --profile mek-uat]]" {
+		t.Errorf("login: %s", got)
+	}
+	if got := strings.Join(a.WhoAmICommand(), " "); got != "aws sts get-caller-identity --output table" {
+		t.Errorf("whoami: %s", got)
+	}
+	if got := a.Describe(); got != "aws 111122223333 / Dev / -" {
+		t.Errorf("describe: %s", got)
+	}
+	a.ctx = &config.Context{Name: "old", Provider: config.ProviderAWS, AWSProfile: "legacy"}
+	if got := a.Describe(); got != "aws profile legacy" {
+		t.Errorf("describe profile: %s", got)
+	}
+
+	// The generated config can't be written: Prepare reports it.
+	a.ctx = sso
+	os.WriteFile(filepath.Join(home, "aws"), nil, 0o600) // "aws" is a file, not a dir
+	if _, err := a.Prepare(); err == nil {
+		t.Error("expected an error writing the AWS config")
+	}
+}
+
+func TestGCPProvider(t *testing.T) {
+	home := t.TempDir()
+	g := &GCP{ctx: &config.Context{Name: "g", Provider: config.ProviderGCP, Project: "p", Account: "me@x.com", Region: "asia-southeast1"}, dir: home}
+	env, err := g.Prepare()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(home, "gcloud", "g")
+	if env.Set["CLOUDSDK_CONFIG"] != dir || env.Set["CLOUDSDK_CORE_ACCOUNT"] != "me@x.com" ||
+		env.Set["CLOUDSDK_COMPUTE_REGION"] != "asia-southeast1" || env.Set["GOOGLE_APPLICATION_CREDENTIALS"] != "" {
+		t.Errorf("env: %+v", env.Set)
+	}
+	// Once `mek login --adc` created ADC, SDKs get pointed at it.
+	adc := filepath.Join(dir, "application_default_credentials.json")
+	os.WriteFile(adc, []byte("{}"), 0o600)
+	if env, _ := g.Prepare(); env.Set["GOOGLE_APPLICATION_CREDENTIALS"] != adc {
+		t.Errorf("ADC not used: %+v", env.Set)
+	}
+	if got := fmt.Sprint(must(g.LoginCommands(true))); got != "[[gcloud auth login me@x.com] [gcloud auth application-default login]]" {
+		t.Errorf("login --adc: %s", got)
+	}
+	g.ctx.Account = ""
+	if got := fmt.Sprint(must(g.LoginCommands(false))); got != "[[gcloud auth login]]" {
+		t.Errorf("login: %s", got)
+	}
+	if got := g.WhoAmICommand()[0]; got != "gcloud" {
+		t.Errorf("whoami: %s", got)
+	}
+	if got := g.Describe(); got != "gcp p / asia-southeast1" {
+		t.Errorf("describe: %s", got)
+	}
+
+	g.dir = filepath.Join(adc, "under-a-file")
+	if _, err := g.Prepare(); err == nil {
+		t.Error("expected MkdirAll error")
+	}
+}
+
+func TestAzureProviderErrors(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "file")
+	os.WriteFile(file, nil, 0o600)
+	z := &Azure{ctx: &config.Context{Name: "z", Provider: config.ProviderAzure, TenantID: "t", SubscriptionID: "s"}, dir: file}
+	if _, err := z.Prepare(); err == nil {
+		t.Error("expected MkdirAll error")
+	}
+	if got := strings.Join(z.WhoAmICommand(), " "); got != "az account show --output table" {
+		t.Errorf("whoami: %s", got)
+	}
+	if got := z.Describe(); got != "azure s / -" {
+		t.Errorf("describe: %s", got)
+	}
+}
+
+func TestHuaweiConfigErrors(t *testing.T) {
+	h := &Huawei{ctx: &config.Context{Name: "hw", Provider: config.ProviderHuawei, HcloudProfile: "p"}}
+	if got := strings.Join(h.WhoAmICommand(), " "); got != "hcloud configure show --cli-profile=p" {
+		t.Errorf("whoami: %s", got)
+	}
+	if env, _ := h.Prepare(); env.Set["HW_REGION_NAME"] != "" {
+		t.Errorf("no region: %+v", env.Set)
+	}
+	dir := t.TempDir()
+	old := hcloudConfigPath
+	t.Cleanup(func() { hcloudConfigPath = old })
+
+	hcloudConfigPath = func() string { return dir } // a directory: read fails
+	if _, err := h.LoginCommands(false); err == nil || strings.Contains(err.Error(), "no KooCLI config") {
+		t.Errorf("read error: %v", err)
+	}
+	bad := filepath.Join(dir, "config.json")
+	os.WriteFile(bad, []byte("{not json"), 0o600)
+	hcloudConfigPath = func() string { return bad }
+	if _, err := h.LoginCommands(false); err == nil || !strings.Contains(err.Error(), "read") {
+		t.Errorf("bad json: %v", err)
+	}
+	// Default: the account's home from the user database, like KooCLI —
+	// not $HOME; $HOME only if the lookup fails.
+	oldLookup := lookupUser
+	t.Cleanup(func() { lookupUser = oldLookup })
+	t.Setenv("MEK_HCLOUD_CONFIG", "")
+	t.Setenv("HOME", "/env-home")
+	lookupUser = func() (*user.User, error) { return &user.User{HomeDir: "/passwd-home"}, nil }
+	if got := old(); got != filepath.Join("/passwd-home", ".hcloud", "config.json") {
+		t.Errorf("default path: %s", got)
+	}
+	lookupUser = func() (*user.User, error) { return nil, errors.New("no entry") }
+	if got := old(); got != filepath.Join("/env-home", ".hcloud", "config.json") {
+		t.Errorf("fallback path: %s", got)
+	}
+	t.Setenv("MEK_HCLOUD_CONFIG", "/custom/config.json")
+	if got := old(); got != "/custom/config.json" {
+		t.Errorf("MEK_HCLOUD_CONFIG: %s", got)
+	}
+}
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
 }

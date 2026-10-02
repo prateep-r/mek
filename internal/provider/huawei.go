@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 
@@ -41,8 +42,6 @@ type Huawei struct {
 // Static keys would win over the profile in terraform / SDKs.
 var huaweiUnset = []string{"HW_ACCESS_KEY", "HW_SECRET_KEY", "HW_SECURITY_TOKEN"}
 
-func (h *Huawei) CLI() string { return "hcloud" }
-
 func (h *Huawei) Prepare() (Env, error) {
 	env := Env{Set: map[string]string{"HW_PROFILE": h.ctx.HcloudProfile}, Unset: huaweiUnset}
 	if h.ctx.Region != "" {
@@ -58,29 +57,35 @@ func (h *Huawei) RewriteArgs(args []string) []string {
 		return args // KooCLI's own commands (configure, version, ...) take no profile
 	}
 	out := append([]string(nil), args...)
-	if !hasCLIFlag(args, "--cli-profile") {
+	if !guard.HasFlag(args, "--cli-profile") {
 		out = append(out, "--cli-profile="+h.ctx.HcloudProfile)
 	}
-	if h.ctx.Region != "" && !hasCLIFlag(args, "--cli-region") {
+	if h.ctx.Region != "" && !guard.HasFlag(args, "--cli-region") {
 		out = append(out, "--cli-region="+h.ctx.Region)
 	}
 	return out
 }
 
-func hasCLIFlag(args []string, flag string) bool {
-	for _, a := range args {
-		if a == flag || strings.HasPrefix(a, flag+"=") {
-			return true
-		}
-	}
-	return false
-}
-
-// hcloudConfigPath is where KooCLI keeps its profiles (read-only for mek).
+// hcloudConfigPath is where KooCLI keeps its profiles (read-only for mek):
+// $MEK_HCLOUD_CONFIG, else ~/.hcloud/config.json under the account's home
+// directory. KooCLI looks the home up in the user database and ignores
+// $HOME, so mek must not trust $HOME either (they differ under sudo -E,
+// in containers and CI).
 var hcloudConfigPath = func() string {
-	home, _ := os.UserHomeDir()
+	if p := os.Getenv("MEK_HCLOUD_CONFIG"); p != "" {
+		return p
+	}
+	home := ""
+	if u, err := lookupUser(); err == nil {
+		home = u.HomeDir
+	}
+	if home == "" {
+		home, _ = os.UserHomeDir()
+	}
 	return filepath.Join(home, ".hcloud", "config.json")
 }
+
+var lookupUser = user.Current // test seam
 
 // profileMode returns the KooCLI auth mode (SSO, AKSK, ...) of profile.
 func profileMode(profile string) (string, error) {
@@ -121,9 +126,5 @@ func (h *Huawei) WhoAmICommand() []string {
 }
 
 func (h *Huawei) Describe() string {
-	region := h.ctx.Region
-	if region == "" {
-		region = "-"
-	}
-	return fmt.Sprintf("huawei profile %s / %s", h.ctx.HcloudProfile, region)
+	return fmt.Sprintf("huawei profile %s / %s", h.ctx.HcloudProfile, orDash(h.ctx.Region))
 }

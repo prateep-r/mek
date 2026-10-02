@@ -3,9 +3,12 @@ package fsutil
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 )
+
+var createTemp = os.CreateTemp // test seam
 
 // WriteFileAtomic replaces path with data so readers never see a partial
 // file, even when several mek processes write it at once: each writer uses
@@ -20,20 +23,13 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
+	tmp, err := createTemp(dir, "."+filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return err
 	}
 	defer os.Remove(tmp.Name()) // no-op after a successful rename
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Chmod(perm); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
+	_, werr := tmp.Write(data)
+	if err := errors.Join(werr, tmp.Chmod(perm), tmp.Close()); err != nil {
 		return err
 	}
 	return os.Rename(tmp.Name(), path)

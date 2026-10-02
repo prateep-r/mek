@@ -55,21 +55,22 @@ func Run(argv []string, env []string) (int, error) {
 		}
 	}()
 
-	err = cmd.Wait()
-	var ee *exec.ExitError
-	if errors.As(err, &ee) {
-		return exitCode(ee), nil
-	}
-	if err != nil {
-		return 1, err
-	}
-	return 0, nil
+	return result(cmd.Wait())
 }
 
-// exitCode follows the shell convention: 128+N when the child died from signal N.
-func exitCode(ee *exec.ExitError) int {
-	if ws, ok := ee.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
-		return 128 + int(ws.Signal())
+// result turns Wait's error into an exit code, following the shell
+// convention of 128+N when the child died from signal N. A non-exit error
+// (the child never really ran) is returned with code 1.
+func result(err error) (int, error) {
+	var ee *exec.ExitError
+	switch {
+	case err == nil:
+		return 0, nil
+	case !errors.As(err, &ee):
+		return 1, err
 	}
-	return ee.ExitCode()
+	if ws, ok := ee.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+		return 128 + int(ws.Signal()), nil
+	}
+	return ee.ExitCode(), nil
 }

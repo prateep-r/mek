@@ -93,7 +93,8 @@ func positionals(args []string, valueFlags map[string]bool) []string {
 	return out
 }
 
-func hasFlag(args []string, flag string) bool {
+// HasFlag reports whether args contain flag, as `--flag` or `--flag=value`.
+func HasFlag(args []string, flag string) bool {
 	for _, a := range args {
 		if a == flag || strings.HasPrefix(a, flag+"=") {
 			return true
@@ -122,19 +123,22 @@ func ClassifyAWS(args []string) Class {
 	}
 	svc, op := pos[0], pos[1]
 	if svc == "s3" { // high-level s3 commands
+		if HasFlag(args, "--dryrun") {
+			return Read
+		}
 		switch op {
 		case "ls", "presign":
 			return Read
 		case "rm", "rb":
 			return Destructive
 		case "sync":
-			if hasFlag(args, "--delete") {
+			if HasFlag(args, "--delete") {
 				return Destructive
 			}
 		}
 		return Write
 	}
-	if hasFlag(args, "--dry-run") {
+	if HasFlag(args, "--dry-run") {
 		return Read
 	}
 	switch {
@@ -160,8 +164,9 @@ var (
 		"config": true, "auth": true, "help": true, "info": true, "version": true,
 		"components": true, "topic": true, "init": true, "cheat-sheet": true, "feedback": true,
 	}
-	gcloudReadVerbs        = []string{"list", "describe", "get", "read", "tail", "print", "show", "search", "lookup", "help", "test", "validate", "check", "wait"}
-	gcloudDestructiveVerbs = []string{"delete", "remove", "destroy", "purge", "stop", "reset", "abandon", "cancel", "disable", "revoke", "detach", "suspend", "failover"}
+	// ls/cat/du/hash and rm are `gcloud storage` verbs; access reads a secret version.
+	gcloudReadVerbs        = []string{"list", "describe", "get", "read", "tail", "print", "show", "search", "lookup", "help", "test", "validate", "check", "wait", "ls", "cat", "du", "hash", "access"}
+	gcloudDestructiveVerbs = []string{"delete", "remove", "destroy", "purge", "stop", "reset", "abandon", "cancel", "disable", "revoke", "detach", "suspend", "failover", "rm"}
 	gcloudWriteVerbs       = []string{"create", "update", "set", "add", "deploy", "apply", "patch", "start", "resume", "resize", "import", "export", "enable", "attach", "ssh", "scp", "restart", "restore", "rollback", "promote", "move", "copy", "upload", "submit", "execute", "replace", "undelete", "reboot", "scale", "migrate"}
 )
 
@@ -177,6 +182,9 @@ func ClassifyGCloud(args []string) Class {
 	}
 	if len(pos) <= start || gcloudLocalGroups[pos[start]] {
 		return Read
+	}
+	if pos[start] == "storage" && HasFlag(args, "--delete-unmatched-destination-objects") {
+		return Destructive // storage rsync that deletes extra destination objects
 	}
 	return classifyVerbs(pos[start+1:], gcloudReadVerbs, gcloudWriteVerbs, gcloudDestructiveVerbs)
 }
@@ -195,14 +203,14 @@ var (
 		"init": true, "feedback": true, "cloud": true, "self-test": true, "bicep": true,
 	}
 	azReadVerbs        = []string{"list", "show", "get", "exists", "check", "wait", "query", "tail", "download", "browse"}
-	azDestructiveVerbs = []string{"delete", "remove", "purge", "deallocate", "stop", "reset", "revoke", "detach", "disable", "cancel", "abort", "failover", "regenerate"}
+	azDestructiveVerbs = []string{"delete", "remove", "purge", "deallocate", "stop", "reset", "revoke", "detach", "disable", "cancel", "abort", "failover", "regenerate", "reimage", "unregister"}
 	azWriteVerbs       = []string{"create", "update", "set", "add", "start", "restart", "deploy", "apply", "import", "enable", "attach", "assign", "scale", "resize", "upgrade", "invoke", "run", "swap", "move", "copy", "upload", "patch", "restore", "approve", "grant", "register", "rotate"}
 )
 
 // ClassifyAzure classifies `az <group>... <command> ...` arguments.
 func ClassifyAzure(args []string) Class {
 	pos := positionals(args, azValueFlags)
-	if len(pos) == 0 || azLocalGroups[pos[0]] || hasFlag(args, "--help") || hasFlag(args, "-h") {
+	if len(pos) == 0 || azLocalGroups[pos[0]] || HasFlag(args, "--help") || HasFlag(args, "-h") {
 		return Read
 	}
 	return classifyVerbs(pos[1:], azReadVerbs, azWriteVerbs, azDestructiveVerbs)
@@ -241,7 +249,7 @@ var (
 	}
 	// First word of an API operation name, e.g. "List" in ListServersDetails.
 	hcloudReadOps        = map[string]bool{"List": true, "Show": true, "Get": true, "Check": true, "Count": true, "Query": true, "Search": true, "Describe": true, "Validate": true, "Preview": true, "Estimate": true}
-	hcloudDestructiveOps = map[string]bool{"Delete": true, "Remove": true, "Stop": true, "Reboot": true, "Reset": true, "Detach": true, "Disassociate": true, "Unbind": true, "Revoke": true, "Cancel": true, "Disable": true, "Terminate": true, "Release": true, "Purge": true, "Uninstall": true, "Abort": true, "Deregister": true, "Unregister": true, "Unsubscribe": true, "Shutdown": true}
+	hcloudDestructiveOps = map[string]bool{"Delete": true, "Remove": true, "Stop": true, "Reboot": true, "Reset": true, "Detach": true, "Disassociate": true, "Unbind": true, "Revoke": true, "Cancel": true, "Disable": true, "Terminate": true, "Release": true, "Purge": true, "Uninstall": true, "Abort": true, "Deregister": true, "Unregister": true, "Unsubscribe": true, "Shutdown": true, "Reinstall": true}
 	// Prefixes that come before the verb (OpenStack-compatible APIs, batch variants).
 	hcloudOpPrefixes = map[string]bool{"Batch": true, "Nova": true, "Keystone": true, "Neutron": true, "Cinder": true}
 )
@@ -258,7 +266,7 @@ func IsHcloudAPICommand(args []string) bool {
 func ClassifyHuawei(args []string) Class {
 	pos := positionals(args, hcloudValueFlags)
 	if len(pos) < 2 || hcloudLocalCommands[pos[0]] ||
-		hasFlag(args, "--dryrun") || hasFlag(args, "--help") || hasFlag(args, "--skeleton") {
+		HasFlag(args, "--dryrun") || HasFlag(args, "--help") || HasFlag(args, "--skeleton") {
 		return Read
 	}
 	if pos[0] == "obs" {

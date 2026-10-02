@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -76,20 +78,57 @@ func TestRegistry(t *testing.T) {
 			t.Errorf("duplicate cloud %q / CLI %q", c.Name, c.CLI)
 		}
 		seen[c.Name], seen["cli:"+c.CLI] = true, true
-		if p := c.New(&config.Config{}, &config.Context{Name: "x", Provider: c.Name}, t.TempDir()); p.CLI() != c.CLI {
-			t.Errorf("%s: New() made a provider for %q", c.Name, p.CLI())
+		if p := c.New(&config.Config{}, &config.Context{Name: "x", Provider: c.Name}, t.TempDir()); p.Describe() == "" {
+			t.Errorf("%s: New() made a provider with no description", c.Name)
 		}
 	}
 	// Each cloud's Strategy is the right classifier.
 	destructive := map[string]string{"aws": "ec2 terminate-instances", "gcloud": "compute instances delete vm",
 		"az": "vm delete -n vm", "hcloud": "ECS DeleteServers"}
-	for cli, args := range destructive {
-		c, ok := LookupCLI(cli)
+	for _, c := range Clouds() {
+		args, ok := destructive[c.CLI]
 		if !ok {
-			t.Fatalf("no cloud for %s", cli)
+			t.Fatalf("no destructive example for %s", c.CLI)
 		}
 		if got := c.Classify(strings.Fields(args)); got != guard.Destructive {
-			t.Errorf("%s %s = %s, want destructive", cli, args, got)
+			t.Errorf("%s %s = %s, want destructive", c.CLI, args, got)
 		}
+	}
+}
+
+func TestForPanicsOnUnvalidatedContext(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("For must panic for an unknown provider")
+		}
+	}()
+	For(&config.Config{}, &config.Context{Name: "x", Provider: "oracle"})
+}
+
+func TestLoad(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("MEK_HOME", home)
+	if _, err := Load(); err == nil {
+		t.Error("missing config must fail")
+	}
+	write := func(s string) { os.WriteFile(filepath.Join(home, "config.yaml"), []byte(s), 0o600) }
+	write("contexts:\n  a: {provider: gcp}\n")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "project") {
+		t.Errorf("cloud rule: %v", err)
+	}
+	write("contexts:\n  a: {provider: gcp, project: p}\n")
+	if cfg, err := Load(); err != nil || cfg.Contexts["a"] == nil {
+		t.Errorf("valid: %v", err)
+	}
+}
+
+func TestHelpers(t *testing.T) {
+	for in, want := range map[string]string{"": "", "a": "a", "a b": "a or b", "a b c": "a, b or c"} {
+		if got := joinOr(strings.Fields(in)); got != want {
+			t.Errorf("joinOr(%q) = %q", in, got)
+		}
+	}
+	if orDash("") != "-" || orDash("x") != "x" {
+		t.Error("orDash")
 	}
 }

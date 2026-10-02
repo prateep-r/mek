@@ -29,8 +29,9 @@ type app struct {
 }
 
 // NewRoot builds the command tree.
-func NewRoot() *cobra.Command {
-	a := &app{exec: runner.Exec}
+func NewRoot() *cobra.Command { return newRoot(&app{exec: runner.Exec}) }
+
+func newRoot(a *app) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "mek",
 		Short: "Log in, switch and run commands across AWS, GCP, Azure and Huawei Cloud",
@@ -68,7 +69,6 @@ safety guard and audit log for protected contexts.`,
 
 // loaded bundles what most commands need. env is only set by load.
 type loaded struct {
-	cfg  *config.Config
 	ctx  *config.Context
 	prov provider.Provider
 	env  provider.Env
@@ -88,11 +88,7 @@ func (a *app) resolve(name string) (*loaded, error) {
 	if err != nil {
 		return nil, err
 	}
-	prov, err := provider.For(cfg, ctx)
-	if err != nil {
-		return nil, err
-	}
-	return &loaded{cfg: cfg, ctx: ctx, prov: prov}, nil
+	return &loaded{ctx: ctx, prov: provider.For(cfg, ctx)}, nil
 }
 
 // load resolves the context and prepares its environment (writing provider

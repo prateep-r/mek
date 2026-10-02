@@ -178,9 +178,6 @@ func Current() string {
 // SetCurrent persists the current context name.
 // Atomic, so a shell prompt running `mek ctx --short` never reads a half-written file.
 func SetCurrent(name string) error {
-	b, err := yaml.Marshal(state{Current: name})
-	if err != nil {
-		return err
-	}
+	b, _ := yaml.Marshal(state{Current: name}) // a struct of one string always marshals
 	return fsutil.WriteFileAtomic(statePath(), b, 0o600)
 }

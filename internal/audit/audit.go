@@ -58,11 +58,14 @@ func username() string {
 			return u
 		}
 	}
-	if u, err := user.Current(); err == nil {
-		return u.Username
+	u, err := currentUser()
+	if err != nil {
+		return ""
 	}
-	return ""
+	return u.Username
 }
+
+var currentUser = user.Current // test seam
 
 // Write appends an entry. Errors are returned but callers may ignore them:
 // auditing must never break the user's command.
@@ -80,23 +83,31 @@ func Write(e Entry) error {
 		return err
 	}
 	defer f.Close()
-	b, err := json.Marshal(e)
-	if err != nil {
-		return err
-	}
-	_, err = f.Write(append(b, '\n'))
-	return err
+	return json.NewEncoder(f).Encode(e) // one line; an Entry always marshals
 }
 
-var secretFlag = regexp.MustCompile(`(?i)(password|passwd|secret|token|private-key|key-material|credential|plaintext|auth-key|api-key|cli-input-json|cli-input-yaml)`)
+var secretFlag = regexp.MustCompile(`(?i)(password|passwd|secret|token|private-key|key-material|credential|plaintext|auth-key|api-key|account-key|connection-string|cli-input-json|cli-input-yaml)`)
 
-// Mask hides values of secret-looking flags in both `--flag value` and `--flag=value` forms.
+// Short flags that carry a secret in one CLI only (in others they mean
+// something else): `az login -p <password>`, `hcloud obs config -k <sk> -t <token>`.
+var shortSecretFlags = map[string]map[string]bool{
+	"az":     {"-p": true},
+	"hcloud": {"-k": true, "-t": true},
+}
+
+// Mask hides values of secret-looking flags in both `--flag value` and
+// `--flag=value` forms. args[0] is the program name.
 func Mask(args []string) []string {
 	out := make([]string, len(args))
 	copy(out, args)
+	var short map[string]bool
+	if len(args) > 0 {
+		short = shortSecretFlags[filepath.Base(args[0])]
+	}
 	for i := 0; i < len(out); i++ {
 		a := out[i]
-		if !strings.HasPrefix(a, "-") || !secretFlag.MatchString(a) {
+		name, _, _ := strings.Cut(a, "=")
+		if !strings.HasPrefix(a, "-") || !(secretFlag.MatchString(a) || short[name]) {
 			continue
 		}
 		if k, _, ok := strings.Cut(a, "="); ok {

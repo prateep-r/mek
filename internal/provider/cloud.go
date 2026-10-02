@@ -16,7 +16,7 @@ import (
 type Cloud struct {
 	Name  string // provider name in config.yaml ("aws")
 	CLI   string // official CLI wrapped as `mek <cli> ...` ("aws")
-	Title string // human name of the CLI ("aws CLI")
+	Title string // human name of the CLI ("AWS CLI")
 
 	// New creates the Provider for one context (Factory Method).
 	New func(cfg *config.Config, ctx *config.Context, dir string) Provider
@@ -53,16 +53,6 @@ func Lookup(name string) (Cloud, bool) {
 	return Cloud{}, false
 }
 
-// LookupCLI finds a cloud by the CLI it wraps.
-func LookupCLI(cli string) (Cloud, bool) {
-	for _, c := range clouds {
-		if c.CLI == cli {
-			return c, true
-		}
-	}
-	return Cloud{}, false
-}
-
 func names() []string {
 	n := make([]string, len(clouds))
 	for i, c := range clouds {
@@ -71,13 +61,14 @@ func names() []string {
 	return n
 }
 
-// For returns the provider for a context.
-func For(cfg *config.Config, ctx *config.Context) (Provider, error) {
+// For returns the provider for a context from a validated config (see Load);
+// an unknown provider there is a programming error, so For panics.
+func For(cfg *config.Config, ctx *config.Context) Provider {
 	c, ok := Lookup(ctx.Provider)
 	if !ok {
-		return nil, fmt.Errorf("unsupported provider %q", ctx.Provider)
+		panic(fmt.Sprintf("provider.For: unvalidated context %q has unknown provider %q", ctx.Name, ctx.Provider))
 	}
-	return c.New(cfg, ctx, config.Dir()), nil
+	return c.New(cfg, ctx, config.Dir())
 }
 
 // Validate checks every context against its cloud's rules, in name order so

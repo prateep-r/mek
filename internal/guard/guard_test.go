@@ -43,7 +43,8 @@ func TestClassifyAWS(t *testing.T) {
 
 func TestClassifyGCloud(t *testing.T) {
 	cases := map[string]Class{
-		"compute instances list":                   Read,
+		"":                       Read,
+		"compute instances list": Read,
 		"compute instances describe vm-1 --zone a": Read,
 		"--project p compute instances list":       Read,
 		"projects get-iam-policy p":                Read,
@@ -144,6 +145,68 @@ func TestDecide(t *testing.T) {
 	for _, c := range cases {
 		if got := Decide(c.ctx, c.c); got != c.want {
 			t.Errorf("Decide(%+v,%s)=%d want %d", c.ctx, c.c, got, c.want)
+		}
+	}
+}
+
+func TestClassString(t *testing.T) {
+	for c, want := range map[Class]string{Read: "read", Write: "write", Destructive: "destructive", Unknown: "unknown"} {
+		if c.String() != want {
+			t.Errorf("%d = %s", c, c)
+		}
+	}
+}
+
+// Cases added after review: storage/secrets reads that a readonly context
+// blocked, s3 --dryrun, and value flags given as --flag=value.
+func TestClassifyRegressions(t *testing.T) {
+	cases := []struct {
+		classify func([]string) Class
+		args     string
+		want     Class
+	}{
+		{ClassifyAWS, "s3 rm s3://b/k --dryrun", Read},
+		{ClassifyAWS, "s3 sync . s3://b --dryrun --delete", Read},
+		{ClassifyAWS, "--region=ap-southeast-1 ec2 describe-instances", Read},
+		{ClassifyAWS, "ec2 describe-instances -- --ignored", Read},
+		{ClassifyGCloud, "storage ls gs://b", Read},
+		{ClassifyGCloud, "storage cat gs://b/o", Read},
+		{ClassifyGCloud, "storage rm gs://b/o", Destructive},
+		{ClassifyGCloud, "storage cp a gs://b/a", Write},
+		{ClassifyGCloud, "storage rsync . gs://b --delete-unmatched-destination-objects", Destructive},
+		{ClassifyGCloud, "secrets versions access latest --secret=s", Read},
+		{ClassifyGCloud, "beta", Read},
+		{ClassifyAzure, "vm reimage -g rg -n vm", Destructive},
+		{ClassifyAzure, "provider unregister -n Microsoft.Web", Destructive},
+		{ClassifyHuawei, "ECS ReinstallServerWithCloudInit", Destructive},
+		{ClassifyHuawei, "ECS ResizeServer", Write},
+		{ClassifyHuawei, "obs mb obs://b", Write},
+		{ClassifyHuawei, "obs stat obs://b", Read},
+		{ClassifyHuawei, "obs rb obs://b", Destructive},
+		{ClassifyHuawei, "ECS --skeleton", Read},
+	}
+	for _, c := range cases {
+		if got := c.classify(strings.Fields(c.args)); got != c.want {
+			t.Errorf("%q = %s, want %s", c.args, got, c.want)
+		}
+	}
+	if got := ClassifyHuawei([]string{"ECS", ""}); got != Write {
+		t.Errorf("empty operation = %s, want write", got)
+	}
+}
+
+func TestIsHcloudAPICommand(t *testing.T) {
+	cases := map[string]bool{
+		"ECS ListServersDetails":                 true,
+		"--cli-profile p ECS ListServersDetails": true,
+		"configure list":                         false,
+		"--cli-region ap-southeast-2 version":    false,
+		"":                                       false,
+		"--help":                                 false,
+	}
+	for in, want := range cases {
+		if got := IsHcloudAPICommand(strings.Fields(in)); got != want {
+			t.Errorf("IsHcloudAPICommand(%q) = %v", in, got)
 		}
 	}
 }

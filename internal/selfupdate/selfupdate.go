@@ -15,12 +15,22 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/prateep-r/mek/internal/fsutil"
 )
 
 var client = &http.Client{Timeout: 60 * time.Second}
+
+// Test seams.
+var (
+	baseURL    = "https://github.com" // GitHub's web host, where releases live
+	executable = os.Executable
+)
 
 // ErrHomebrew means the binary is managed by Homebrew and must be upgraded there.
 var ErrHomebrew = errors.New("mek is installed via Homebrew — run: brew upgrade mek")
@@ -30,7 +40,7 @@ var ErrHomebrew = errors.New("mek is installed via Homebrew — run: brew upgrad
 func Latest(repo string) (string, error) {
 	c := *client
 	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	resp, err := c.Get("https://github.com/" + repo + "/releases/latest")
+	resp, err := c.Get(baseURL + "/" + repo + "/releases/latest")
 	if err != nil {
 		return "", err
 	}
@@ -43,8 +53,37 @@ func Latest(repo string) (string, error) {
 	return loc[i+len("/tag/"):], nil
 }
 
-// AssetName matches the archive name_template in .goreleaser.yaml.
-func AssetName() string { return fmt.Sprintf("mek_%s_%s.tar.gz", runtime.GOOS, runtime.GOARCH) }
+// assetName matches the archive name_template in .goreleaser.yaml.
+func assetName() string { return fmt.Sprintf("mek_%s_%s.tar.gz", runtime.GOOS, runtime.GOARCH) }
+
+var semver = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)(?:-(.+))?$`)
+
+// aheadOfRelease matches what `git describe` appends to a tag for a local
+// build: commits since the tag (-3-gabc1234) and/or -dirty.
+var aheadOfRelease = regexp.MustCompile(`^(\d+-g[0-9a-f]+)?(-?dirty)?$`)
+
+// Newer reports whether release latest should replace version current.
+// Unparsable current versions ("dev") always update; a local build of a tag
+// or ahead of it (v0.3.0-2-gabc, v0.3.0-dirty) is not downgraded; a
+// pre-release (v0.3.0-rc1) updates to the final v0.3.0.
+func Newer(current, latest string) bool {
+	c, l := semver.FindStringSubmatch(current), semver.FindStringSubmatch(latest)
+	if c == nil {
+		return true
+	}
+	if l == nil {
+		return false
+	}
+	for i := 1; i <= 3; i++ {
+		cn, _ := strconv.Atoi(c[i])
+		ln, _ := strconv.Atoi(l[i])
+		if ln != cn {
+			return ln > cn
+		}
+	}
+	// Same X.Y.Z: only a pre-release of it is older.
+	return c[4] != "" && !aheadOfRelease.MatchString(c[4]) && l[4] == ""
+}
 
 // IsHomebrew reports whether path lives inside a Homebrew prefix.
 func IsHomebrew(path string) bool {
@@ -58,7 +97,7 @@ func IsHomebrew(path string) bool {
 
 // Update installs release tag over the running executable.
 func Update(repo, tag string) (string, error) {
-	exe, err := os.Executable()
+	exe, err := executable()
 	if err != nil {
 		return "", err
 	}
@@ -69,8 +108,8 @@ func Update(repo, tag string) (string, error) {
 		return exe, ErrHomebrew
 	}
 
-	base := fmt.Sprintf("https://github.com/%s/releases/download/%s/", repo, tag)
-	asset := AssetName()
+	base := fmt.Sprintf("%s/%s/releases/download/%s/", baseURL, repo, tag)
+	asset := assetName()
 	archive, err := fetch(base + asset)
 	if err != nil {
 		return exe, err
@@ -87,22 +126,10 @@ func Update(repo, tag string) (string, error) {
 		return exe, err
 	}
 
-	tmp, err := os.CreateTemp(filepath.Dir(exe), ".mek-update-*")
-	if err != nil {
-		return exe, fmt.Errorf("cannot write to %s: %w", filepath.Dir(exe), err)
+	if err := fsutil.WriteFileAtomic(exe, bin, 0o755); err != nil {
+		return exe, fmt.Errorf("cannot replace %s: %w", exe, err)
 	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(bin); err != nil {
-		tmp.Close()
-		return exe, err
-	}
-	if err := tmp.Close(); err != nil {
-		return exe, err
-	}
-	if err := os.Chmod(tmp.Name(), 0o755); err != nil {
-		return exe, err
-	}
-	return exe, os.Rename(tmp.Name(), exe)
+	return exe, nil
 }
 
 func fetch(url string) ([]byte, error) {

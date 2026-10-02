@@ -33,8 +33,6 @@ type GCP struct {
 	dir string
 }
 
-func (g *GCP) CLI() string { return "gcloud" }
-
 func (g *GCP) configDir() string { return filepath.Join(g.dir, "gcloud", g.ctx.Name) }
 
 func (g *GCP) Prepare() (Env, error) {
@@ -78,9 +76,5 @@ func (g *GCP) WhoAmICommand() []string {
 }
 
 func (g *GCP) Describe() string {
-	region := g.ctx.Region
-	if region == "" {
-		region = "-"
-	}
-	return fmt.Sprintf("gcp %s / %s", g.ctx.Project, region)
+	return fmt.Sprintf("gcp %s / %s", g.ctx.Project, orDash(g.ctx.Region))
 }

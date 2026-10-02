@@ -121,8 +121,10 @@ func probeTools(ts []tool) []chan probe {
 	return res
 }
 
+var goos = runtime.GOOS // test seam: install hints differ on macOS
+
 func hint(p ui.Palette, t tool) string {
-	if runtime.GOOS == "darwin" && t.brew != "" {
+	if goos == "darwin" && t.brew != "" {
 		return t.brew + "  " + p.Dim("("+t.url+")")
 	}
 	return t.url

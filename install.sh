@@ -45,7 +45,15 @@ if command -v sha256sum >/dev/null 2>&1; then
 else
   SHA="shasum -a 256"
 fi
-if ! grep " $FILE\$" checksums.txt | $SHA -c - >/dev/null 2>&1; then
+# Compare hashes ourselves: `sha256sum -c` on macOS exits 0 when given no
+# checksum lines at all, which would install an unverified file.
+EXPECTED=$(awk -v f="$FILE" '$2 == f || $2 == "*" f { print $1; exit }' checksums.txt)
+if [ -z "$EXPECTED" ]; then
+  echo "mek: $FILE is not listed in checksums.txt — not installing" >&2
+  exit 1
+fi
+ACTUAL=$($SHA "$FILE" | awk '{ print $1 }')
+if [ "$ACTUAL" != "$EXPECTED" ]; then
   echo "mek: checksum verification FAILED for $FILE — not installing" >&2
   exit 1
 fi

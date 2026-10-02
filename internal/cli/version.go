@@ -24,6 +24,12 @@ func newVersionCmd() *cobra.Command {
 	}
 }
 
+// Self-update steps, swapped out in tests.
+var (
+	latestRelease = selfupdate.Latest
+	applyUpdate   = selfupdate.Update
+)
+
 func newSelfUpdateCmd() *cobra.Command {
 	var check bool
 	cmd := &cobra.Command{
@@ -31,19 +37,19 @@ func newSelfUpdateCmd() *cobra.Command {
 		Short: "Update mek to the latest release (installs via install.sh / manual download)",
 		Args:  cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
-			latest, err := selfupdate.Latest(version.Repo)
+			latest, err := latestRelease(version.Repo)
 			if err != nil {
 				return err
 			}
-			if latest == version.Version || "v"+version.Version == latest {
-				ui.Info("%s mek %s is the latest version", ui.Green("✓"), version.Version)
+			if !selfupdate.Newer(version.Version, latest) {
+				ui.Info("%s mek %s is up to date (latest release: %s)", ui.Green("✓"), version.Version, latest)
 				return nil
 			}
 			ui.Info("current: %s  latest: %s", version.Version, ui.Bold(latest))
 			if check {
 				return nil
 			}
-			exe, err := selfupdate.Update(version.Repo, latest)
+			exe, err := applyUpdate(version.Repo, latest)
 			if errors.Is(err, selfupdate.ErrHomebrew) {
 				ui.Info("%s %v", ui.Yellow("→"), err)
 				return nil

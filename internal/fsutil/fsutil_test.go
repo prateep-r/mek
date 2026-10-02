@@ -68,3 +68,40 @@ func TestWriteFileAtomicConcurrent(t *testing.T) {
 		t.Errorf("temp files left behind: %v", entries)
 	}
 }
+
+func TestWriteFileAtomicErrors(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file")
+	os.WriteFile(file, nil, 0o600)
+	if err := WriteFileAtomic(filepath.Join(file, "x", "config"), []byte("a"), 0o600); err == nil {
+		t.Error("MkdirAll under a file must fail")
+	}
+
+	locked := filepath.Join(dir, "locked")
+	os.Mkdir(locked, 0o500) // can't create the temp file here
+	t.Cleanup(func() { os.Chmod(locked, 0o700) })
+	if err := WriteFileAtomic(filepath.Join(locked, "config"), []byte("a"), 0o600); err == nil {
+		t.Error("CreateTemp in a read-only dir must fail")
+	}
+
+	target := filepath.Join(dir, "target")
+	os.MkdirAll(filepath.Join(target, "child"), 0o700) // rename over a non-empty dir fails
+	if err := WriteFileAtomic(target, []byte("a"), 0o600); err == nil {
+		t.Error("rename over a directory must fail")
+	}
+
+	// A temp file that can't be written (opened read-only).
+	old := createTemp
+	t.Cleanup(func() { createTemp = old })
+	createTemp = func(dir, pattern string) (*os.File, error) {
+		f, err := os.CreateTemp(dir, pattern)
+		if err != nil {
+			return nil, err
+		}
+		f.Close()
+		return os.Open(f.Name())
+	}
+	if err := WriteFileAtomic(filepath.Join(dir, "ro"), []byte("a"), 0o600); err == nil {
+		t.Error("write to a read-only temp file must fail")
+	}
+}
