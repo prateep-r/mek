@@ -17,8 +17,44 @@ jobs:
         with:
           # latest Go, so builds pick up standard-library security fixes
           go-version: stable
-      - run: make check
+      - run: make check # gofmt, vet, unit tests with -race
+      - run: make cover # unit + integration coverage, must be 100%
       - run: make vuln
+
+  # The real binary against stub CLIs, and install.sh + a user journey, on
+  # both platforms mek ships for: shell tools differ (macOS's sha256sum -c
+  # quirk only shows up there).
+  integration:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - run: make test-integration
+      - run: make test-e2e
+
+  # mek with the real aws / gcloud / az / hcloud CLIs: offline contract
+  # checks, then real API calls against Floci emulators (AWS, GCP, Azure).
+  real-clis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - run: sh test/contract/install-clis.sh
+      - run: make test-contract
+        env:
+          MEK_CONTRACT_REQUIRE: "1" # a missing CLI fails instead of skipping
+          MEK_CONTRACT_HCLOUD: "1" # throwaway runner: KooCLI may write ~/.hcloud
+      - run: make test-emulator
+        env:
+          MEK_EMULATOR_REQUIRE: "1" # missing docker or CLI fails instead of skipping
 
   goreleaser:
     runs-on: ubuntu-latest

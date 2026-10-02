@@ -16,13 +16,18 @@ LDFLAGS := -s -w \
 	-X $(MODULE)/internal/version.Commit=$(COMMIT) \
 	-X $(MODULE)/internal/version.Date=$(DATE)
 
-GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@latest
+# Pinned, so CI results never change on their own; bump deliberately.
+GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.8.0
+
+# Coverage counts product code only (not the test/ helpers).
+COVER_DIR  := $(abspath $(BIN_DIR)/cover)
+COVER_PKGS := ./cmd/...,./internal/...
 
 .DEFAULT_GOAL := help
-.PHONY: help build run install uninstall test cover fmt fmt-check vet lint vuln tidy check snapshot release-check clean
+.PHONY: help build run install uninstall test test-integration test-e2e test-contract test-emulator test-all docker-test docker-up docker-down docker-clean cover cover-html fmt fmt-check vet lint vuln tidy check snapshot release-check clean
 
 help: ## Show this help
-	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 ## ---- build ----
 
@@ -45,10 +50,31 @@ uninstall: ## Remove the installed binary (same PREFIX as install)
 test: ## Run unit tests with the race detector
 	go test -race ./...
 
-cover: ## Run tests and open an HTML coverage report
-	@mkdir -p $(BIN_DIR)
-	go test -coverprofile=$(BIN_DIR)/coverage.out ./...
-	go tool cover -html=$(BIN_DIR)/coverage.out
+test-integration: ## Run the real binary against stub cloud CLIs (env, guard, audit, signals)
+	go test -tags integration -count=1 ./test/integration/...
+
+test-e2e: ## Install from release artifacts with install.sh, then user journeys (incl. real prompts on a pty)
+	go test -tags e2e -count=1 ./test/e2e/...
+
+test-contract: ## Run mek with the real cloud CLIs, offline (a missing CLI is skipped)
+	go test -tags contract -count=1 ./test/contract/...
+
+test-emulator: ## Real CLIs against Floci cloud emulators in docker (AWS, GCP, Azure)
+	go test -tags emulator -count=1 ./test/emulator/...
+
+test-all: check test-integration test-e2e test-contract test-emulator ## Every test layer
+
+cover: ## Combined unit + integration coverage; fails below 100%
+	@rm -rf $(COVER_DIR) && mkdir -p $(COVER_DIR)/unit $(COVER_DIR)/integration
+	go test -count=1 -cover -coverpkg=$(COVER_PKGS) ./cmd/... ./internal/... -args -test.gocoverdir=$(COVER_DIR)/unit
+	MEK_COVERDIR=$(COVER_DIR)/integration go test -tags integration -count=1 ./test/integration/...
+	go tool covdata textfmt -i=$(COVER_DIR)/unit,$(COVER_DIR)/integration -o $(COVER_DIR)/cover.out
+	@go tool cover -func=$(COVER_DIR)/cover.out | awk '$$3 != "100.0%"'; \
+	  total=$$(go tool cover -func=$(COVER_DIR)/cover.out | awk '/^total:/ {print $$3}'); \
+	  echo "total coverage: $$total"; [ "$$total" = "100.0%" ] || { echo "coverage must be 100%"; exit 1; }
+
+cover-html: cover ## Open the combined coverage report in a browser
+	go tool cover -html=$(COVER_DIR)/cover.out
 
 fmt: ## Format all Go files
 	gofmt -w .
@@ -70,6 +96,22 @@ tidy: ## Tidy go.mod / go.sum
 	go mod tidy
 
 check: fmt-check vet test ## Everything CI should pass — run before pushing
+
+## ---- docker (mek's own, isolated test environment) ----
+
+COMPOSE := docker compose -f test/docker/compose.yaml
+
+docker-test: ## Every test layer in mek's container (real CLIs + Floci); TARGETS="..." to pick
+	$(COMPOSE) run --rm --build tests $(TARGETS); status=$$?; $(COMPOSE) down; exit $$status
+
+docker-up: ## Start mek's Floci emulators on 127.0.0.1:14566 (AWS) / 14588 (GCP) / 14577 (Azure)
+	$(COMPOSE) up -d --wait floci-aws floci-gcp floci-az
+
+docker-down: ## Stop and remove mek's containers, network and cache volume
+	$(COMPOSE) --profile tests down --volumes --remove-orphans
+
+docker-clean: docker-down ## docker-down, and remove the mek-test image too
+	-docker image rm mek-test:local
 
 ## ---- release ----
 

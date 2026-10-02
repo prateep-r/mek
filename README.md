@@ -124,6 +124,8 @@ hcloud configure set --cli-profile=my-sso-profile --cli-mode=SSO --cli-region=ap
 
 mek adds `--cli-profile` / `--cli-region` to each `mek hcloud …` command (KooCLI has
 no environment variable for them) and sets `HW_PROFILE` / `HW_REGION_NAME` for terraform.
+Like KooCLI, mek finds `~/.hcloud` through your account's home directory, not `$HOME`;
+set `MEK_HCLOUD_CONFIG` to read KooCLI's profiles from somewhere else.
 
 Rules checked on load: context names use letters, digits, `.`, `_` and `-`;
 `account_id` is the 12-digit AWS account ID (quote it); SSO contexts need
@@ -183,6 +185,7 @@ enforcement belongs in IAM roles, SCPs and org policies.
 - AWS login supports IAM Identity Center (SSO) and existing profiles; SAML-only IdPs without Identity Center are not built in (use `aws_profile` with your existing tooling).
 - Azure contexts each have their own `az login` (isolated config dirs), so several subscriptions in one tenant mean one login per context.
 - Huawei Cloud contexts need a KooCLI profile you create yourself; `mek login` only logs in SSO profiles (AK/SK profiles are used as-is).
+- KooCLI exits with status 0 even when a command fails, so `mek hcloud …` (and its audit entry) reports success then; check its output.
 - The Homebrew cask is macOS-only; use `install.sh` or `go install` on Linux.
 - Windows is not supported yet.
 
@@ -208,11 +211,53 @@ How the code fits together:
 
 ```bash
 make             # list all targets
-make check       # gofmt check + go vet + tests (race) — run before pushing
+make check       # gofmt check + go vet + unit tests (race) — run before pushing
+make test-all    # check + integration + e2e + contract + emulator
+make cover       # unit + integration coverage; fails below 100%
 make run ARGS="doctor"
 make install     # build with version info and copy to ~/.local/bin
 make vuln        # govulncheck
 make snapshot    # goreleaser build of all archives into dist/ (no publish)
+```
+
+Tests come in five layers, all run by CI (integration and e2e on Linux and macOS):
+
+| Layer | Where | What it covers |
+|---|---|---|
+| Unit | `*_test.go` next to the code | every package, with fakes for processes, prompts, HTTP and the filesystem |
+| Integration (`-tags integration`) | `test/integration` | the real binary against recording stub CLIs: env per cloud, leaked credentials removed, guard + audit, exit codes, signal forwarding, concurrent runs, login flows |
+| E2E (`-tags e2e`) | `test/e2e` | release archives served over HTTP, installed by the real `install.sh` (including tampered / unlisted archives being refused), a new user's first session on all four clouds, and the confirmation prompts answered on a real pseudo-terminal |
+| Contract (`-tags contract`) | `test/contract` | mek with the **real** `aws`, `gcloud`, `az` and `hcloud`, offline: each CLI reads the config, directories and flags mek hands it. A missing CLI is skipped; `MEK_CONTRACT_REQUIRE=1` makes it fail. The Huawei test also needs `MEK_CONTRACT_HCLOUD=1`, since KooCLI writes your real `~/.hcloud` — run it only on a throwaway machine (CI does). `sh test/contract/install-clis.sh` installs the CLIs on Debian/Ubuntu |
+| Emulator (`-tags emulator`) | `test/emulator` | the real CLIs making **real API calls** against [Floci](https://floci.io) emulators in docker — AWS, GCP (Cloud Storage) and Azure (Storage): a command the guard blocks never reaches the API, a confirmed one really changes state, API errors come back with the CLI's exit code. Each test starts its own container on a random local port (never an emulator you already run). Huawei Cloud has no emulator. AWS uses a profile with test keys: Floci 2.1.0 can't yet complete an SSO login (it loses Identity Store users on restart) |
+
+`make cover` merges unit coverage with coverage from the instrumented binary the
+integration tests run, so `main()` and real process paths count too. Tests that
+check permission errors need a non-root user.
+
+### Everything in Docker
+
+`test/docker/` is mek's own test environment, so you don't install four cloud CLIs
+or start emulators by hand: an image with Go and the real `aws`, `gcloud`, `az` and
+`hcloud`, plus Floci emulators for AWS, GCP and Azure.
+
+```bash
+make docker-test                          # every layer + coverage, nothing skipped
+make docker-test TARGETS="test-contract"  # just some make targets
+make docker-up                            # only the emulators, for local runs
+make docker-down                          # remove mek's containers, network, cache volume
+make docker-clean                         # ...and the mek-test image (~3.5 GB)
+```
+
+It is isolated from other projects on the same machine: compose project
+`mek-test` with its own network and volume, everything labelled
+`io.github.prateep-r.mek=test`, and emulator ports that aren't Floci's defaults —
+`127.0.0.1:14566` (AWS), `14588` (GCP), `14577` (Azure) — so an emulator another
+project runs on 4566 is never touched. With `make docker-up` running, point the
+emulator tests at it:
+
+```bash
+MEK_FLOCI_AWS_URL=http://127.0.0.1:14566 MEK_FLOCI_GCP_URL=http://127.0.0.1:14588 \
+MEK_FLOCI_AZ_URL=http://127.0.0.1:14577 make test-emulator
 ```
 
 Releases: push a tag `vX.Y.Z` — GitHub Actions runs GoReleaser, publishes the
