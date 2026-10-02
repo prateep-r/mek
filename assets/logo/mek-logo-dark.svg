@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 144" width="400" height="144" role="img" aria-label="mek">
+  <title>mek</title>
+  <svg x="0" y="8" width="128" height="128" viewBox="0 0 512 512">
+    <defs>
+    <clipPath id="mek-base"><rect width="512" height="359"/></clipPath>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#F6F1E7"/>
+  <g clip-path="url(#mek-base)" fill-opacity="0.85">
+    <circle cx="149" cy="310" r="72" fill="#0078D4"/>
+    <circle cx="221" cy="254" r="98" fill="#FF9900"/>
+    <circle cx="313" cy="252" r="96" fill="#4285F4"/>
+    <circle cx="375" cy="314" r="60" fill="#C7000B"/>
+  </g>
+  </svg>
+  <path transform="translate(166 12.5) scale(0.85)" d="M0,100 V64 A24,24 0 0 1 48,64 V100 M48,64 A24,24 0 0 1 96,64 V100
+     M124,70 H184 A30,30 0 1 0 177,89.3
+     M212,10 V100 M254,40 L212,76 M226,64 L256,100" fill="none" stroke="#F6F1E7" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

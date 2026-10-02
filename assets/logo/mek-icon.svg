@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="mek">
+  <title>mek</title>
+  <defs>
+    <!-- flat cloud base -->
+    <clipPath id="base"><rect width="512" height="359"/></clipPath>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#F6F1E7"/>
+  <!-- one translucent circle per supported cloud, together making one cloud:
+       Azure, AWS, GCP, Huawei Cloud (the two blues are kept apart) -->
+  <g clip-path="url(#base)" fill-opacity="0.85">
+    <circle cx="149" cy="310" r="72" fill="#0078D4"/>
+    <circle cx="221" cy="254" r="98" fill="#FF9900"/>
+    <circle cx="313" cy="252" r="96" fill="#4285F4"/>
+    <circle cx="375" cy="314" r="60" fill="#C7000B"/>
+  </g>
+</svg>
