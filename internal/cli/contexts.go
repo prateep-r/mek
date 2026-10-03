@@ -32,12 +32,20 @@ func newInitCmd() *cobra.Command {
 }
 
 func newUseCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:               "use <context>",
-		Short:             "Switch the current context",
+	var shell bool
+	cmd := &cobra.Command{
+		Use:   "use <context>",
+		Short: "Switch the current context (every shell), or only this shell with --shell",
+		Long: `Switch the current context.
+
+  mek use prod                     # saved: every shell without $MEK_CONTEXT
+  eval "$(mek use --shell prod)"   # this shell only (sets $MEK_CONTEXT)
+
+The saved context is shared by all your terminals; --shell leaves it alone,
+so terminals can work on different contexts at the same time.`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeContexts,
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := provider.Load()
 			if err != nil {
 				return err
@@ -45,6 +53,13 @@ func newUseCmd() *cobra.Command {
 			ctx, err := cfg.Get(args[0])
 			if err != nil {
 				return err
+			}
+			if shell {
+				// Context names are [A-Za-z0-9._-]: safe to print for eval.
+				fmt.Fprintf(cmd.OutOrStdout(), "export MEK_CONTEXT=%s\n", ctx.Name)
+				ui.Info("%s this shell now uses %s %s %s", ui.Green("✓"), ui.Bold(ctx.Name),
+					ui.Dim(provider.For(cfg, ctx).Describe()), tags(ui.Err(), ctx))
+				return nil
 			}
 			if err := config.SetCurrent(ctx.Name); err != nil {
 				return err
@@ -59,6 +74,8 @@ func newUseCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&shell, "shell", false, `switch only this shell: print an export for eval "$(mek use --shell <context>)"`)
+	return cmd
 }
 
 func (a *app) newCtxCmd() *cobra.Command {
@@ -111,7 +128,7 @@ func (a *app) newCtxCmd() *cobra.Command {
 func (a *app) newLoginCmd() *cobra.Command {
 	var adc bool
 	cmd := &cobra.Command{
-		Use:   "login [context]",
+		Use:   "login [context] [-- <login flags>]",
 		Short: "Log in to a context (AWS IAM Identity Center / gcloud / az / hcloud SSO)",
 		Long: `Log in to a context using the official CLI's own login flow.
 
@@ -126,13 +143,25 @@ mek never edits KooCLI's profiles; create an SSO profile once with:
 
   hcloud configure set --cli-profile=<name> --cli-mode=SSO --cli-region=<region> \
     --cli-sso-start-url=<portal-url> --cli-sso-region=<region> \
-    --cli-sso-account-name=<account> --cli-sso-permission-set-name=<permission-set>`,
-		Args:              cobra.MaximumNArgs(1),
+    --cli-sso-account-name=<account> --cli-sso-permission-set-name=<permission-set>
+
+Flags after -- go to the CLI's own login command, e.g. without a browser or
+in CI (the login still lands in the context's isolated config):
+
+  mek login dev    -- --no-browser                   # aws sso login
+  mek login ci-gcp -- --cred-file=key.json           # gcloud auth login
+  mek login ci-az  -- --service-principal -u "$APP_ID" -p "$SECRET"   # az login`,
+		Args: func(cmd *cobra.Command, args []string) error {
+			if n := len(contextArgs(cmd, args)); n > 1 {
+				return fmt.Errorf("accepts at most 1 context, got %d (put login flags after --)", n)
+			}
+			return nil
+		},
 		ValidArgsFunction: completeContexts,
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			name := ""
-			if len(args) == 1 {
-				name = args[0]
+			if ctxArgs := contextArgs(cmd, args); len(ctxArgs) == 1 {
+				name = ctxArgs[0]
 			}
 			l, err := a.load(name)
 			if err != nil {
@@ -143,6 +172,9 @@ mek never edits KooCLI's profiles; create an SSO profile once with:
 			if err != nil {
 				return err
 			}
+			// Extra flags belong to the actual login (the first command), not to
+			// follow-ups like `az account set`.
+			cmds[0] = append(cmds[0], loginFlags(cmd, args)...)
 			env := l.env.Apply(os.Environ())
 			for _, argv := range cmds {
 				if err := a.runPlain(argv, env); err != nil {
@@ -155,4 +187,19 @@ mek never edits KooCLI's profiles; create an SSO profile once with:
 	}
 	cmd.Flags().BoolVar(&adc, "adc", false, "GCP: also run `gcloud auth application-default login`")
 	return cmd
+}
+
+// contextArgs are the arguments before "--"; loginFlags the ones after it.
+func contextArgs(cmd *cobra.Command, args []string) []string {
+	if dash := cmd.ArgsLenAtDash(); dash >= 0 {
+		return args[:dash]
+	}
+	return args
+}
+
+func loginFlags(cmd *cobra.Command, args []string) []string {
+	if dash := cmd.ArgsLenAtDash(); dash >= 0 {
+		return args[dash:]
+	}
+	return nil
 }

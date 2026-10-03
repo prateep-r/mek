@@ -4,11 +4,14 @@ package audit
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/prateep-r/mek/internal/config"
@@ -67,6 +70,14 @@ func username() string {
 
 var currentUser = user.Current // test seam
 
+// Rotation: once audit.jsonl reaches maxSize it becomes audit.jsonl.1, older
+// files shift to .2 … .keep, and the oldest is dropped.
+var (
+	maxSize int64 = 10 << 20
+	keep          = 3
+	flock         = syscall.Flock // test seam
+)
+
 // Write appends an entry. Errors are returned but callers may ignore them:
 // auditing must never break the user's command.
 func Write(e Entry) error {
@@ -78,12 +89,36 @@ func Write(e Entry) error {
 	if err := os.MkdirAll(config.Dir(), 0o700); err != nil {
 		return err
 	}
+	rerr := rotate() // a failed rotation must not lose this entry
 	f, err := os.OpenFile(Path(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return errors.Join(rerr, err)
+	}
+	defer f.Close()
+	return errors.Join(rerr, json.NewEncoder(f).Encode(e)) // one line; an Entry always marshals
+}
+
+// rotate moves a full log aside. Concurrent mek processes take a file lock
+// and re-check the size, so only one of them rotates.
+func rotate() error {
+	if fi, err := os.Stat(Path()); err != nil || fi.Size() < maxSize {
+		return nil
+	}
+	lock, err := os.OpenFile(Path()+".lock", os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	return json.NewEncoder(f).Encode(e) // one line; an Entry always marshals
+	defer lock.Close() // also releases the lock
+	if err := flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return err
+	}
+	if fi, err := os.Stat(Path()); err != nil || fi.Size() < maxSize {
+		return nil // another mek rotated while we waited
+	}
+	for i := keep - 1; i >= 1; i-- {
+		os.Rename(fmt.Sprintf("%s.%d", Path(), i), fmt.Sprintf("%s.%d", Path(), i+1)) // gaps are fine
+	}
+	return os.Rename(Path(), Path()+".1")
 }
 
 var secretFlag = regexp.MustCompile(`(?i)(password|passwd|secret|token|private-key|key-material|credential|plaintext|auth-key|api-key|account-key|connection-string|cli-input-json|cli-input-yaml)`)
@@ -114,7 +149,10 @@ func Mask(args []string) []string {
 			out[i] = k + "=****"
 			continue
 		}
-		if i+1 < len(out) && !strings.HasPrefix(out[i+1], "-") {
+		// The next argument is the value unless it is clearly another long
+		// flag; "-abc" may be a password, so it is masked too (over-masking a
+		// short flag in the log is the safe mistake).
+		if i+1 < len(out) && !strings.HasPrefix(out[i+1], "--") {
 			out[i+1] = "****"
 			i++
 		}

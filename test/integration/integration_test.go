@@ -359,3 +359,37 @@ func TestDoctor(t *testing.T) {
 		t.Errorf("missing aws+gcloud: code %d stderr %q", r.Code, r.Stderr)
 	}
 }
+
+// Each terminal can pin its own context without touching the saved one.
+func TestUseShellPerTerminal(t *testing.T) {
+	e := setup(t, config)
+	ok(t, e.run("use", "uat"))
+	script := `eval "$("$MEK" use --shell gcp)" && "$MEK" ctx --short && "$MEK" -c gcp gcloud config list`
+	r := testkit.Run(t, "/bin/sh", append(e.vars, "MEK="+mek), "-c", script)
+	if r.Stdout != "gcp\n" || r.Code != 0 {
+		t.Errorf("this shell should use gcp: %q (exit %d, %s)", r.Stdout, r.Code, r.Stderr)
+	}
+	if r := e.run("ctx", "--short"); r.Stdout != "uat\n" { // another terminal
+		t.Errorf("the saved context changed: %q", r.Stdout)
+	}
+}
+
+func TestLoginFlagsReachTheCLI(t *testing.T) {
+	e := setup(t, config)
+	ok(t, e.run("login", "uat", "--", "--no-browser"))
+	ok(t, e.run("login", "az", "--", "--service-principal", "-u", "app", "-p", "s3cret"))
+	var got []string
+	for _, c := range e.calls() {
+		got = append(got, c.Name+" "+c.ArgLine())
+	}
+	want := []string{
+		"aws sso login --profile mek-uat --no-browser",
+		"aws sts get-caller-identity --output table",
+		"az login --tenant contoso.onmicrosoft.com --service-principal -u app -p s3cret",
+		"az account set --subscription 00000000-1111-2222-3333-444444444444",
+		"az account show --output table",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("login ran:\n  %s\nwant:\n  %s", strings.Join(got, "\n  "), strings.Join(want, "\n  "))
+	}
+}

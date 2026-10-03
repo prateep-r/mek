@@ -333,3 +333,36 @@ func TestTakeGlobalFlagsConsumesAll(t *testing.T) {
 		t.Errorf("rest=%v opts=%+v err=%v", rest, a.opts, err)
 	}
 }
+
+func TestUseShell(t *testing.T) {
+	h := newHarness(t, testConfig)
+	h.mustRun("use", "uat")
+	out := h.mustRun("use", "--shell", "prod")
+	if out != "export MEK_CONTEXT=prod\n" {
+		t.Errorf("use --shell printed %q", out)
+	}
+	if config.Current() != "uat" {
+		t.Errorf("use --shell must not change the saved context, now %q", config.Current())
+	}
+	_, err := h.run("use", "--shell", "nope")
+	wantErr(t, err, "unknown context")
+}
+
+func TestLoginPassesFlagsToTheCLI(t *testing.T) {
+	h := newHarness(t, testConfig)
+	h.mustRun("login", "az", "--", "--service-principal", "-u", "app", "-p", "s3cret")
+	got := h.exec.argv()
+	if got[0] != "az login --tenant t --service-principal -u app -p s3cret" || got[1] != "az account set --subscription 00000000-1111-2222-3333-444444444444" {
+		t.Errorf("flags must go to the login command only: %q", got)
+	}
+
+	h.exec.invs = nil
+	t.Setenv("MEK_CONTEXT", "uat") // no context argument: the current one
+	h.mustRun("login", "--", "--no-browser")
+	if got := h.exec.argv()[0]; got != "aws sso login --profile mek-uat --no-browser" {
+		t.Errorf("login -- without context: %q", got)
+	}
+
+	_, err := h.run("login", "uat", "az")
+	wantErr(t, err, "at most 1 context")
+}

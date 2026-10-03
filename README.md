@@ -23,7 +23,7 @@ mek exec -- terraform plan  # any tool, same credentials
 - **No long-lived keys** — AWS and Huawei Cloud use IAM Identity Center (SSO) through their CLIs' own token caches; GCP and Azure use an isolated CLI config per context.
 - **Your files stay untouched** — mek writes its own AWS config (`~/.config/mek/aws/config`) instead of editing `~/.aws/config`, and never edits KooCLI profiles.
 - **Prod guard** — `protected` contexts confirm writes and require typing the context name for destructive commands; `readonly` contexts block them.
-- **Audit log** — every command is recorded in `~/.config/mek/audit.jsonl` with secrets masked.
+- **Audit log** — every command is recorded in `~/.config/mek/audit.jsonl` with secrets masked (rotated at 10 MiB, 3 old files kept).
 
 ## Install
 
@@ -140,9 +140,10 @@ Azure `subscription_id` is a GUID.
 |---|---|
 | `mek init` | create the config file |
 | `mek ctx ls` | list contexts (`*` = current) |
-| `mek use <ctx>` | switch the current context |
+| `mek use <ctx>` | switch the current context (saved, shared by every terminal) |
+| `eval "$(mek use --shell <ctx>)"` | switch only this terminal |
 | `mek ctx` / `mek ctx --short` | show the current context (`--short` for shell prompts) |
-| `mek login [ctx] [--adc]` | `aws sso login` / `gcloud auth login` (+ application-default with `--adc`) / `az login` / `hcloud configure sso` |
+| `mek login [ctx] [--adc] [-- <flags>]` | `aws sso login` / `gcloud auth login` (+ application-default with `--adc`) / `az login` / `hcloud configure sso`; flags after `--` go to that login command |
 | `mek aws …` / `mek gcloud …` / `mek az …` / `mek hcloud …` | run the CLI in the context, through the guard and audit log |
 | `mek exec -- <cmd>` | run any command with the context's credentials |
 | `eval "$(mek env [ctx])"` | export the context into your shell (bypasses guard/audit) |
@@ -155,6 +156,28 @@ Global flags go **before** the CLI name: `mek -c baas-prod --yes aws ecs update-
 - `-c, --context <ctx>` — use a context for one command (also `$MEK_CONTEXT`)
 - `-y, --yes` — accept write confirmations (for scripts)
 - `--confirm <ctx>` — accept destructive confirmations non-interactively
+
+### Several contexts at once
+
+`mek use` saves one current context for all your terminals. To work on
+different contexts side by side, pin a terminal with `eval "$(mek use --shell prod)"`
+(it sets `$MEK_CONTEXT`, which wins over the saved context), or pass `-c` per command.
+Runs on different contexts at the same time never mix credentials.
+
+### Logging in without a browser (CI)
+
+Flags after `--` go to the CLI's own login, which still lands in the context's
+isolated config:
+
+```bash
+mek login dev    -- --no-browser                                  # aws sso login
+mek login ci-gcp -- --cred-file="$GOOGLE_APPLICATION_CREDENTIALS"  # gcloud auth login
+mek login ci-az  -- --service-principal -u "$APP_ID" -p "$SECRET"   # az login
+```
+
+mek removes `GOOGLE_APPLICATION_CREDENTIALS` and similar variables from the
+commands it runs so they can't override the context; passing the file to
+`--cred-file` as above logs the context in with it instead.
 
 ### Show the context in your prompt
 
