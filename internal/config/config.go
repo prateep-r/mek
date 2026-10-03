@@ -56,6 +56,8 @@ type Context struct {
 	Clusters map[string]*Cluster `yaml:"clusters,omitempty"`
 	// Hosts for `mek shell` (and as tunnel hops), by alias.
 	Targets map[string]*Target `yaml:"targets,omitempty"`
+	// Port forwards for `mek tunnel`, by alias.
+	Tunnels map[string]*Tunnel `yaml:"tunnels,omitempty"`
 }
 
 type Config struct {

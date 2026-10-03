@@ -60,6 +60,7 @@ safety guard and audit log for protected contexts.`,
 	}
 	root.AddCommand(
 		a.newShellCmd(),
+		a.newTunnelCmd(),
 		a.newKubectlCmd(),
 		a.newKubeCmd(),
 		a.newExecCmd(),

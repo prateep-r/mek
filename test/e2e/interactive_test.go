@@ -118,6 +118,8 @@ func TestInteractivePrompts(t *testing.T) {
 		{"shell, answer y", []string{"-c", "prod", "shell", "i-0123456789abcdef0"}, "shell command on prod", "y\r", 0, true, "confirmed"},
 		{"shell, answer n", []string{"-c", "prod", "shell", "i-0123456789abcdef0"}, "Continue? [y/N]:", "n\r", 1, false, "declined"},
 		{"gcp shell asks too", []string{"-c", "gcp-prod", "shell", "vm-1", "--zone", "z"}, "Continue? [y/N]:", "y\r", 0, true, "confirmed"},
+		{"tunnel, answer y", []string{"-c", "prod", "tunnel", "--via", "i-0123456789abcdef0", "--to", "db.internal:5432", "--local", "45432"}, "tunnel command on prod", "y\r", 0, true, "confirmed"},
+		{"tunnel, answer n", []string{"-c", "prod", "tunnel", "--via", "i-0123456789abcdef0", "--to", ":22", "--local", "45433"}, "Continue? [y/N]:", "n\r", 1, false, "declined"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"unicode"
@@ -21,19 +22,78 @@ type Target struct {
 	User     string `yaml:"user,omitempty"` // gcp: SSH user (default: gcloud's)
 }
 
+// Tunnel is a local port forwarded to a private host (mek tunnel). Which
+// way it goes follows from the fields set: cloudsql → Cloud SQL Auth Proxy;
+// via alone → a port on that instance; via and host → another host,
+// reached through the instance.
+type Tunnel struct {
+	Via       string `yaml:"via,omitempty"`        // a target name or instance spec
+	Host      string `yaml:"host,omitempty"`       // remote host reached through via
+	Port      int    `yaml:"port,omitempty"`       // remote port
+	LocalPort int    `yaml:"local_port,omitempty"` // default: port + 10000
+	CloudSQL  string `yaml:"cloudsql,omitempty"`   // gcp: PROJECT:REGION:INSTANCE
+	PrivateIP bool   `yaml:"private_ip,omitempty"` // gcp: Cloud SQL over its private IP
+}
+
+// Local is the local port: local_port, or the remote port + 10000.
+func (t *Tunnel) Local() int {
+	if t.LocalPort != 0 {
+		return t.LocalPort
+	}
+	return t.Port + 10000
+}
+
+// Validate checks a tunnel's shape; each cloud adds which kinds it supports.
+func (t *Tunnel) Validate() error {
+	if err := argValues("", field{"via", t.Via}, field{"host", t.Host}, field{"cloudsql", t.CloudSQL}); err != nil {
+		return err
+	}
+	if t.LocalPort < 0 || t.LocalPort > 65535 {
+		return fmt.Errorf("local_port %d is not a port (1-65535)", t.LocalPort)
+	}
+	if t.CloudSQL != "" {
+		if t.Via != "" || t.Host != "" || t.Port != 0 {
+			return errors.New("cloudsql tunnels take only local_port and private_ip")
+		}
+		if t.LocalPort == 0 {
+			return errors.New("cloudsql tunnels need local_port")
+		}
+		return nil
+	}
+	if t.PrivateIP {
+		return errors.New("private_ip is only for cloudsql tunnels")
+	}
+	if t.Via == "" {
+		return errors.New("needs via (a target) or cloudsql")
+	}
+	if t.Port < 1 || t.Port > 65535 {
+		return fmt.Errorf("port %d is not a port (1-65535)", t.Port)
+	}
+	if t.Local() > 65535 {
+		return fmt.Errorf("port %d + 10000 is not a port: set local_port", t.Port)
+	}
+	return nil
+}
+
 // Names that would clash with subcommands (`mek kube token`, `mek tunnel ls`).
 var (
 	reservedClusterNames = map[string]bool{"token": true}
 	reservedTargetNames  = map[string]bool{"ls": true, "list": true, "stop": true, "logs": true}
+	reservedTunnelNames  = reservedTargetNames // `mek tunnel ls`
 )
 
 type field struct{ key, val string }
 
-// argValues checks every field of an entry with argValue.
+// argValues checks every field of an entry with argValue; errors name the
+// field as prefix.key (or key alone).
 func argValues(prefix string, fs ...field) error {
 	for _, f := range fs {
 		if err := argValue(f.val); err != nil {
-			return fmt.Errorf("%s.%s %w", prefix, f.key, err)
+			key := f.key
+			if prefix != "" {
+				key = prefix + "." + key
+			}
+			return fmt.Errorf("%s %w", key, err)
 		}
 	}
 	return nil
@@ -63,6 +123,17 @@ func (c *Context) validateAccess() error {
 		}
 		if err := argValues("targets."+alias, field{"instance", t.Instance}, field{"zone", t.Zone}, field{"user", t.User}); err != nil {
 			return err
+		}
+	}
+	for alias, t := range c.Tunnels {
+		if err := validateAlias("tunnels", alias, reservedTunnelNames); err != nil {
+			return err
+		}
+		if t == nil {
+			return fmt.Errorf("tunnels.%s is empty", alias)
+		}
+		if err := t.Validate(); err != nil {
+			return fmt.Errorf("tunnels.%s: %w", alias, err)
 		}
 	}
 	return nil

@@ -2,6 +2,8 @@ package provider
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/prateep-r/mek/internal/config"
@@ -107,6 +109,15 @@ func validateContext(cfg *config.Config, ctx *config.Context) error {
 	}
 	if _, ok := p.(Sessioner); !ok && len(ctx.Targets) > 0 {
 		return fmt.Errorf("targets are not supported on %s yet", c.Name)
+	}
+	tp, ok := p.(Tunneler)
+	if !ok && len(ctx.Tunnels) > 0 {
+		return fmt.Errorf("tunnels are not supported on %s yet", c.Name)
+	}
+	for _, alias := range slices.Sorted(maps.Keys(ctx.Tunnels)) {
+		if _, err := tp.TunnelMethod(*ctx.Tunnels[alias]); err != nil { // the factory knows which kinds the cloud has
+			return fmt.Errorf("tunnels.%s: %w", alias, err)
+		}
 	}
 	return nil
 }

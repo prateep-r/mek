@@ -26,7 +26,8 @@ var awsCloud = Cloud{
 	Tool: Tool{VersionArgs: []string{"--version"}, Brew: "brew install awscli",
 		URL: "https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"},
 	Plugins: []Plugin{{
-		Bin: "session-manager-plugin", Purpose: "SSM sessions (mek shell)", Needed: hasTargets,
+		Bin: "session-manager-plugin", Purpose: "SSM sessions (mek shell, mek tunnel)",
+		Needed: func(c *config.Context) bool { return hasTargets(c) || len(c.Tunnels) > 0 },
 		Tool: Tool{VersionArgs: []string{"--version"}, Brew: "brew install --cask session-manager-plugin",
 			URL: "https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html"},
 	}},
@@ -53,6 +54,13 @@ func validateAWS(c *config.Context) error {
 		}
 		if cl.Region == "" && c.Region == "" {
 			return fmt.Errorf("clusters.%s needs a region (or set the context's region)", alias)
+		}
+	}
+	for alias, t := range c.Tunnels {
+		if _, ok := c.Targets[t.Via]; t.Via != "" && !ok {
+			if err := awsTargetSpec(t.Via); err != nil {
+				return fmt.Errorf("tunnels.%s: via is not a target name, and %w", alias, err)
+			}
 		}
 	}
 	for alias, t := range c.Targets {

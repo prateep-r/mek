@@ -121,12 +121,13 @@ func TestGKE(t *testing.T) {
 	if s := strings.Join(g.TokenCommand("gke-1", "z"), " "); s != "gke-gcloud-auth-plugin" {
 		t.Errorf("token: %s", s)
 	}
+	gke, _ := FindPlugin("gke-gcloud-auth-plugin")
 	ctx := &config.Context{}
-	if gcpCloud.Plugins[0].Needed(ctx) {
+	if gke.Needed(ctx) {
 		t.Error("plugin needed without clusters")
 	}
 	ctx.Clusters = map[string]*config.Cluster{"m": {}}
-	if !gcpCloud.Plugins[0].Needed(ctx) {
+	if !gke.Needed(ctx) {
 		t.Error("plugin not needed with clusters")
 	}
 }

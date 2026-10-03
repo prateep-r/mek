@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/prateep-r/mek/internal/config"
 )
 
 var (
@@ -65,14 +67,38 @@ func (g *GCP) sshDir() string { return filepath.Join(g.dir, "ssh", g.ctx.Name) }
 // ~/.ssh/google_compute_known_hosts (CLOUDSDK_CONFIG keeps gcloud itself on
 // the context's config).
 func (g *GCP) ShellCommand(in Instance) (Command, error) {
+	b, err := g.sshBuilder(in)
+	if err != nil {
+		return Command{}, err
+	}
+	return b.build(), nil
+}
+
+// sshBuilder starts the gcloud compute ssh command shared by shells and
+// SSH-hop tunnels.
+func (g *GCP) sshBuilder(in Instance) (*cmdBuilder, error) {
 	dir := g.sshDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return Command{}, err
+		return nil, err
 	}
 	host := in.ID
 	if in.User != "" {
 		host = in.User + "@" + in.ID
 	}
 	return command("gcloud", "compute", "ssh", host).opt("--zone", in.Zone).args("--tunnel-through-iap").
-		opt("--ssh-key-file", filepath.Join(dir, "google_compute_engine")).env("HOME", dir).build(), nil
+		opt("--ssh-key-file", filepath.Join(dir, "google_compute_engine")).env("HOME", dir), nil
+}
+
+var _ Tunneler = (*GCP)(nil)
+
+func (g *GCP) TunnelMethod(t config.Tunnel) (TunnelMethod, error) {
+	h := hop{via: t.Via, port: t.Port}
+	switch {
+	case t.CloudSQL != "":
+		return cloudSQL{conn: t.CloudSQL, privateIP: t.PrivateIP, ctx: g.ctx.Name,
+			adc: filepath.Join(g.configDir(), "application_default_credentials.json")}, nil
+	case t.Host != "":
+		return iapSSH{h, t.Host, g.sshBuilder}, nil
+	}
+	return iapPort{h}, nil
 }

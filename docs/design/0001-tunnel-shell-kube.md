@@ -1,7 +1,8 @@
 # 0001 — `mek tunnel`, `mek shell`, `mek kube`
 
-Status: **accepted** — `mek kube` / `mek kubectl` shipped in v0.6.0; `mek shell` is done and
-ships with foreground `tunnel` in v0.7.0; background tunnels follow in v0.8.0.
+Status: **accepted** — `mek kube` / `mek kubectl` shipped in v0.6.0; `mek shell` and foreground
+`mek tunnel` are done for v0.7.0; background tunnels follow in v0.8.0 (which also lists
+foreground tunnels in `mek tunnel ls`).
 
 ## Problem
 
@@ -126,13 +127,14 @@ resolved with a read-only describe call and must match exactly one running insta
 |---|---|
 | Abstract Factory (extended) | `provider.Cloud` gains capability interfaces (`KubeProvider`, later `Sessioner`/`Tunneler`) and `Plugins` |
 | Template Method | `kube.Describe`/`Render`/`Write`: fixed kubeconfig skeleton, cloud steps from `KubeProvider` |
-| Strategy | `guard.ClassifyKubectl`; later one `TunnelMethod` per tunnel kind |
+| Strategy | `guard.ClassifyKubectl`; `provider.TunnelMethod`: `ssmPort`, `ssmRemoteHost`, `iapPort`, `iapSSH` (a shell), `cloudSQL` |
+| Factory Method | `Tunneler.TunnelMethod(config.Tunnel)`: the kind follows from the fields set; config validation calls it too, so each cloud's rules live in one place |
 | Chain of Responsibility | `provider/resolve.go`: configured name → instance id → tag lookup (AWS) / VM-name lookup (GCP) |
 | Builder | `provider/argv.go`: `command(...).opt(...).env(...).needs(...)` assembles session commands |
 | Decorator (new) | `audit.SessionStart` after the guard: `audit → guard → sessionStart → exec` |
 | Command + Builder | `kube.MergeCommands`/`UnmergeCommands` build `kubectl config` argv lists |
 | Command / Decorator (extended) | `runner.Invocation.Stdout` lets lookups run through `audit → guard → exec` |
-| Factory Method, State, Observer, Facade | tunnel method selection, tunnel states, supervisor events, `internal/tunnel` API (v0.7.0–v0.8.0) |
+| State, Observer, Facade | tunnel states, supervisor events, `internal/tunnel` API (v0.8.0) |
 
 ## Spikes (M0)
 

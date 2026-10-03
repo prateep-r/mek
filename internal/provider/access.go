@@ -36,6 +36,15 @@ func hasClusters(c *config.Context) bool { return len(c.Clusters) > 0 }
 
 func hasTargets(c *config.Context) bool { return len(c.Targets) > 0 }
 
+func hasCloudSQL(c *config.Context) bool {
+	for _, t := range c.Tunnels {
+		if t.CloudSQL != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // FindPlugin looks a plugin up by binary name, for install hints.
 func FindPlugin(bin string) (Plugin, bool) {
 	for _, c := range clouds {

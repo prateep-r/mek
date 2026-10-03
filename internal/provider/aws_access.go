@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/prateep-r/mek/internal/config"
 )
 
 var (
@@ -86,4 +88,17 @@ func (a *AWS) awsTagLookup(q Query) link {
 
 func (a *AWS) ShellCommand(in Instance) (Command, error) {
 	return command("aws", "ssm", "start-session").opt("--target", in.ID).needs("session-manager-plugin").build(), nil
+}
+
+var _ Tunneler = (*AWS)(nil)
+
+func (a *AWS) TunnelMethod(t config.Tunnel) (TunnelMethod, error) {
+	h := hop{via: t.Via, port: t.Port}
+	switch {
+	case t.CloudSQL != "":
+		return nil, errors.New("cloudsql tunnels are gcp only")
+	case t.Host != "":
+		return ssmRemoteHost{h, t.Host}, nil
+	}
+	return ssmPort{h}, nil
 }

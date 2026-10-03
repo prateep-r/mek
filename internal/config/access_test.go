@@ -55,3 +55,35 @@ func TestValidateTargets(t *testing.T) {
 		t.Errorf("target: %+v", got)
 	}
 }
+
+func TestValidateTunnels(t *testing.T) {
+	ctx := "contexts:\n  a:\n    provider: gcp\n    project: p\n    tunnels:\n"
+	cases := []struct{ in, want string }{
+		{"      ls: {via: x, port: 1}\n", "reserved"},
+		{"      db:\n", "tunnels.db is empty"},
+		{"      db: {port: 5432}\n", "tunnels.db: needs via (a target) or cloudsql"},
+		{"      db: {via: x}\n", "port 0 is not a port"},
+		{"      db: {via: x, port: 70000}\n", "port 70000 is not a port"},
+		{"      db: {via: x, port: 60000}\n", "port 60000 + 10000 is not a port: set local_port"},
+		{"      db: {via: x, port: 1, local_port: -1}\n", "local_port -1 is not a port"},
+		{"      db: {via: x, host: \"-oProxyCommand=x\", port: 1}\n", "tunnels.db: host must not start with '-'"},
+		{"      db: {via: x, port: 1, private_ip: true}\n", "private_ip is only for cloudsql"},
+		{"      db: {cloudsql: \"p:r:i\"}\n", "cloudsql tunnels need local_port"},
+		{"      db: {cloudsql: \"p:r:i\", via: x, local_port: 1}\n", "cloudsql tunnels take only local_port and private_ip"},
+	}
+	for _, c := range cases {
+		_, err := Parse([]byte(ctx + c.in))
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("Parse(%q) err=%v, want containing %q", c.in, err, c.want)
+		}
+	}
+	if _, err := Parse([]byte(ctx + "      db: {via: vm-1, host: 10.0.0.5, port: 5432}\n      sql: {cloudsql: \"p:r:i\", local_port: 15432, private_ip: true}\n      big: {via: vm-1, port: 60000, local_port: 6000}\n")); err != nil {
+		t.Errorf("valid: %v", err)
+	}
+	if got := (&Tunnel{Port: 5432}).Local(); got != 15432 {
+		t.Errorf("default local: %d", got)
+	}
+	if got := (&Tunnel{Port: 5432, LocalPort: 5433}).Local(); got != 5433 {
+		t.Errorf("local_port: %d", got)
+	}
+}

@@ -18,6 +18,8 @@ contexts:
     #   data: {name: data-eks, region: us-east-1, namespace: etl}
     # targets:                      # hosts for `mek shell`
     #   bastion: {instance: "tag:Name=bastion"}   # or an instance id: i-0abc1234def567890
+    # tunnels:                      # port forwards for `mek tunnel`
+    #   db: {via: bastion, host: mydb.cluster-xyz.ap-southeast-1.rds.amazonaws.com, port: 5432}   # → localhost:15432
 
   # Production: write operations ask for confirmation,
   # destructive ones (delete/terminate/...) require typing the context name.
@@ -46,6 +48,8 @@ contexts:
   #     apps: {name: apps-cluster, location: asia-southeast1}   # GKE: zone or region
   #   targets:
   #     web: {instance: web-1, zone: asia-southeast1-b}          # zone is looked up if omitted
+  #   tunnels:
+  #     sql: {cloudsql: "my-project-id:asia-southeast1:db", local_port: 15432}   # needs `mek login --adc`
 
   # Azure subscription. Each context gets its own isolated az config dir.
   # example-azure:

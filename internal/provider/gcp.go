@@ -33,10 +33,19 @@ var gcpCloud = Cloud{
 				return fmt.Errorf("targets.%s: instance %q is not a VM name", alias, t.Instance)
 			}
 		}
+		for alias, t := range c.Tunnels {
+			if _, ok := c.Targets[t.Via]; t.Via != "" && !ok && !gcpVMName.MatchString(t.Via) {
+				return fmt.Errorf("tunnels.%s: via %q is not a target name or VM name", alias, t.Via)
+			}
+		}
 		return nil
 	},
 	Tool: Tool{VersionArgs: []string{"--version"}, URL: "https://cloud.google.com/sdk/docs/install"},
 	Plugins: []Plugin{{
+		Bin: "cloud-sql-proxy", Purpose: "Cloud SQL tunnels (mek tunnel)", Needed: hasCloudSQL,
+		Tool: Tool{VersionArgs: []string{"--version"}, Brew: "brew install cloud-sql-proxy",
+			URL: "https://cloud.google.com/sql/docs/postgres/connect-auth-proxy#install"},
+	}, {
 		Bin: "gke-gcloud-auth-plugin", Purpose: "GKE credentials for kubectl (mek kube)", Needed: hasClusters,
 		Tool: Tool{VersionArgs: []string{"--version"}, Brew: "gcloud components install gke-gcloud-auth-plugin",
 			URL: "https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_plugin"},
