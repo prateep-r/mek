@@ -15,6 +15,9 @@ services:
   floci-aws:
     image: floci/floci:2.1.0
     labels: *labels
+    environment:
+      # SSO device logins authenticate as this principal (test/emulator/sso_test.go).
+      FLOCI_SERVICES_SSOOIDC_LOCAL_PRINCIPAL_ID: 11111111-2222-3333-4444-555555555555
     ports: ["127.0.0.1:14566:4566"]
     networks: [mek-test]
 

@@ -47,7 +47,7 @@ func skipOrFail(t *testing.T, format string, args ...any) {
 
 // emulator returns the base URL of a Floci for image: $envVar if set, else a
 // fresh container (removed when the test ends) on a random local port.
-func emulator(t *testing.T, image string, port int, envVar string) string {
+func emulator(t *testing.T, image string, port int, envVar string, dockerEnv ...string) string {
 	t.Helper()
 	if url := os.Getenv(envVar); url != "" {
 		url = strings.TrimRight(url, "/")
@@ -58,7 +58,11 @@ func emulator(t *testing.T, image string, port int, envVar string) string {
 		skipOrFail(t, "docker is not available: %v", err)
 	}
 	name := fmt.Sprintf("mek-test-%s-%d", strings.NewReplacer("/", "-", ":", "-").Replace(image), time.Now().UnixNano())
-	out, err := exec.Command("docker", "run", "-d", "--rm", "--name", name, "-p", fmt.Sprintf("127.0.0.1::%d", port), image).CombinedOutput()
+	args := []string{"run", "-d", "--rm", "--name", name, "-p", fmt.Sprintf("127.0.0.1::%d", port)}
+	for _, e := range dockerEnv {
+		args = append(args, "-e", e)
+	}
+	out, err := exec.Command("docker", append(args, image)...).CombinedOutput()
 	if err != nil {
 		t.Fatalf("docker run %s: %v\n%s", image, err, out)
 	}
@@ -149,11 +153,10 @@ func (u *user) audit() string {
 	return string(b)
 }
 
-// AWS: contexts reuse a profile (static test keys + the emulator endpoint),
-// since Floci's SSO login can't yet hand out role credentials (see README).
+// AWS with a profile of static test keys; TestAWSSSOLogin covers SSO contexts.
 func TestAWS(t *testing.T) {
 	aws := realCLI(t, "aws")
-	url := emulator(t, flociAWS, 4566, "MEK_FLOCI_AWS_URL")
+	url := emulator(t, flociAWS, 4566, "MEK_FLOCI_AWS_URL", flociAWSEnv...)
 	u := newUser(t, `contexts:
   dev:  {provider: aws, aws_profile: floci, region: ap-southeast-1}
   ro:   {provider: aws, aws_profile: floci, readonly: true}
