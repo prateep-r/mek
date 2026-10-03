@@ -27,7 +27,8 @@ type Cloud struct {
 	// ValidateAll checks rules that span contexts (optional).
 	ValidateAll func(cfg *config.Config) error
 
-	Tool Tool // how `mek doctor` checks for the CLI
+	Tool    Tool     // how `mek doctor` checks for the CLI
+	Plugins []Plugin // extra tools some features need
 }
 
 // Tool tells `mek doctor` how to find a CLI and how to install it.
@@ -75,15 +76,7 @@ func For(cfg *config.Config, ctx *config.Context) Provider {
 // the same bad config always reports the same error.
 func Validate(cfg *config.Config) error {
 	for _, name := range cfg.Names() {
-		ctx := cfg.Contexts[name]
-		if ctx.Provider == "" {
-			return fmt.Errorf("context %q: provider is required (%s)", name, joinOr(names()))
-		}
-		c, ok := Lookup(ctx.Provider)
-		if !ok {
-			return fmt.Errorf("context %q: unknown provider %q (supported: %s)", name, ctx.Provider, joinOr(names()))
-		}
-		if err := c.Validate(ctx); err != nil {
+		if err := validateContext(cfg, cfg.Contexts[name]); err != nil {
 			return fmt.Errorf("context %q: %w", name, err)
 		}
 	}
@@ -95,6 +88,32 @@ func Validate(cfg *config.Config) error {
 		}
 	}
 	return nil
+}
+
+func validateContext(cfg *config.Config, ctx *config.Context) error {
+	if ctx.Provider == "" {
+		return fmt.Errorf("provider is required (%s)", joinOr(names()))
+	}
+	c, ok := Lookup(ctx.Provider)
+	if !ok {
+		return fmt.Errorf("unknown provider %q (supported: %s)", ctx.Provider, joinOr(names()))
+	}
+	if err := c.Validate(ctx); err != nil {
+		return err
+	}
+	if _, ok := c.New(cfg, ctx, "").(KubeProvider); !ok && len(ctx.Clusters) > 0 {
+		return fmt.Errorf("clusters are not supported on %s yet", c.Name)
+	}
+	return nil
+}
+
+// CheckContext validates one (possibly modified) context of a loaded config
+// with the same rules as Load, e.g. after adding an ad-hoc cluster.
+func CheckContext(cfg *config.Config, ctx *config.Context) error {
+	if err := ctx.Validate(); err != nil {
+		return err
+	}
+	return validateContext(cfg, ctx)
 }
 
 // Load reads the config file and validates it against every cloud's rules.

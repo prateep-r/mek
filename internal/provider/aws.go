@@ -42,6 +42,14 @@ func ssoRegion(c *config.Context) string {
 }
 
 func validateAWS(c *config.Context) error {
+	for alias, cl := range c.Clusters {
+		if cl.Location != "" {
+			return fmt.Errorf("clusters.%s: aws clusters use region, not location", alias)
+		}
+		if cl.Region == "" && c.Region == "" {
+			return fmt.Errorf("clusters.%s needs a region (or set the context's region)", alias)
+		}
+	}
 	if c.AWSProfile != "" {
 		return nil
 	}

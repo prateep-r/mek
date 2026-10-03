@@ -57,6 +57,9 @@ so terminals can work on different contexts at the same time.`,
 			if shell {
 				// Context names are [A-Za-z0-9._-]: safe to print for eval.
 				fmt.Fprintf(cmd.OutOrStdout(), "export MEK_CONTEXT=%s\n", ctx.Name)
+				env := provider.Env{Set: map[string]string{}}
+				kubeEnv(ctx, &env) // kubectl and K9s typed in this shell follow the context
+				fmt.Fprint(cmd.OutOrStdout(), env.Shell())
 				ui.Info("%s this shell now uses %s %s %s", ui.Green("✓"), ui.Bold(ctx.Name),
 					ui.Dim(provider.For(cfg, ctx).Describe()), tags(ui.Err(), ctx))
 				return nil

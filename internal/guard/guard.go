@@ -19,10 +19,12 @@ const (
 	Write
 	Destructive
 	Unknown // cannot be classified (e.g. arbitrary `mek exec` commands)
+	Shell   // interactive session on a host (ssm start-session, kubectl exec)
+	Tunnel  // port forwarding (kubectl port-forward); only moves bytes
 )
 
 func (c Class) String() string {
-	return [...]string{"read", "write", "destructive", "unknown"}[c]
+	return [...]string{"read", "write", "destructive", "unknown", "shell", "tunnel"}[c]
 }
 
 type Decision int
@@ -35,8 +37,18 @@ const (
 )
 
 // Decide applies a context's safety settings to a command class.
+//
+// Sessions: a shell is blocked on readonly contexts and confirmed on protected
+// ones; a tunnel is allowed on readonly contexts (what runs over it is up to
+// the remote service's own permissions) and confirmed on protected ones.
 func Decide(ctx *config.Context, c Class) Decision {
 	if c == Read {
+		return Allow
+	}
+	if c == Tunnel {
+		if ctx.Protected {
+			return Confirm
+		}
 		return Allow
 	}
 	if ctx.ReadOnly {
@@ -48,7 +60,7 @@ func Decide(ctx *config.Context, c Class) Decision {
 	if c == Destructive {
 		return ConfirmTyped
 	}
-	return Confirm
+	return Confirm // write, unknown, shell
 }
 
 // ---------- AWS ----------

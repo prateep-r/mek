@@ -20,9 +20,22 @@ var gcpCloud = Cloud{
 		if c.Project == "" {
 			return errors.New("gcp context needs project")
 		}
+		for alias, cl := range c.Clusters {
+			if cl.Region != "" {
+				return fmt.Errorf("clusters.%s: gcp clusters use location (zone or region), not region", alias)
+			}
+			if cl.Location == "" {
+				return fmt.Errorf("clusters.%s needs a location (zone or region)", alias)
+			}
+		}
 		return nil
 	},
 	Tool: Tool{VersionArgs: []string{"--version"}, URL: "https://cloud.google.com/sdk/docs/install"},
+	Plugins: []Plugin{{
+		Bin: "gke-gcloud-auth-plugin", Purpose: "GKE credentials for kubectl (mek kube)", Needed: hasClusters,
+		Tool: Tool{VersionArgs: []string{"--version"}, Brew: "gcloud components install gke-gcloud-auth-plugin",
+			URL: "https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_plugin"},
+	}},
 }
 
 // GCP wraps gcloud. Each context gets its own CLOUDSDK_CONFIG directory so

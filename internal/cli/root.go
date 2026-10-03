@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/prateep-r/mek/internal/config"
+	"github.com/prateep-r/mek/internal/kube"
 	"github.com/prateep-r/mek/internal/provider"
 	"github.com/prateep-r/mek/internal/runner"
 	"github.com/prateep-r/mek/internal/ui"
@@ -58,6 +59,8 @@ safety guard and audit log for protected contexts.`,
 		root.AddCommand(a.newPassthroughCmd(c))
 	}
 	root.AddCommand(
+		a.newKubectlCmd(),
+		a.newKubeCmd(),
 		a.newExecCmd(),
 		a.newEnvCmd(),
 		newDoctorCmd(),
@@ -69,6 +72,7 @@ safety guard and audit log for protected contexts.`,
 
 // loaded bundles what most commands need. env is only set by load.
 type loaded struct {
+	cfg  *config.Config
 	ctx  *config.Context
 	prov provider.Provider
 	env  provider.Env
@@ -88,7 +92,7 @@ func (a *app) resolve(name string) (*loaded, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &loaded{ctx: ctx, prov: provider.For(cfg, ctx)}, nil
+	return &loaded{cfg: cfg, ctx: ctx, prov: provider.For(cfg, ctx)}, nil
 }
 
 // load resolves the context and prepares its environment (writing provider
@@ -102,7 +106,18 @@ func (a *app) load(name string) (*loaded, error) {
 		return nil, err
 	}
 	l.env.Set["MEK_CONTEXT"] = l.ctx.Name
+	kubeEnv(l.ctx, &l.env)
 	return l, nil
+}
+
+// kubeEnv points KUBECONFIG at the context's mek kubeconfig, or unsets one
+// left over from another context's — never a KUBECONFIG the user chose.
+func kubeEnv(ctx *config.Context, env *provider.Env) {
+	if p, ok := kube.Env(ctx); ok {
+		env.Set["KUBECONFIG"] = p
+	} else if kube.Owned(os.Getenv("KUBECONFIG")) {
+		env.Unset = append(env.Unset, "KUBECONFIG")
+	}
 }
 
 func completeContexts(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {

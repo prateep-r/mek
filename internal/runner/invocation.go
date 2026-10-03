@@ -1,6 +1,8 @@
 package runner
 
 import (
+	"io"
+	"os"
 	"time"
 
 	"github.com/prateep-r/mek/internal/config"
@@ -14,6 +16,7 @@ type Invocation struct {
 	Argv    []string
 	Env     []string
 	Class   guard.Class
+	Stdout  io.Writer // nil: the terminal
 
 	Decision string        // set by the guard: allowed | confirmed | blocked | declined
 	ExitCode int           // set by Exec (-1 when the command never ran)
@@ -57,7 +60,11 @@ func Chain(r Runner, ds ...Decorator) Runner {
 // Exec is the concrete component: it starts the process and waits for it.
 var Exec Runner = Func(func(inv *Invocation) error {
 	start := time.Now()
-	code, err := Run(inv.Argv, inv.Env)
+	stdout := inv.Stdout
+	if stdout == nil {
+		stdout = os.Stdout
+	}
+	code, err := RunIO(inv.Argv, inv.Env, stdout)
 	inv.ExitCode, inv.Duration = code, time.Since(start)
 	return err
 })

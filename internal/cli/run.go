@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -16,8 +18,11 @@ import (
 )
 
 // runPlain runs a helper command (login, whoami) without guard or audit.
-func (a *app) runPlain(argv, env []string) error {
-	inv := &runner.Invocation{Argv: argv, Env: env}
+func (a *app) runPlain(argv, env []string) error { return a.runTo(argv, env, nil) }
+
+// runTo is runPlain with stdout sent to w (nil: the terminal).
+func (a *app) runTo(argv, env []string, w io.Writer) error {
+	inv := &runner.Invocation{Argv: argv, Env: env, Stdout: w}
 	return inv.Err(a.exec.Run(inv))
 }
 
@@ -99,13 +104,31 @@ Note: commands run this way bypass mek's guard and audit log.`,
 	}
 }
 
-// guarded runs argv through the pipeline audit → guard → exec, so a blocked
-// or declined command is audited just like one that ran.
+// pipeline is audit → guard → exec, so a blocked or declined command is
+// audited just like one that ran.
+func (a *app) pipeline() runner.Runner {
+	return runner.Chain(a.exec, audit.Recorder(warnAudit), a.guard)
+}
+
+// guarded runs argv in the context through the pipeline.
 func (a *app) guarded(l *loaded, argv []string, class guard.Class) error {
 	banner(l)
 	inv := &runner.Invocation{Context: l.ctx, Argv: argv, Env: l.env.Apply(os.Environ()), Class: class}
-	pipeline := runner.Chain(a.exec, audit.Recorder(warnAudit), a.guard)
-	return inv.Err(pipeline.Run(inv))
+	return inv.Err(a.pipeline().Run(inv))
+}
+
+// query is the provider.Query for a context: lookups (describe calls) run
+// through the same pipeline as a read, with their output captured.
+func (a *app) query(l *loaded) provider.Query {
+	return func(argv []string) ([]byte, error) {
+		var out bytes.Buffer
+		inv := &runner.Invocation{Context: l.ctx, Argv: argv, Env: l.env.Apply(os.Environ()), Class: guard.Read, Stdout: &out}
+		if err := inv.Err(a.pipeline().Run(inv)); err != nil {
+			// Not %w: an *ExitError would make main exit quietly, without the hint.
+			return nil, fmt.Errorf("%s: %v (logged in? try: mek -c %s login)", strings.Join(argv[:min(3, len(argv))], " "), err, l.ctx.Name)
+		}
+		return out.Bytes(), nil
+	}
 }
 
 func warnAudit(err error) { ui.Info("%s audit log: %v", ui.Yellow("warning:"), err) }

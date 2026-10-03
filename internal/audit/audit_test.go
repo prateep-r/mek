@@ -48,8 +48,10 @@ func TestMaskCLISpecificShortFlags(t *testing.T) {
 		"az storage blob list --connection-string=DefaultEndpoints...": "az storage blob list --connection-string=****",
 		"hcloud obs config -i=AK -k=SK -t=TOKEN":                       "hcloud obs config -i=AK -k=**** -t=****",
 		"/usr/local/bin/az acr login -n reg -p pw":                     "/usr/local/bin/az acr login -n reg -p ****",
-		"aws ssh -p 2222": "aws ssh -p 2222", // -p is a secret only for az
-		"":                "",
+		"kubectl create secret generic db --from-literal=password=x":   "kubectl create secret generic db --from-literal=****",
+		"kubectl get pods --token abc":                                 "kubectl get pods --token ****",
+		"aws ssh -p 2222":                                              "aws ssh -p 2222", // -p is a secret only for az
+		"":                                                             "",
 	}
 	for in, want := range cases {
 		if got := strings.Join(Mask(strings.Fields(in)), " "); got != want {

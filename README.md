@@ -64,6 +64,8 @@ Update with `brew upgrade mek` (Homebrew) or `mek self-update` (script / manual 
 | GCP contexts | [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) |
 | Azure contexts | [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) |
 | Huawei Cloud contexts | [KooCLI (`hcloud`)](https://support.huaweicloud.com/intl/en-us/qs-hcli/hcli_02_003.html) |
+| `mek kubectl`, `mek kube --merge` | [kubectl](https://kubernetes.io/docs/tasks/tools/) |
+| GKE clusters (`clusters:` on a GCP context) | [gke-gcloud-auth-plugin](https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_plugin) |
 | Upcoming `mek tunnel` / `mek shell` | [session-manager-plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html) |
 
 ## Configure
@@ -130,7 +132,8 @@ set `MEK_HCLOUD_CONFIG` to read KooCLI's profiles from somewhere else.
 Rules checked on load: context names use letters, digits, `.`, `_` and `-`;
 `account_id` is the 12-digit AWS account ID (quote it); SSO contexts need
 `sso_region` (or `region`), and contexts sharing an `sso_start_url` must agree on it;
-Azure `subscription_id` is a GUID.
+Azure `subscription_id` is a GUID. Cluster names (`clusters:`) follow the context-name
+rules; EKS clusters take `region`, GKE clusters `location`.
 
 > Never commit real account IDs or SSO URLs to a public repository. Share team configs from a private repo.
 
@@ -145,6 +148,8 @@ Azure `subscription_id` is a GUID.
 | `mek ctx` / `mek ctx --short` | show the current context (`--short` for shell prompts) |
 | `mek login [ctx] [--adc] [-- <flags>]` | `aws sso login` / `gcloud auth login` (+ application-default with `--adc`) / `az login` / `hcloud configure sso`; flags after `--` go to that login command |
 | `mek aws …` / `mek gcloud …` / `mek az …` / `mek hcloud …` | run the CLI in the context, through the guard and audit log |
+| `mek kube [cluster] [--merge \| --unmerge]` | write the context's kubeconfig for EKS/GKE clusters ([Kubernetes](#kubernetes-eks-gke)) |
+| `mek kubectl …` | run kubectl on the context's clusters, through the guard and audit log |
 | `mek exec -- <cmd>` | run any command with the context's credentials |
 | `eval "$(mek env [ctx])"` | export the context into your shell (bypasses guard/audit) |
 | `mek doctor` | check config and tools, with install hints |
@@ -179,6 +184,38 @@ mek removes `GOOGLE_APPLICATION_CREDENTIALS` and similar variables from the
 commands it runs so they can't override the context; passing the file to
 `--cred-file` as above logs the context in with it instead.
 
+### Kubernetes (EKS, GKE)
+
+List a context's clusters under `clusters:` (see `mek init`'s example), then:
+
+```bash
+mek -c prod kube                      # writes ~/.config/mek/kube/prod.yaml
+mek -c prod kubectl get pods          # kubectl, guarded and audited
+eval "$(mek use --shell prod)"        # or: this shell's kubectl / k9s use prod
+kubectl get pods
+mek -c prod exec -- k9s               # or any tool, for one command
+```
+
+The kubeconfig holds no credentials: each request runs
+`mek --context prod kube token …`, which gets a short-lived token from
+`aws eks get-token` or `gke-gcloud-auth-plugin` with the context's login.
+So the file is safe to keep, works in K9s or FreeLens started from the Dock
+(`KUBECONFIG=~/.config/mek/kube/prod.yaml`), and can never use another
+context's credentials. Contexts are named `<context>/<cluster>`, e.g. `prod/main`.
+
+`~/.kube/config` is left alone. To use the clusters from it anyway — with
+plain `kubectl --context prod/main`, or a tool that only reads that file — opt in:
+
+```bash
+mek -c prod kube --merge [--use]      # add (and switch to) prod/* entries, after a one-time .mek-backup
+mek -c prod kube --unmerge            # remove them again
+```
+
+Merging goes through `kubectl config set-*`, so your other entries are kept.
+A cluster that isn't in the config: `mek -c prod kube --name other-eks [--region …]`.
+`kubectl exec`/`attach`/`debug` count as **shell** and `port-forward`/`proxy`
+as **tunnel** for the guard; `--dry-run` is a read.
+
 ### Show the context in your prompt
 
 ```bash
@@ -197,6 +234,8 @@ Commands are classified from their operation name:
 | write | `create-*`, `update-*`, `Create*`/`Update*`, `s3 cp`, unknown verbs | confirm y/N | blocked |
 | destructive | `delete-*`, `terminate-*`, `stop-*`, `deallocate`, `Delete*`/`BatchStop*`, `s3 rm`, `sync --delete` | type context name | blocked |
 | unknown | anything via `mek exec` | confirm y/N | blocked |
+| shell | `kubectl exec`/`attach`/`debug` | confirm y/N | blocked |
+| tunnel | `kubectl port-forward`/`proxy` | confirm y/N | run |
 
 **This is a seatbelt, not a security boundary.** It prevents mistakes; real
 enforcement belongs in IAM roles, SCPs and org policies.
@@ -209,15 +248,17 @@ enforcement belongs in IAM roles, SCPs and org policies.
 - Azure contexts each have their own `az login` (isolated config dirs), so several subscriptions in one tenant mean one login per context.
 - Huawei Cloud contexts need a KooCLI profile you create yourself; `mek login` only logs in SSO profiles (AK/SK profiles are used as-is).
 - KooCLI exits with status 0 even when a command fails, so `mek hcloud …` (and its audit entry) reports success then; check its output.
+- Every kubectl request through mek's kubeconfig fetches a fresh token (about 0.5–1 s); mek never caches tokens.
+- The kubeconfig records mek's path and `PATH` when it is written; run `mek kube` again after moving mek or the cloud CLIs.
 - The Homebrew cask is macOS-only; use `install.sh` or `go install` on Linux.
 - Windows is not supported yet.
 
 ## Roadmap
 
 1. ✅ Contexts, SSO login, passthrough, exec/env, guard, audit, doctor, self-update
-2. `mek tunnel` (RDS/MSK via SSM), `mek shell`, `mek kube` (EKS kubeconfig with exec credentials for kubectl / K9s / FreeLens)
+2. Access paths ([design](docs/design/0001-tunnel-shell-kube.md)): ✅ `mek kube` / `mek kubectl` (EKS, GKE) · `mek shell` and `mek tunnel` (SSM, IAP, Cloud SQL) · background tunnels
 3. TUI with a resource catalog generated from AWS/GCP/Azure/Huawei API models
-4. More GCP / Azure / Huawei features (Cloud SQL proxy, IAP, GKE, AKS, CCE)
+4. More Azure / Huawei features (Bastion, AKS, CCE)
 5. Desktop GUI (Wails)
 
 ## Development

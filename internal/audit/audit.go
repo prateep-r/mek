@@ -121,7 +121,7 @@ func rotate() error {
 	return os.Rename(Path(), Path()+".1")
 }
 
-var secretFlag = regexp.MustCompile(`(?i)(password|passwd|secret|token|private-key|key-material|credential|plaintext|auth-key|api-key|account-key|connection-string|cli-input-json|cli-input-yaml)`)
+var secretFlag = regexp.MustCompile(`(?i)(password|passwd|secret|token|private-key|key-material|credential|plaintext|auth-key|api-key|account-key|connection-string|from-literal|cli-input-json|cli-input-yaml)`)
 
 // Short flags that carry a secret in one CLI only (in others they mean
 // something else): `az login -p <password>`, `hcloud obs config -k <sk> -t <token>`.

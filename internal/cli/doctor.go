@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os/exec"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -19,25 +21,40 @@ import (
 type tool struct {
 	bin, purpose string
 	versionArgs  []string
-	provider     string // required when a context of this provider exists; "" = optional
+	needed       func(*config.Config) bool // required by this config; nil = optional
 	brew, url    string
 }
 
-// tools are every cloud's CLI (from the provider registry) plus optional extras.
+// tools are every cloud's CLI and plugins (from the provider registry) plus
+// optional extras.
 func tools() []tool {
 	var ts []tool
 	for _, c := range provider.Clouds() {
-		ts = append(ts, tool{c.CLI, c.Title, c.Tool.VersionArgs, c.Name, c.Tool.Brew, c.Tool.URL})
+		ts = append(ts, tool{c.CLI, c.Title, c.Tool.VersionArgs, anyContext(func(x *config.Context) bool { return x.Provider == c.Name }), c.Tool.Brew, c.Tool.URL})
+	}
+	for _, c := range provider.Clouds() {
+		for _, p := range c.Plugins {
+			uses := func(x *config.Context) bool { return x.Provider == c.Name && p.Needed(x) }
+			ts = append(ts, tool{p.Bin, p.Purpose, p.Tool.VersionArgs, anyContext(uses), p.Tool.Brew, p.Tool.URL})
+		}
 	}
 	return append(ts, extraTools...)
 }
 
+// anyContext lifts a per-context test to "some context in the config needs it".
+func anyContext(f func(*config.Context) bool) func(*config.Config) bool {
+	return func(cfg *config.Config) bool {
+		return slices.ContainsFunc(slices.Collect(maps.Values(cfg.Contexts)), f)
+	}
+}
+
 var extraTools = []tool{
-	{"session-manager-plugin", "AWS SSM tunnels/shell (upcoming `mek tunnel`/`mek shell`)", []string{"--version"}, "",
-		"brew install --cask session-manager-plugin", "https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html"},
-	{"kubectl", "Kubernetes CLI", []string{"version", "--client"}, "",
+	{"kubectl", "Kubernetes CLI (mek kubectl, mek kube --merge)", []string{"version", "--client"},
+		anyContext(func(x *config.Context) bool { return len(x.Clusters) > 0 }),
 		"brew install kubectl", "https://kubernetes.io/docs/tasks/tools/"},
-	{"k9s", "Kubernetes TUI", []string{"version", "--short"}, "",
+	{"session-manager-plugin", "AWS SSM tunnels/shell (upcoming `mek tunnel`/`mek shell`)", []string{"--version"}, nil,
+		"brew install --cask session-manager-plugin", "https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html"},
+	{"k9s", "Kubernetes TUI", []string{"version", "--short"}, nil,
 		"brew install k9s", "https://k9scli.io/topics/install/"},
 }
 
@@ -56,7 +73,6 @@ func newDoctorCmd() *cobra.Command {
 			probes := probeTools(ts)
 
 			fmt.Fprintln(out, p.Bold("Config"))
-			needed := map[string]bool{}
 			cfg, err := provider.Load()
 			switch {
 			case errors.Is(err, config.ErrNoConfig):
@@ -66,9 +82,6 @@ func newDoctorCmd() *cobra.Command {
 				fmt.Fprintf(out, "  %s %v\n", p.Red("✗"), err)
 				problems++
 			default:
-				for _, c := range cfg.Contexts {
-					needed[c.Provider] = true
-				}
 				cur := config.Current()
 				if cur == "" {
 					cur = p.Dim("(none — run `mek use <context>`)")
@@ -81,7 +94,7 @@ func newDoctorCmd() *cobra.Command {
 				pr := <-probes[i]
 				if pr.path == "" {
 					mark, label := p.Dim("–"), "optional"
-					if t.provider != "" && needed[t.provider] {
+					if cfg != nil && t.needed != nil && t.needed(cfg) {
 						mark, label = p.Red("✗"), "required"
 						problems++
 					}

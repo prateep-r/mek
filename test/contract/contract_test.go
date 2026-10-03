@@ -115,17 +115,25 @@ func TestAWSCLIReadsGeneratedConfig(t *testing.T) {
 	u.homeUntouched(".aws/config")
 }
 
-func TestGcloudUsesContextConfigDir(t *testing.T) {
-	gcloud := realCLI(t, "gcloud")
-	var extra []string
+// gcloudPython points gcloud at a modern Python (the isolated PATH may only
+// have an old system one).
+func gcloudPython(t *testing.T) []string {
+	t.Helper()
 	if py := os.Getenv("CLOUDSDK_PYTHON"); py != "" {
-		extra = append(extra, "CLOUDSDK_PYTHON="+py)
-	} else if py, err := exec.LookPath("python3"); err == nil { // gcloud needs a modern Python
+		return []string{"CLOUDSDK_PYTHON=" + py}
+	}
+	if py, err := exec.LookPath("python3"); err == nil {
 		if strings.Contains(py, "/.asdf/shims/") {
 			py = realCLI(t, "python3")
 		}
-		extra = append(extra, "CLOUDSDK_PYTHON="+py)
+		return []string{"CLOUDSDK_PYTHON=" + py}
 	}
+	return nil
+}
+
+func TestGcloudUsesContextConfigDir(t *testing.T) {
+	gcloud := realCLI(t, "gcloud")
+	extra := gcloudPython(t)
 	u := newUser(t, `contexts:
   gcp: {provider: gcp, project: acme-dev, region: asia-southeast1}
 `, []string{gcloud}, append(extra, "GOOGLE_APPLICATION_CREDENTIALS=/tmp/leaked.json")...)

@@ -1,6 +1,7 @@
 #!/bin/sh
-# Install any missing cloud CLI for the contract tests: AWS CLI v2, Google
-# Cloud CLI, Azure CLI and Huawei Cloud KooCLI. For CI runners and containers
+# Install any missing CLI for the contract tests: AWS CLI v2, Google Cloud CLI
+# (with gke-gcloud-auth-plugin), Azure CLI, Huawei Cloud KooCLI and kubectl.
+# For CI runners and containers
 # (Debian/Ubuntu, amd64 or arm64); uses sudo when not root.
 set -eu
 
@@ -32,6 +33,20 @@ if need gcloud; then
   $SUDO apt-get install -y -qq google-cloud-cli >/dev/null
 fi
 
+if need gke-gcloud-auth-plugin; then
+  # From the same apt repo as gcloud; an archive install has components instead.
+  $SUDO apt-get update -qq >/dev/null 2>&1 || true
+  if ! $SUDO apt-get install -y -qq google-cloud-cli-gke-gcloud-auth-plugin >/dev/null 2>&1; then
+    gcloud components install gke-gcloud-auth-plugin --quiet
+  fi
+fi
+
+if need kubectl; then
+  v=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
+  curl -fsSL "https://dl.k8s.io/release/$v/bin/linux/$arch/kubectl" -o "$tmp/kubectl"
+  $SUDO install -m 0755 "$tmp/kubectl" /usr/local/bin/kubectl
+fi
+
 if need az; then
   curl -fsSL https://aka.ms/InstallAzureCLIDeb | $SUDO bash >/dev/null
 fi
@@ -42,6 +57,6 @@ if need hcloud; then
   $SUDO install -m 0755 "$tmp/hcloud" /usr/local/bin/hcloud # the archive ships it as rwx------
 fi
 
-for c in aws gcloud az hcloud; do
-  printf '%-7s %s\n' "$c" "$(command -v "$c")"
+for c in aws gcloud gke-gcloud-auth-plugin az hcloud kubectl; do
+  printf '%-23s %s\n' "$c" "$(command -v "$c")"
 done

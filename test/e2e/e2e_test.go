@@ -266,3 +266,44 @@ func installRelease(t *testing.T) string {
 	}
 	return filepath.Join(bin, "mek")
 }
+
+// A user adds a cluster, generates its kubeconfig with the installed mek and
+// uses kubectl through it; the kubeconfig runs the installed binary.
+func TestKubeJourney(t *testing.T) {
+	installed := installRelease(t)
+	mekHome, home := t.TempDir(), t.TempDir()
+	stubs, log := testkit.Stubs(t, "aws", "kubectl")
+	os.WriteFile(filepath.Join(mekHome, "config.yaml"), []byte(`contexts:
+  prod: {provider: aws, aws_profile: admin, region: ap-southeast-1, protected: true, clusters: {main: {name: prod-eks}}}
+`), 0o600)
+	vars := []string{"MEK_HOME=" + mekHome, "HOME=" + home, "PATH=" + stubs + ":/usr/bin:/bin", "STUB_LOG=" + log,
+		`STUB_OUT={"endpoint":"https://ABC.eks.amazonaws.com","ca":"Q0E=","status":"ACTIVE"}`}
+	run := func(args ...string) testkit.Result { t.Helper(); return testkit.Run(t, installed, vars, args...) }
+
+	if r := run("doctor"); r.Code != 0 || !strings.Contains(r.Stdout, "kubectl") {
+		t.Errorf("doctor with kubectl present:\n%s%s", r.Stdout, r.Stderr)
+	}
+	r := run("-c", "prod", "kube")
+	if r.Code != 0 {
+		t.Fatalf("mek kube: %+v", r)
+	}
+	kc, _ := os.ReadFile(strings.TrimSpace(r.Stdout))
+	if !strings.Contains(string(kc), "command: "+installed) {
+		t.Errorf("kubeconfig should run the installed mek:\n%s", kc)
+	}
+	if r := run("-c", "prod", "kubectl", "get", "pods"); r.Code != 0 {
+		t.Errorf("kubectl get: %+v", r)
+	}
+	if r := run("-c", "prod", "kubectl", "delete", "pod", "web-1"); r.Code == 0 || !strings.Contains(r.Stderr, "--confirm prod") {
+		t.Errorf("protected delete must ask for --confirm: %+v", r)
+	}
+	var got []string
+	for _, c := range testkit.Calls(t, log) {
+		if !strings.Contains(c.ArgLine(), "version") {
+			got = append(got, c.Name+" "+strings.Join(c.Args[:2], " "))
+		}
+	}
+	if want := []string{"aws eks describe-cluster", "kubectl get pods"}; !slices.Equal(got, want) {
+		t.Errorf("calls: %q, want %q", got, want)
+	}
+}

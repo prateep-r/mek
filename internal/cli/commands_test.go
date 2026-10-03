@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -28,11 +29,20 @@ const testConfig = `contexts:
 type recorder struct {
 	invs []*runner.Invocation
 	code int
+	// respond, when set, scripts a command's stdout and exit code.
+	respond func(argv []string) (stdout string, code int)
 }
 
 func (r *recorder) Run(inv *runner.Invocation) error {
 	r.invs = append(r.invs, inv)
 	inv.ExitCode = r.code
+	if r.respond != nil {
+		out, code := r.respond(inv.Argv)
+		if inv.Stdout != nil {
+			io.WriteString(inv.Stdout, out)
+		}
+		inv.ExitCode = code
+	}
 	return nil
 }
 

@@ -51,6 +51,9 @@ type Context struct {
 
 	// Huawei Cloud — an existing KooCLI profile (created with `hcloud configure set`)
 	HcloudProfile string `yaml:"hcloud_profile,omitempty"`
+
+	// Kubernetes clusters reachable from this context, by alias (mek kube).
+	Clusters map[string]*Cluster `yaml:"clusters,omitempty"`
 }
 
 type Config struct {
@@ -132,7 +135,7 @@ func (c *Context) Validate() error {
 			return fmt.Errorf("%s must not contain line breaks", f.key)
 		}
 	}
-	return nil
+	return c.validateAccess()
 }
 
 // Names returns context names sorted.
