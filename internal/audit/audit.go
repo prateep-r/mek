@@ -60,6 +60,9 @@ func Recorder(onError func(error)) runner.Decorator {
 		return runner.Func(func(inv *runner.Invocation) error {
 			start := time.Now()
 			err := next.Run(inv)
+			if inv.Detached {
+				return err // its supervisor audits the end
+			}
 			e := entry(inv, start)
 			if inv.Session != "" && started(inv) {
 				e.Event = "end"

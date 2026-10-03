@@ -5,7 +5,9 @@ package e2e
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -145,5 +147,46 @@ func TestInteractivePrompts(t *testing.T) {
 				t.Errorf("audit: %s, want decision %s", audit, c.decision)
 			}
 		})
+	}
+}
+
+// A background tunnel started from a terminal (after answering the
+// protected context's question) outlives that terminal.
+func TestBackgroundTunnelOutlivesTerminal(t *testing.T) {
+	installed := installRelease(t)
+	mekHome := t.TempDir()
+	bin := t.TempDir()
+	stub, _ := os.ReadFile(testkit.Listenstub(t))
+	for _, name := range []string{"aws", "session-manager-plugin"} {
+		os.WriteFile(filepath.Join(bin, name), stub, 0o755)
+	}
+	ln, _ := net.Listen("tcp", "127.0.0.1:0")
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+	os.WriteFile(filepath.Join(mekHome, "config.yaml"), []byte(fmt.Sprintf(`contexts:
+  prod: {provider: aws, aws_profile: admin, protected: true, tunnels: {db: {via: i-0123abcd, host: db.internal, port: 5432, local_port: %d}}}
+`, port)), 0o600)
+	env := []string{"MEK_HOME=" + mekHome, "HOME=" + t.TempDir(), "PATH=" + bin + ":/usr/bin:/bin"}
+	t.Cleanup(func() { testkit.Run(t, installed, env, "tunnel", "stop", "--all") })
+
+	s := startSession(t, installed, env, "-c", "prod", "tunnel", "db", "-b")
+	s.expect("tunnel command on prod")
+	s.send("y\r")
+	if code := s.exitCode(); code != 0 {
+		t.Fatalf("exit %d; terminal:\n%s", code, s.output())
+	}
+	s.tty.Close() // the terminal goes away (SIGHUP to its session)
+	time.Sleep(300 * time.Millisecond)
+
+	c, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), time.Second)
+	if err != nil {
+		t.Fatalf("the tunnel died with its terminal: %v", err)
+	}
+	c.Close()
+	if r := testkit.Run(t, installed, env, "tunnel", "ls"); !strings.Contains(r.Stdout, "running") {
+		t.Errorf("ls: %+v", r)
+	}
+	if r := testkit.Run(t, installed, env, "tunnel", "stop", "db"); r.Code != 0 {
+		t.Errorf("stop: %+v", r)
 	}
 }

@@ -59,12 +59,12 @@ func (a *app) shell(spec string, o provider.TargetOptions) error {
 	if err != nil {
 		return err
 	}
-	return a.session(l, c, guard.Shell, in.Label())
+	return a.session(l, c, guard.Shell, in.Label(), a.exec)
 }
 
-// session runs an access command (shell or tunnel) through the pipeline,
-// once the plugins it needs are installed.
-func (a *app) session(l *loaded, c provider.Command, class guard.Class, target string) error {
+// session runs an access command (shell or tunnel) through the pipeline
+// ending in terminal, once the plugins it needs are installed.
+func (a *app) session(l *loaded, c provider.Command, class guard.Class, target string, terminal runner.Runner) error {
 	for _, bin := range c.Requires {
 		if _, err := lookPath(bin); err != nil {
 			how := "see `mek doctor`"
@@ -75,7 +75,7 @@ func (a *app) session(l *loaded, c provider.Command, class guard.Class, target s
 		}
 	}
 	env := provider.Env{Set: c.Env}.Apply(l.env.Apply(os.Environ()))
-	return a.run(l, &runner.Invocation{Argv: c.Argv, Env: env, Class: class, Target: target})
+	return a.runTo(l, &runner.Invocation{Argv: c.Argv, Env: env, Class: class, Target: target}, terminal)
 }
 
 var lookPath = exec.LookPath // test seam

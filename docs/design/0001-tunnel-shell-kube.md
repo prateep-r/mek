@@ -1,8 +1,7 @@
 # 0001 — `mek tunnel`, `mek shell`, `mek kube`
 
-Status: **accepted** — `mek kube` / `mek kubectl` shipped in v0.6.0; `mek shell` and foreground
-`mek tunnel` are done for v0.7.0; background tunnels follow in v0.8.0 (which also lists
-foreground tunnels in `mek tunnel ls`).
+Status: **implemented** — `mek kube` / `mek kubectl` in v0.6.0, `mek shell` and foreground
+`mek tunnel` in v0.7.0, background tunnels (`-b`, `ls`, `stop`, `logs`) in v0.8.0.
 
 ## Problem
 
@@ -115,10 +114,16 @@ resolved with a read-only describe call and must match exactly one running insta
    `delete/drain/replace --force/rollout undo` = destructive, unknown verbs = write).
 5. **Audit.** Sessions get a `start` entry (after the guard, so blocked sessions have none)
    and an `end` entry with duration and exit code, sharing a session id.
-6. **Lifecycle.** `mek tunnel` stays in the foreground and forwards Ctrl-C. `--background`
+6. **Lifecycle (as built).** A background tunnel's `<MEK_HOME>/tunnels/<id>.lock` and
+   `port-<n>.lock` are flocked by the starting mek and handed to the supervisor as
+   inherited descriptors, so there is no moment when nobody holds them; the supervisor
+   keeps them out of the tunnel's process (close-on-exec). The process's environment
+   reaches the supervisor on stdin, never on disk. `stop` signals the owner only while
+   its lock is held (so the pid is surely still ours), and never pid 0 or -1.
+7. **Lifecycle (original decision).** `mek tunnel` stays in the foreground and forwards Ctrl-C. `--background`
    (v0.8.0) runs it under a supervisor; liveness is a `flock` held by the supervisor (not a
    pid, which can be reused), and `ls`/`stop` cover every context. Tunnels bind to loopback.
-7. **Doctor** reports plugins as required only when the config uses them (kubectl and
+8. **Doctor** reports plugins as required only when the config uses them (kubectl and
    gke-gcloud-auth-plugin when a context has `clusters`).
 
 ## Design patterns (GoF)
@@ -134,7 +139,10 @@ resolved with a read-only describe call and must match exactly one running insta
 | Decorator (new) | `audit.SessionStart` after the guard: `audit → guard → sessionStart → exec` |
 | Command + Builder | `kube.MergeCommands`/`UnmergeCommands` build `kubectl config` argv lists |
 | Command / Decorator (extended) | `runner.Invocation.Stdout` lets lookups run through `audit → guard → exec` |
-| State, Observer, Facade | tunnel states, supervisor events, `internal/tunnel` API (v0.8.0) |
+| State | `internal/tunnel/state.go`: `starting`, `running`, `exited`, `dead` — each knows its listing and what stopping means (signal the owner, or only clean up) |
+| Observer | the supervisor notifies `stateStore` (record file), `auditSink` (end entry) and `logSink` (log lines) of `Started`/`Exited` |
+| Facade | `internal/tunnel`: `Start`, `Foreground`, `List`, `Find`, `Stop`, `Logs`, `Supervise` over records, flocks, port claims, spawning and signals |
+| Strategy (pipeline terminal) | `a.pipelineTo(terminal)`: `exec` wrapped by `foreground` registration, or `background` (spawn a supervisor) — guard and audit are the same either way |
 
 ## Spikes (M0)
 

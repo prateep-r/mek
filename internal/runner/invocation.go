@@ -19,6 +19,9 @@ type Invocation struct {
 	Stdout  io.Writer // nil: the terminal
 	Session string    // set for sessions (shell, tunnel): audited at start and end
 	Target  string    // what a session connects to, for the audit log
+	// Detached is set when a session was handed to a background supervisor,
+	// which writes its end entry when it really ends.
+	Detached bool
 
 	Decision string        // set by the guard: allowed | confirmed | blocked | declined
 	ExitCode int           // set by Exec (-1 when the command never ran)

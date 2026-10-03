@@ -161,7 +161,7 @@ func (a *app) kubeMerge(ctx string, entries []kube.Entry, current, mek, pathEnv 
 		return err
 	}
 	for _, argv := range cmds {
-		if err := a.runTo(argv, os.Environ(), io.Discard); err != nil {
+		if err := a.plainTo(argv, os.Environ(), io.Discard); err != nil {
 			return fmt.Errorf("%s: %w", strings.Join(argv[:3], " "), err)
 		}
 	}
@@ -181,7 +181,7 @@ func (a *app) kubeUnmerge(only string) error {
 		return err
 	}
 	var buf strings.Builder
-	if err := a.runTo([]string{"kubectl", "config", "get-contexts", "-o", "name", "--kubeconfig", target}, os.Environ(), &buf); err != nil {
+	if err := a.plainTo([]string{"kubectl", "config", "get-contexts", "-o", "name", "--kubeconfig", target}, os.Environ(), &buf); err != nil {
 		return err
 	}
 	var aliases []string
@@ -196,7 +196,7 @@ func (a *app) kubeUnmerge(only string) error {
 	}
 	failed := 0
 	for _, argv := range kube.UnmergeCommands(l.ctx.Name, target, aliases) {
-		if a.runTo(argv, os.Environ(), io.Discard) != nil {
+		if a.plainTo(argv, os.Environ(), io.Discard) != nil {
 			failed++ // e.g. a cluster entry already removed by hand: kubectl said so on stderr
 		}
 	}

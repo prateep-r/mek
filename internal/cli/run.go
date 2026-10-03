@@ -20,10 +20,10 @@ import (
 )
 
 // runPlain runs a helper command (login, whoami) without guard or audit.
-func (a *app) runPlain(argv, env []string) error { return a.runTo(argv, env, nil) }
+func (a *app) runPlain(argv, env []string) error { return a.plainTo(argv, env, nil) }
 
-// runTo is runPlain with stdout sent to w (nil: the terminal).
-func (a *app) runTo(argv, env []string, w io.Writer) error {
+// plainTo is runPlain with stdout sent to w (nil: the terminal).
+func (a *app) plainTo(argv, env []string, w io.Writer) error {
 	inv := &runner.Invocation{Argv: argv, Env: env, Stdout: w}
 	return inv.Err(a.exec.Run(inv))
 }
@@ -109,8 +109,12 @@ Note: commands run this way bypass mek's guard and audit log.`,
 // pipeline is audit → guard → exec, so a blocked or declined command is
 // audited just like one that ran. Sessions also get a start entry once the
 // guard let them through.
-func (a *app) pipeline() runner.Runner {
-	return runner.Chain(a.exec, audit.Recorder(warnAudit), a.guard, audit.SessionStart(warnAudit))
+func (a *app) pipeline() runner.Runner { return a.pipelineTo(a.exec) }
+
+// pipelineTo is the pipeline ending in terminal instead of exec (a Strategy
+// for where the command finally runs: here, or under a tunnel supervisor).
+func (a *app) pipelineTo(terminal runner.Runner) runner.Runner {
+	return runner.Chain(terminal, audit.Recorder(warnAudit), a.guard, audit.SessionStart(warnAudit))
 }
 
 // guarded runs argv in the context through the pipeline.
@@ -120,13 +124,16 @@ func (a *app) guarded(l *loaded, argv []string, class guard.Class) error {
 
 // run sends an invocation in the context through the pipeline. Shells and
 // tunnels — `mek shell` or e.g. `mek kubectl exec` — are sessions.
-func (a *app) run(l *loaded, inv *runner.Invocation) error {
+func (a *app) run(l *loaded, inv *runner.Invocation) error { return a.runTo(l, inv, a.exec) }
+
+// runTo is run with the pipeline ending in terminal.
+func (a *app) runTo(l *loaded, inv *runner.Invocation, terminal runner.Runner) error {
 	banner(l)
 	inv.Context = l.ctx
 	if inv.Class == guard.Shell || inv.Class == guard.Tunnel {
 		inv.Session = newSessionID()
 	}
-	return inv.Err(a.pipeline().Run(inv))
+	return inv.Err(a.pipelineTo(terminal).Run(inv))
 }
 
 // newSessionID is a random id that ties a session's audit entries together.

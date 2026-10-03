@@ -153,7 +153,8 @@ host, or `cloudsql` and `local_port` (GCP).
 | `mek login [ctx] [--adc] [-- <flags>]` | `aws sso login` / `gcloud auth login` (+ application-default with `--adc`) / `az login` / `hcloud configure sso`; flags after `--` go to that login command |
 | `mek aws …` / `mek gcloud …` / `mek az …` / `mek hcloud …` | run the CLI in the context, through the guard and audit log |
 | `mek shell <target>` | open a shell on an instance through AWS SSM or GCP IAP ([Shell](#shell-on-an-instance)) |
-| `mek tunnel [name]` | forward a local port to a private host ([Tunnels](#tunnels)) |
+| `mek tunnel [name] [-b]` | forward a local port to a private host, in the foreground or background ([Tunnels](#tunnels)) |
+| `mek tunnel ls` / `stop` / `logs` | list (every context), stop or read tunnels |
 | `mek kube [cluster] [--merge \| --unmerge]` | write the context's kubeconfig for EKS/GKE clusters ([Kubernetes](#kubernetes-eks-gke)) |
 | `mek kubectl …` | run kubectl on the context's clusters, through the guard and audit log |
 | `mek exec -- <cmd>` | run any command with the context's credentials |
@@ -227,8 +228,21 @@ mek -c gcp tunnel --cloudsql my-project:asia-southeast1:db --local 15432
 | GCP | `gcloud compute start-iap-tunnel` | `gcloud compute ssh` with `-L` (counts as a **shell**) | Cloud SQL Auth Proxy (needs `mek login --adc`) |
 
 The local port defaults to the remote port + 10000 and always binds to
-`127.0.0.1`; mek says so up front when it is taken. Tunnels stay in the
-foreground for now (background tunnels are next on the roadmap).
+`127.0.0.1`; mek says so up front when it is taken.
+
+Background tunnels outlive the terminal that started them:
+
+```bash
+mek -c prod tunnel db -b          # returns once localhost:15432 accepts connections (--wait 30s)
+mek tunnel ls                     # every context's tunnels, foreground ones too (-c for one)
+mek tunnel logs db [-f]
+mek tunnel stop db                # or an id, or --all
+```
+
+A small supervisor (`mek tunnel _supervise`) runs each one, holding a lock
+for as long as the tunnel lives — so `ls` knows it is alive without trusting
+pids — and writes the audit log's end entry when it stops. Two tunnels can't
+forward the same local port.
 
 ### Kubernetes (EKS, GKE)
 
@@ -297,13 +311,15 @@ enforcement belongs in IAM roles, SCPs and org policies.
 - Every kubectl request through mek's kubeconfig fetches a fresh token (about 0.5–1 s); mek never caches tokens.
 - The kubeconfig records mek's path and `PATH` when it is written; run `mek kube` again after moving mek or the cloud CLIs.
 - `mek shell` on GCP runs ssh with the context's own home directory, so your `~/.ssh/config` doesn't apply to it.
+- A session that the cloud closes (SSM's idle timeout is 20 minutes by default) ends its tunnel; `mek tunnel ls` shows it as exited. There is no auto-restart.
+- If a tunnel's supervisor is killed with `kill -9`, `ls` shows it as dead; on macOS the tunnel's own process can outlive it (`stop` warns when the port is still taken).
 - The Homebrew cask is macOS-only; use `install.sh` or `go install` on Linux.
 - Windows is not supported yet.
 
 ## Roadmap
 
 1. ✅ Contexts, SSO login, passthrough, exec/env, guard, audit, doctor, self-update
-2. Access paths ([design](docs/design/0001-tunnel-shell-kube.md)): ✅ `mek kube` / `mek kubectl` (EKS, GKE) · ✅ `mek shell` (SSM, IAP) · ✅ `mek tunnel` (SSM, IAP, Cloud SQL) · background tunnels
+2. Access paths ([design](docs/design/0001-tunnel-shell-kube.md)): ✅ `mek kube` / `mek kubectl` (EKS, GKE) · ✅ `mek shell` (SSM, IAP) · ✅ `mek tunnel` (SSM, IAP, Cloud SQL) · ✅ background tunnels
 3. TUI with a resource catalog generated from AWS/GCP/Azure/Huawei API models
 4. More Azure / Huawei features (Bastion, AKS, CCE)
 5. Desktop GUI (Wails)

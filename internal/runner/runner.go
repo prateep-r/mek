@@ -62,6 +62,12 @@ func RunIO(argv []string, env []string, stdout io.Writer) (int, error) {
 	return result(cmd.Wait())
 }
 
+// ExitCode is the exit code of a process that Wait returned err for.
+func ExitCode(err error) int {
+	code, _ := result(err)
+	return code
+}
+
 // result turns Wait's error into an exit code, following the shell
 // convention of 128+N when the child died from signal N. A non-exit error
 // (the child never really ran) is returned with code 1.

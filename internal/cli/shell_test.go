@@ -135,7 +135,7 @@ func TestShellErrors(t *testing.T) {
 	if len(h.exec.invs) != 0 {
 		t.Errorf("ran without the plugin: %q", h.exec.argv())
 	}
-	if err := (&app{exec: h.exec}).session(nil, providerCommand("nope-plugin"), 0, ""); err == nil || !strings.Contains(err.Error(), "see `mek doctor`") {
+	if err := (&app{exec: h.exec}).session(nil, providerCommand("nope-plugin"), 0, "", nil); err == nil || !strings.Contains(err.Error(), "see `mek doctor`") {
 		t.Errorf("unknown plugin: %v", err)
 	}
 

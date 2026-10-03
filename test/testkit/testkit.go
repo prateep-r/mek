@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -180,4 +181,38 @@ func Calls(t testing.TB, log string) []Call {
 		calls = append(calls, c)
 	}
 	return calls
+}
+
+var (
+	listenstubOnce sync.Once
+	listenstubPath string
+	listenstubErr  error
+)
+
+// Listenstub builds cmd/listenstub (a fake tunnel CLI that really listens)
+// once per test binary and returns its path.
+func Listenstub(t testing.TB) string {
+	t.Helper()
+	listenstubOnce.Do(func() {
+		root, err := ModuleRoot()
+		if err != nil {
+			listenstubErr = err
+			return
+		}
+		dir, err := os.MkdirTemp("", "listenstub")
+		if err != nil {
+			listenstubErr = err
+			return
+		}
+		listenstubPath = filepath.Join(dir, "listenstub")
+		cmd := exec.Command("go", "build", "-o", listenstubPath, "./test/testkit/cmd/listenstub")
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			listenstubErr = fmt.Errorf("go build listenstub: %w\n%s", err, out)
+		}
+	})
+	if listenstubErr != nil {
+		t.Fatal(listenstubErr)
+	}
+	return listenstubPath
 }
