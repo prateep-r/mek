@@ -25,20 +25,25 @@ if need aws; then
   (cd "$tmp" && unzip -q awscli.zip && $SUDO ./aws/install >/dev/null)
 fi
 
-if need gcloud; then
-  curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | $SUDO gpg --dearmor --yes -o /usr/share/keyrings/cloud.google.gpg
-  echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" |
-    $SUDO tee /etc/apt/sources.list.d/google-cloud-sdk.list >/dev/null
+# google_apt adds Google's Cloud SDK apt repo unless one is configured
+# already (a second entry with another keyring makes apt refuse to run).
+google_apt() {
+  if ! grep -rqs packages.cloud.google.com /etc/apt/sources.list /etc/apt/sources.list.d/; then
+    curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | $SUDO gpg --dearmor --yes -o /usr/share/keyrings/cloud.google.gpg
+    echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" |
+      $SUDO tee /etc/apt/sources.list.d/google-cloud-sdk.list >/dev/null
+  fi
   $SUDO apt-get update -qq
+}
+
+if need gcloud; then
+  google_apt
   $SUDO apt-get install -y -qq google-cloud-cli >/dev/null
 fi
 
 if need gke-gcloud-auth-plugin; then
-  # From the same apt repo as gcloud; an archive install has components instead.
-  $SUDO apt-get update -qq >/dev/null 2>&1 || true
-  if ! $SUDO apt-get install -y -qq google-cloud-cli-gke-gcloud-auth-plugin >/dev/null 2>&1; then
-    gcloud components install gke-gcloud-auth-plugin --quiet
-  fi
+  google_apt # the plugin comes from gcloud's apt repo
+  $SUDO apt-get install -y -qq google-cloud-cli-gke-gcloud-auth-plugin >/dev/null
 fi
 
 if need kubectl; then
