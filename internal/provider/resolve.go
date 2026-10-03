@@ -54,11 +54,14 @@ func configured(targets map[string]*config.Target) link {
 		if o.Zone == "" {
 			o.Zone = t.Zone
 		}
+		if o.ResourceGroup == "" {
+			o.ResourceGroup = t.ResourceGroup
+		}
 		if o.User == "" {
 			o.User = t.User
 		}
 		in, err := next.resolve(t.Instance, o)
-		in.Alias = spec
+		in.Alias, in.Auth, in.Bastion = spec, t.Auth, t.Bastion
 		return in, err
 	}
 }

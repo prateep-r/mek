@@ -67,6 +67,8 @@ Update with `brew upgrade mek` (Homebrew) or `mek self-update` (script / manual 
 | `mek kubectl`, `mek kube --merge` | [kubectl](https://kubernetes.io/docs/tasks/tools/) |
 | GKE clusters (`clusters:` on a GCP context) | [gke-gcloud-auth-plugin](https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_plugin) |
 | Cloud SQL tunnels (`mek tunnel --cloudsql`) | [cloud-sql-proxy](https://cloud.google.com/sql/docs/postgres/connect-auth-proxy#install) |
+| AKS clusters (`clusters:` on an Azure context) | [kubelogin](https://azure.github.io/kubelogin/install.html) |
+| `mek shell` / `mek tunnel` on Azure | the az `bastion` extension (`ssh` too for Entra ID logins): `az extension add --name bastion --name ssh` |
 | `mek shell` / `mek tunnel` on AWS | [session-manager-plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html) |
 
 ## Configure
@@ -137,7 +139,10 @@ Azure `subscription_id` is a GUID. Cluster names (`clusters:`) follow the contex
 rules; EKS clusters take `region`, GKE clusters `location`. Targets (`targets:`) are an AWS
 instance id or `tag:Key=Value`, or a GCP VM name (with optional `zone` and `user`).
 Tunnels (`tunnels:`) need `via` (a target) and `port`, plus `host` to reach another
-host, or `cloudsql` and `local_port` (GCP).
+host, or `cloudsql` and `local_port` (GCP). On Azure, targets are a VM name (with
+optional `resource_group`) or resource id, shells and tunnels go through the context's
+`bastion: {name, resource_group}`, and a tunnel to another host is just `host` (an IP)
+and `port`; clusters take `name` and `resource_group`.
 
 > Never commit real account IDs or SSO URLs to a public repository. Share team configs from a private repo.
 
@@ -152,10 +157,10 @@ host, or `cloudsql` and `local_port` (GCP).
 | `mek ctx` / `mek ctx --short` | show the current context (`--short` for shell prompts) |
 | `mek login [ctx] [--adc] [-- <flags>]` | `aws sso login` / `gcloud auth login` (+ application-default with `--adc`) / `az login` / `hcloud configure sso`; flags after `--` go to that login command |
 | `mek aws …` / `mek gcloud …` / `mek az …` / `mek hcloud …` | run the CLI in the context, through the guard and audit log |
-| `mek shell <target>` | open a shell on an instance through AWS SSM or GCP IAP ([Shell](#shell-on-an-instance)) |
+| `mek shell <target>` | open a shell on an instance through AWS SSM, GCP IAP or Azure Bastion ([Shell](#shell-on-an-instance)) |
 | `mek tunnel [name] [-b]` | forward a local port to a private host, in the foreground or background ([Tunnels](#tunnels)) |
 | `mek tunnel ls` / `stop` / `logs` | list (every context), stop or read tunnels |
-| `mek kube [cluster] [--merge \| --unmerge]` | write the context's kubeconfig for EKS/GKE clusters ([Kubernetes](#kubernetes-eks-gke)) |
+| `mek kube [cluster] [--merge \| --unmerge]` | write the context's kubeconfig for EKS/GKE/AKS clusters ([Kubernetes](#kubernetes-eks-gke-aks)) |
 | `mek kubectl …` | run kubectl on the context's clusters, through the guard and audit log |
 | `mek exec -- <cmd>` | run any command with the context's credentials |
 | `eval "$(mek env [ctx])"` | export the context into your shell (bypasses guard/audit) |
@@ -198,10 +203,14 @@ mek -c prod shell bastion               # a name under the context's targets:
 mek -c prod shell i-0abc1234def567890   # aws: an instance id
 mek -c prod shell tag:Name=bastion      # aws: the one running instance with that tag
 mek -c gcp shell vm-1 [--zone Z]        # gcp: a VM name (the zone is looked up)
+mek -c az shell vm-jump                 # azure: a VM name or resource id, through Bastion
 ```
 
 AWS uses `aws ssm start-session` (needs session-manager-plugin); GCP uses
-`gcloud compute ssh --tunnel-through-iap`. No public IP, bastion key or open
+`gcloud compute ssh --tunnel-through-iap`; Azure uses `az network bastion ssh` with a
+Microsoft Entra ID login (no key; the VM needs the AADSSHLogin extension), or with the
+context's key `~/.config/mek/ssh/<context>/id_ed25519` for targets with `auth: ssh-key`
+(you create it and add the `.pub` to the VM). No public IP, bastion key or open
 port is needed. On GCP the context's SSH key and known hosts live under
 `~/.config/mek/ssh/<context>`, not `~/.ssh`. Protected contexts ask first;
 readonly contexts block shells. The same goes for `mek aws ssm start-session`
@@ -226,6 +235,7 @@ mek -c gcp tunnel --cloudsql my-project:asia-southeast1:db --local 15432
 |---|---|---|---|
 | AWS | SSM port forwarding | SSM port forwarding to a remote host | — |
 | GCP | `gcloud compute start-iap-tunnel` | `gcloud compute ssh` with `-L` (counts as a **shell**) | Cloud SQL Auth Proxy (needs `mek login --adc`) |
+| Azure | `az network bastion tunnel --target-resource-id` | `host` (an IP) without `via`: Bastion connects to it (`--target-ip-address`) | — |
 
 The local port defaults to the remote port + 10000 and always binds to
 `127.0.0.1`; mek says so up front when it is taken.
@@ -244,7 +254,7 @@ for as long as the tunnel lives — so `ls` knows it is alive without trusting
 pids — and writes the audit log's end entry when it stops. Two tunnels can't
 forward the same local port.
 
-### Kubernetes (EKS, GKE)
+### Kubernetes (EKS, GKE, AKS)
 
 List a context's clusters under `clusters:` (see `mek init`'s example), then:
 
@@ -258,7 +268,9 @@ mek -c prod exec -- k9s               # or any tool, for one command
 
 The kubeconfig holds no credentials: each request runs
 `mek --context prod kube token …`, which gets a short-lived token from
-`aws eks get-token` or `gke-gcloud-auth-plugin` with the context's login.
+`aws eks get-token`, `gke-gcloud-auth-plugin` or `kubelogin` (AKS, through the
+context's `az login`). AKS clusters need Microsoft Entra ID integration: clusters
+with only local accounts hand out long-lived certificates, which mek won't keep.
 So the file is safe to keep, works in K9s or FreeLens started from the Dock
 (`KUBECONFIG=~/.config/mek/kube/prod.yaml`), and can never use another
 context's credentials. Contexts are named `<context>/<cluster>`, e.g. `prod/main`.
@@ -321,7 +333,7 @@ enforcement belongs in IAM roles, SCPs and org policies.
 1. ✅ Contexts, SSO login, passthrough, exec/env, guard, audit, doctor, self-update
 2. Access paths ([design](docs/design/0001-tunnel-shell-kube.md)): ✅ `mek kube` / `mek kubectl` (EKS, GKE) · ✅ `mek shell` (SSM, IAP) · ✅ `mek tunnel` (SSM, IAP, Cloud SQL) · ✅ background tunnels
 3. TUI with a resource catalog generated from AWS/GCP/Azure/Huawei API models
-4. More Azure / Huawei features (Bastion, AKS, CCE)
+4. ✅ Azure: Bastion shells and tunnels, AKS · Huawei Cloud CCE (undecided: it needs long-lived certificates)
 5. Desktop GUI (Wails)
 
 ## Development

@@ -19,15 +19,15 @@ import (
 )
 
 type kubeOpts struct {
-	name, region, location string // an ad-hoc cluster
-	merge, use, unmerge    bool
+	name, region, location, resourceGroup string // an ad-hoc cluster
+	merge, use, unmerge                   bool
 }
 
 func (a *app) newKubeCmd() *cobra.Command {
 	var o kubeOpts
 	cmd := &cobra.Command{
 		Use:   "kube [cluster]",
-		Short: "Write a kubeconfig for the context's clusters (kubectl, K9s, FreeLens)",
+		Short: "Write a kubeconfig for the context's clusters: EKS, GKE, AKS (kubectl, K9s, FreeLens)",
 		Long: `Write <MEK_HOME>/kube/<context>.yaml for the clusters in the context's config.
 Its credentials come from mek on every request, so it never holds a key.
 
@@ -52,6 +52,7 @@ Its credentials come from mek on every request, so it never holds a key.
 	f.StringVar(&o.name, "name", "", "a cluster that isn't in the config: its name in the cloud")
 	f.StringVar(&o.region, "region", "", "aws: the ad-hoc cluster's region (default: the context's)")
 	f.StringVar(&o.location, "location", "", "gcp: the ad-hoc cluster's zone or region")
+	f.StringVar(&o.resourceGroup, "resource-group", "", "azure: the ad-hoc cluster's resource group")
 	f.BoolVar(&o.merge, "merge", false, "also add the clusters to your kubeconfig ($KUBECONFIG or ~/.kube/config)")
 	f.BoolVar(&o.use, "use", false, "with --merge: switch kubectl's current-context to the cluster")
 	f.BoolVar(&o.unmerge, "unmerge", false, "remove this context's clusters from your kubeconfig")
@@ -115,8 +116,8 @@ func (a *app) kube(out io.Writer, current string, o kubeOpts) error {
 // validated with the config's rules.
 func kubeClusters(cfg *config.Config, ctx *config.Context, o kubeOpts) (map[string]*config.Cluster, error) {
 	if o.name == "" {
-		if o.region != "" || o.location != "" {
-			return nil, errors.New("--region and --location need --name")
+		if o.region != "" || o.location != "" || o.resourceGroup != "" {
+			return nil, errors.New("--region, --location and --resource-group need --name")
 		}
 		if len(ctx.Clusters) == 0 {
 			return nil, fmt.Errorf("context %s has no clusters — add `clusters:` to its config, or pass --name", ctx.Name)
@@ -128,7 +129,7 @@ func kubeClusters(cfg *config.Config, ctx *config.Context, o kubeOpts) (map[stri
 	if c.Clusters == nil {
 		c.Clusters = map[string]*config.Cluster{}
 	}
-	c.Clusters[o.name] = &config.Cluster{Name: o.name, Region: o.region, Location: o.location}
+	c.Clusters[o.name] = &config.Cluster{Name: o.name, Region: o.region, Location: o.location, ResourceGroup: o.resourceGroup}
 	if err := provider.CheckContext(cfg, &c); err != nil {
 		return nil, err
 	}

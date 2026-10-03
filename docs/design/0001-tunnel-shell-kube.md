@@ -1,7 +1,8 @@
 # 0001 — `mek tunnel`, `mek shell`, `mek kube`
 
 Status: **implemented** — `mek kube` / `mek kubectl` in v0.6.0, `mek shell` and foreground
-`mek tunnel` in v0.7.0, background tunnels (`-b`, `ls`, `stop`, `logs`) in v0.8.0.
+`mek tunnel` in v0.7.0, background tunnels (`-b`, `ls`, `stop`, `logs`) in v0.8.0, Azure
+(Bastion, AKS) in v0.9.0.
 
 ## Problem
 
@@ -69,12 +70,20 @@ CLI arguments). Each cloud adds its own (`provider.Cloud.Validate`).
 
 ## How it maps to each cloud
 
-| | AWS | GCP | Azure (later) | Huawei Cloud (later) |
+| | AWS | GCP | Azure (v0.9.0) | Huawei Cloud (later) |
 |---|---|---|---|---|
-| kube | `aws eks describe-cluster` → kubeconfig; token `aws eks get-token` | `gcloud container clusters describe` → kubeconfig; token `gke-gcloud-auth-plugin` | `az aks` + kubelogin | CCE (static certificate — undecided) |
-| shell | `aws ssm start-session --target <id>` | `gcloud compute ssh <vm> --tunnel-through-iap` | `az network bastion ssh` | ❓ |
-| tunnel | SSM `AWS-StartPortForwardingSession[ToRemoteHost]` | IAP → VM port; IAP + SSH `-L` to another host; `cloud-sql-proxy` | `az network bastion tunnel` | ❓ |
-| needs | session-manager-plugin | gke-gcloud-auth-plugin, cloud-sql-proxy | kubelogin | — |
+| kube | `aws eks describe-cluster` → kubeconfig; token `aws eks get-token` | `gcloud container clusters describe` → kubeconfig; token `gke-gcloud-auth-plugin` | `az aks get-credentials --file - --format exec` → kubeconfig (Entra ID clusters only); token `kubelogin get-token --login azurecli` | CCE (static certificate — undecided) |
+| shell | `aws ssm start-session --target <id>` | `gcloud compute ssh <vm> --tunnel-through-iap` | `az network bastion ssh --auth-type AAD` or `ssh-key` (context key) | ❓ |
+| tunnel | SSM `AWS-StartPortForwardingSession[ToRemoteHost]` | IAP → VM port; IAP + SSH `-L` to another host; `cloud-sql-proxy` | `az network bastion tunnel --target-resource-id` (VM port) or `--target-ip-address` (another host, still a tunnel) | ❓ |
+| needs | session-manager-plugin | gke-gcloud-auth-plugin, cloud-sql-proxy | kubelogin; az extensions `bastion` (+ `ssh` for Entra ID), installed by the user | — |
+
+Azure decisions (v0.9.0): the Bastion is set per context (`bastion: {name, resource_group}`)
+and a target may name its own; shells log in with Entra ID by default or the context's
+`id_ed25519` with `auth: ssh-key`; AKS clusters with only local accounts are not supported
+(long-lived certificates); mek points `AZURE_EXTENSION_DIR` at the user's own extensions and
+tells them to `az extension add` instead of installing code. Spikes: the bastion extension
+(1.4.3) binds `localhost` for tunnels, and `az network bastion ssh` gives ssh
+`UserKnownHostsFile=/dev/null`, so nothing lands in `~/.ssh`.
 
 Target resolution: an instance id is used as is; `tag:Key=Value` (AWS) / VM name (GCP) is
 resolved with a read-only describe call and must match exactly one running instance.

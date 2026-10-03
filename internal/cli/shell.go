@@ -19,7 +19,7 @@ func (a *app) newShellCmd() *cobra.Command {
 	var o provider.TargetOptions
 	cmd := &cobra.Command{
 		Use:   "shell <target>",
-		Short: "Open a shell on an instance (AWS SSM, GCP IAP + SSH)",
+		Short: "Open a shell on an instance (AWS SSM, GCP IAP + SSH, Azure Bastion)",
 		Long: `Open an interactive shell on an instance through the cloud's own
 session service — no public IP, bastion key or open port needed.
 
@@ -27,10 +27,12 @@ session service — no public IP, bastion key or open port needed.
   mek -c prod shell i-0abc1234def567890 # aws: an instance id
   mek -c prod shell tag:Name=bastion    # aws: the one running instance with that tag
   mek -c gcp shell vm-1 [--zone Z]      # gcp: a VM name (the zone is looked up)
+  mek -c az shell vm-jump               # azure: a VM name or resource id, through Bastion
 
 On a protected context mek asks first; on a readonly context shells are blocked.
 GCP keeps the context's SSH key and known hosts under <MEK_HOME>/ssh/<context>,
-not ~/.ssh.`,
+not ~/.ssh. Azure logs in with Microsoft Entra ID, or with the context's key
+(<MEK_HOME>/ssh/<context>/id_ed25519) for targets with auth: ssh-key.`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeTargets,
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -38,7 +40,8 @@ not ~/.ssh.`,
 		},
 	}
 	cmd.Flags().StringVar(&o.Zone, "zone", "", "gcp: the VM's zone (default: looked up)")
-	cmd.Flags().StringVar(&o.User, "user", "", "gcp: SSH user (default: gcloud's)")
+	cmd.Flags().StringVar(&o.ResourceGroup, "resource-group", "", "azure: the VM's resource group (default: looked up)")
+	cmd.Flags().StringVar(&o.User, "user", "", "gcp, azure: SSH user")
 	return cmd
 }
 

@@ -58,6 +58,8 @@ type Context struct {
 	Targets map[string]*Target `yaml:"targets,omitempty"`
 	// Port forwards for `mek tunnel`, by alias.
 	Tunnels map[string]*Tunnel `yaml:"tunnels,omitempty"`
+	// Azure Bastion host that shells and tunnels go through.
+	Bastion *Bastion `yaml:"bastion,omitempty"`
 }
 
 type Config struct {

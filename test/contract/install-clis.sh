@@ -1,6 +1,7 @@
 #!/bin/sh
 # Install any missing CLI for the contract tests: AWS CLI v2, Google Cloud CLI
-# (with gke-gcloud-auth-plugin), Azure CLI, Huawei Cloud KooCLI and kubectl.
+# (with gke-gcloud-auth-plugin), Azure CLI (with the bastion and ssh
+# extensions), Huawei Cloud KooCLI and kubectl.
 # For CI runners and containers
 # (Debian/Ubuntu, amd64 or arm64); uses sudo when not root.
 set -eu
@@ -55,6 +56,10 @@ fi
 if need az; then
   curl -fsSL https://aka.ms/InstallAzureCLIDeb | $SUDO bash >/dev/null
 fi
+
+# az extensions for Azure Bastion shells and tunnels (mek never installs them).
+az extension add --name bastion --only-show-errors --yes >/dev/null 2>&1 || az extension add --name bastion --only-show-errors
+az extension add --name ssh --only-show-errors --yes >/dev/null 2>&1 || az extension add --name ssh --only-show-errors
 
 if need hcloud; then
   curl -fsSL "https://ap-southeast-3-hwcloudcli.obs.ap-southeast-3.myhuaweicloud.com/cli/latest/huaweicloud-cli-linux-$arch.tar.gz" -o "$tmp/hcloud.tgz"

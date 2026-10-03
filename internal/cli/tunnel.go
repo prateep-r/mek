@@ -38,7 +38,7 @@ func (a *app) newTunnelCmd() *cobra.Command {
 	var o tunnelOpts
 	cmd := &cobra.Command{
 		Use:   "tunnel [name]",
-		Short: "Forward a local port to a private host (AWS SSM, GCP IAP, Cloud SQL)",
+		Short: "Forward a local port to a private host (AWS SSM, GCP IAP, Cloud SQL, Azure Bastion)",
 		Long: `Forward a port on localhost to a host in a private network, through the
 cloud's own session service. It stays in the foreground; Ctrl-C closes it.
 
@@ -46,6 +46,7 @@ cloud's own session service. It stays in the foreground; Ctrl-C closes it.
   mek -c prod tunnel --via bastion --to mydb.xyz.rds.amazonaws.com:5432
   mek -c prod tunnel --via i-0abc1234def567890 --to :8080   # a port on the instance itself
   mek -c gcp tunnel --cloudsql my-project:asia-southeast1:db --local 15432
+  mek -c az tunnel --to 10.1.2.3:5432                       # azure: Bastion connects to the IP
 
   mek -c prod tunnel db -b                                  # in the background
   mek tunnel ls                                             # every context's tunnels
@@ -72,6 +73,7 @@ another host log in to the VM over SSH, so they count as a shell.`,
 	f.BoolVar(&o.privateIP, "private-ip", false, "gcp: reach Cloud SQL over its private IP")
 	f.IntVar(&o.local, "local", 0, "local port (default: remote port + 10000)")
 	f.StringVar(&o.target.Zone, "zone", "", "gcp: the VM's zone (default: looked up)")
+	f.StringVar(&o.target.ResourceGroup, "resource-group", "", "azure: the VM's resource group (default: looked up)")
 	f.StringVar(&o.target.User, "user", "", "gcp: SSH user for tunnels to another host")
 	f.BoolVarP(&o.background, "background", "b", false, "run in the background (see mek tunnel ls / stop / logs)")
 	f.DurationVar(&o.wait, "wait", 30*time.Second, "with --background: how long to wait for the local port")
@@ -282,7 +284,7 @@ func age(t time.Time) string {
 func tunnelSpec(l *loaded, name string, o tunnelOpts) (config.Tunnel, error) {
 	switch {
 	case name != "" && o.adhoc():
-		return config.Tunnel{}, errors.New("a named tunnel takes only --local, --zone and --user")
+		return config.Tunnel{}, errors.New("a named tunnel takes only --local, --zone, --resource-group and --user")
 	case name != "":
 		t, ok := l.ctx.Tunnels[name]
 		if !ok {
@@ -295,7 +297,7 @@ func tunnelSpec(l *loaded, name string, o tunnelOpts) (config.Tunnel, error) {
 		}
 		return spec, spec.Validate()
 	case !o.adhoc():
-		return config.Tunnel{}, errors.New("name a tunnel from the context's tunnels:, or pass --via and --to, or --cloudsql")
+		return config.Tunnel{}, errors.New("name a tunnel from the context's tunnels:, or pass --via and/or --to, or --cloudsql")
 	}
 	spec := config.Tunnel{Via: o.via, CloudSQL: o.cloudSQL, PrivateIP: o.privateIP, LocalPort: o.local}
 	if o.to != "" {

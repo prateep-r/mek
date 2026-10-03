@@ -20,6 +20,9 @@ var gcpCloud = Cloud{
 		if c.Project == "" {
 			return errors.New("gcp context needs project")
 		}
+		if err := notAzure(c); err != nil {
+			return err
+		}
 		for alias, cl := range c.Clusters {
 			if cl.Region != "" {
 				return fmt.Errorf("clusters.%s: gcp clusters use location (zone or region), not region", alias)

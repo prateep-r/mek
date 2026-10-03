@@ -12,8 +12,10 @@ RUN apt-get update -qq \
  && apt-get install -y -qq --no-install-recommends make rsync >/dev/null \
  && rm -rf /var/lib/apt/lists/*
 
+# az extensions go where the (non-root) test user finds them too.
+ENV AZURE_EXTENSION_DIR=/opt/az-extensions
 COPY contract/install-clis.sh /tmp/install-clis.sh
-RUN sh /tmp/install-clis.sh && rm /tmp/install-clis.sh
+RUN sh /tmp/install-clis.sh && rm /tmp/install-clis.sh && chmod -R a+rX /opt/az-extensions
 
 # Tests that check permission errors need a non-root user. The Go cache dir
 # exists (owned by mek) before compose mounts its volume there, so the

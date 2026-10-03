@@ -61,7 +61,7 @@ func TestValidateTunnels(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"      ls: {via: x, port: 1}\n", "reserved"},
 		{"      db:\n", "tunnels.db is empty"},
-		{"      db: {port: 5432}\n", "tunnels.db: needs via (a target) or cloudsql"},
+		{"      db: {port: 5432}\n", "tunnels.db: needs via (a target), host or cloudsql"},
 		{"      db: {via: x}\n", "port 0 is not a port"},
 		{"      db: {via: x, port: 70000}\n", "port 70000 is not a port"},
 		{"      db: {via: x, port: 60000}\n", "port 60000 + 10000 is not a port: set local_port"},
@@ -85,5 +85,27 @@ func TestValidateTunnels(t *testing.T) {
 	}
 	if got := (&Tunnel{Port: 5432, LocalPort: 5433}).Local(); got != 5433 {
 		t.Errorf("local_port: %d", got)
+	}
+}
+
+func TestValidateAzureFields(t *testing.T) {
+	ctx := "contexts:\n  a:\n    provider: azure\n    tenant_id: t\n    subscription_id: s\n"
+	cases := []struct{ in, want string }{
+		{"    bastion: {name: b}\n", "bastion needs name and resource_group"},
+		{"    bastion: {name: b, resource_group: \"-rg\"}\n", "bastion.resource_group must not start"},
+		{"    targets: {vm: {instance: x, auth: password}}\n", "targets.vm.auth must be aad or ssh-key"},
+		{"    targets: {vm: {instance: x, auth: ssh-key}}\n", "targets.vm: auth ssh-key needs a user"},
+		{"    targets: {vm: {instance: x, bastion: {name: b}}}\n", "targets.vm.bastion needs name and resource_group"},
+		{"    targets: {vm: {instance: x, resource_group: \"-g\"}}\n", "targets.vm.resource_group must not start"},
+		{"    clusters: {aks: {name: x, resource_group: \"-g\"}}\n", "clusters.aks.resource_group must not start"},
+	}
+	for _, c := range cases {
+		_, err := Parse([]byte(ctx + c.in))
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("Parse(%q) err=%v, want containing %q", c.in, err, c.want)
+		}
+	}
+	if _, err := Parse([]byte(ctx + "    bastion: {name: b, resource_group: rg}\n    targets: {vm: {instance: x, auth: ssh-key, user: ops, bastion: {name: b2, resource_group: rg2}}, v2: {instance: y, auth: aad}}\n    tunnels: {db: {host: 10.0.0.4, port: 5432}}\n")); err != nil {
+		t.Errorf("valid: %v", err)
 	}
 }

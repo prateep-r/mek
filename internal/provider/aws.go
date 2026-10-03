@@ -48,6 +48,9 @@ func ssoRegion(c *config.Context) string {
 }
 
 func validateAWS(c *config.Context) error {
+	if err := notAzure(c); err != nil {
+		return err
+	}
 	for alias, cl := range c.Clusters {
 		if cl.Location != "" {
 			return fmt.Errorf("clusters.%s: aws clusters use region, not location", alias)

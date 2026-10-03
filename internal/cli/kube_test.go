@@ -114,6 +114,7 @@ func TestKubeErrors(t *testing.T) {
 		{[]string{"-c", "prod", "kube", "nope"}, `no cluster "nope" (clusters: data, main)`},
 		{[]string{"-c", "bare", "kube"}, "has no clusters"},
 		{[]string{"-c", "bare", "kube", "--location", "x"}, "need --name"},
+		{[]string{"-c", "bare", "kube", "--name", "x", "--resource-group", "g"}, "resource_group is for azure"},
 		{[]string{"-c", "bare", "kube", "--name", "x", "--region=-r"}, "clusters.x.region must not start with '-'"},
 		{[]string{"-c", "bare", "kube", "--name", "x", "--location", "z"}, "use region, not location"},
 		{[]string{"-c", "hw", "kube"}, "doesn't support huawei"},

@@ -24,10 +24,47 @@ var azureCloud = Cloud{
 		if !guid.MatchString(c.SubscriptionID) {
 			return fmt.Errorf("subscription_id must be a GUID, got %q", c.SubscriptionID)
 		}
-		return nil
+		return validateAzureAccess(c)
 	},
 	Tool: Tool{VersionArgs: []string{"version", "--output", "tsv", "--query", `"azure-cli"`},
 		Brew: "brew install azure-cli", URL: "https://learn.microsoft.com/cli/azure/install-azure-cli"},
+	Plugins: []Plugin{{
+		Bin: "kubelogin", Purpose: "AKS credentials for kubectl (mek kube)", Needed: hasClusters,
+		Tool: Tool{VersionArgs: []string{"--version"}, Brew: "brew install Azure/kubelogin/kubelogin",
+			URL: "https://azure.github.io/kubelogin/install.html"},
+	}},
+}
+
+// validateAzureAccess checks clusters, targets and the Bastion they need.
+func validateAzureAccess(c *config.Context) error {
+	for alias, cl := range c.Clusters {
+		if cl.Region != "" || cl.Location != "" {
+			return fmt.Errorf("clusters.%s: azure clusters take resource_group, not region or location", alias)
+		}
+		if cl.ResourceGroup == "" {
+			return fmt.Errorf("clusters.%s needs a resource_group", alias)
+		}
+	}
+	for alias, t := range c.Targets {
+		if t.Zone != "" {
+			return fmt.Errorf("targets.%s: azure targets take resource_group, not zone", alias)
+		}
+		if !azureVMID.MatchString(t.Instance) && !azureVMName.MatchString(t.Instance) {
+			return fmt.Errorf("targets.%s: instance %q is not a VM name or resource id", alias, t.Instance)
+		}
+		if t.Bastion == nil && c.Bastion == nil {
+			return fmt.Errorf("targets.%s: set bastion on the target or the context", alias)
+		}
+	}
+	for alias, t := range c.Tunnels {
+		if _, ok := c.Targets[t.Via]; t.Via != "" && !ok && !azureVMID.MatchString(t.Via) && !azureVMName.MatchString(t.Via) {
+			return fmt.Errorf("tunnels.%s: via %q is not a target name, VM name or resource id", alias, t.Via)
+		}
+		if t.Via != "" && c.Targets[t.Via] == nil && c.Bastion == nil {
+			return fmt.Errorf("tunnels.%s: set the context's bastion", alias)
+		}
+	}
+	return nil
 }
 
 var guid = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -66,6 +103,12 @@ func (z *Azure) Prepare() (Env, error) {
 		// mek picks the subscription itself; skip az login's interactive picker
 		"AZURE_CORE_LOGIN_EXPERIENCE_V2": "off",
 	}, Unset: azureUnset}
+	// Extensions (bastion, ssh) are shared with the user's own az.
+	ext, err := extensionDir()
+	if err != nil {
+		return Env{}, err
+	}
+	env.Set["AZURE_EXTENSION_DIR"] = ext
 	if z.ctx.Region != "" {
 		env.Set["AZURE_DEFAULTS_LOCATION"] = z.ctx.Region
 	}

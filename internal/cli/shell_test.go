@@ -17,7 +17,7 @@ const shellConfig = `contexts:
   prod: {provider: aws, aws_profile: admin, region: ap-southeast-1, protected: true, targets: {bastion: {instance: "tag:Name=bastion"}, db: {instance: i-0123abcd}}}
   ro:   {provider: aws, aws_profile: viewer, readonly: true}
   gcp:  {provider: gcp, project: p, targets: {web: {instance: web-1, zone: asia-southeast1-b}}}
-  az:   {provider: azure, tenant_id: t, subscription_id: 00000000-1111-2222-3333-444444444444}
+  hw:   {provider: huawei, hcloud_profile: x}
 `
 
 func newShellHarness(t *testing.T) *harness {
@@ -120,7 +120,7 @@ func TestShellErrors(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"-c", "az", "shell", "x"}, "mek shell doesn't support azure yet"},
+		{[]string{"-c", "hw", "shell", "x"}, "mek shell doesn't support huawei yet"},
 		{[]string{"-c", "prod", "shell", "web"}, `unknown target "web"`},
 		{[]string{"-c", "nope", "shell", "x"}, "unknown context"},
 		{[]string{"-c", "prod", "shell"}, "accepts 1 arg"},

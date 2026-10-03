@@ -57,6 +57,13 @@ contexts:
   #   tenant_id: your-org.onmicrosoft.com
   #   subscription_id: 00000000-0000-0000-0000-000000000000
   #   region: southeastasia
+  #   bastion: {name: bastion-prod, resource_group: rg-network}   # for mek shell / mek tunnel
+  #   targets:
+  #     jump: {instance: vm-jump, resource_group: rg-app}         # Entra ID login; or auth: ssh-key + user
+  #   tunnels:
+  #     db: {host: 10.1.2.3, port: 5432}                          # Bastion connects to the IP
+  #   clusters:
+  #     aks: {name: aks-prod, resource_group: rg-aks}             # needs Entra ID integration
 
   # Huawei Cloud, using a KooCLI profile you created with `hcloud configure set`
   # (mek never edits KooCLI's profiles — see `mek login --help`).
