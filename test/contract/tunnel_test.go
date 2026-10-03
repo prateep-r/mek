@@ -60,7 +60,8 @@ func TestTunnelWithRealAWS(t *testing.T) {
 	u := newUser(t, fmt.Sprintf(`contexts:
   prod: {provider: aws, aws_profile: fake, region: us-east-1,
          tunnels: {db: {via: i-0123abcd, host: db.internal, port: 5432, local_port: %d}}}
-`, local), []string{aws, filepath.Join(bin, "session-manager-plugin")}, "AWS_ENDPOINT_URL_SSM="+srv.URL)
+`, local), []string{filepath.Join(bin, "session-manager-plugin"), aws}, // the recorder first: runners may have the real plugin next to aws
+		"AWS_ENDPOINT_URL_SSM="+srv.URL)
 	os.MkdirAll(filepath.Join(u.home, ".aws"), 0o700)
 	os.WriteFile(filepath.Join(u.home, ".aws", "credentials"),
 		[]byte("[fake]\naws_access_key_id = AKIAFAKEFAKEFAKEFAKE\naws_secret_access_key = fake\n"), 0o600)

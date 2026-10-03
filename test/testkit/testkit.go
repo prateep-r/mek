@@ -13,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
 
 // ModuleRoot is the repository root (where go.mod lives).
@@ -85,13 +86,26 @@ func Command(bin string, env []string, args ...string) *exec.Cmd {
 	return cmd
 }
 
+// RunTimeout bounds every Run.
+var RunTimeout = 3 * time.Minute
+
 // Run runs bin and waits for it.
 func Run(t testing.TB, bin string, env []string, args ...string) Result {
 	t.Helper()
 	cmd := Command(bin, env, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err := cmd.Run()
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("run %s %v: %v", bin, args, err)
+	}
+	// A hung child fails its own test, named, instead of the whole run
+	// timing out: kill its process group (Command starts a new session).
+	timer := time.AfterFunc(RunTimeout, func() {
+		t.Errorf("run %s %v: still running after %s, killed", bin, args, RunTimeout)
+		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	})
+	err := cmd.Wait()
+	timer.Stop()
 	var ee *exec.ExitError
 	if err != nil && !errors.As(err, &ee) {
 		t.Fatalf("run %s %v: %v", bin, args, err)
