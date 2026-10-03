@@ -59,6 +59,7 @@ safety guard and audit log for protected contexts.`,
 		root.AddCommand(a.newPassthroughCmd(c))
 	}
 	root.AddCommand(
+		a.newShellCmd(),
 		a.newKubectlCmd(),
 		a.newKubeCmd(),
 		a.newExecCmd(),

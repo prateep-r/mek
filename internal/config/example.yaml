@@ -16,6 +16,8 @@ contexts:
     # clusters:                     # Kubernetes clusters for `mek kube` / `mek kubectl`
     #   main: {name: uat-eks}       # EKS cluster name; region defaults to the context's
     #   data: {name: data-eks, region: us-east-1, namespace: etl}
+    # targets:                      # hosts for `mek shell`
+    #   bastion: {instance: "tag:Name=bastion"}   # or an instance id: i-0abc1234def567890
 
   # Production: write operations ask for confirmation,
   # destructive ones (delete/terminate/...) require typing the context name.
@@ -42,6 +44,8 @@ contexts:
   #   account: you@example.com      # optional
   #   clusters:
   #     apps: {name: apps-cluster, location: asia-southeast1}   # GKE: zone or region
+  #   targets:
+  #     web: {instance: web-1, zone: asia-southeast1-b}          # zone is looked up if omitted
 
   # Azure subscription. Each context gets its own isolated az config dir.
   # example-azure:

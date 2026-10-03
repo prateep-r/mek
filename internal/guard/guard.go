@@ -19,7 +19,7 @@ const (
 	Write
 	Destructive
 	Unknown // cannot be classified (e.g. arbitrary `mek exec` commands)
-	Shell   // interactive session on a host (ssm start-session, kubectl exec)
+	Shell   // interactive session on a host (ssm start-session, gcloud compute ssh, kubectl exec)
 	Tunnel  // port forwarding (kubectl port-forward); only moves bytes
 )
 
@@ -115,6 +115,19 @@ func HasFlag(args []string, flag string) bool {
 	return false
 }
 
+// FlagValue returns the value of `--flag value` or `--flag=value` ("" if absent).
+func FlagValue(args []string, flag string) string {
+	for i, a := range args {
+		if v, ok := strings.CutPrefix(a, flag+"="); ok {
+			return v
+		}
+		if a == flag && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
+}
+
 func hasPrefix(s string, prefixes []string) bool {
 	for _, p := range prefixes {
 		if s == p || strings.HasPrefix(s, p+"-") {
@@ -152,6 +165,12 @@ func ClassifyAWS(args []string) Class {
 	}
 	if HasFlag(args, "--dry-run") {
 		return Read
+	}
+	if svc == "ssm" && op == "start-session" { // the session itself, not an API change
+		if strings.Contains(FlagValue(args, "--document-name"), "PortForwarding") {
+			return Tunnel
+		}
+		return Shell
 	}
 	switch {
 	case hasPrefix(op, awsReadPrefixes):
@@ -197,6 +216,14 @@ func ClassifyGCloud(args []string) Class {
 	}
 	if pos[start] == "storage" && HasFlag(args, "--delete-unmatched-destination-objects") {
 		return Destructive // storage rsync that deletes extra destination objects
+	}
+	if rest := pos[start:]; len(rest) >= 2 && rest[0] == "compute" {
+		switch rest[1] {
+		case "ssh":
+			return Shell
+		case "start-iap-tunnel":
+			return Tunnel
+		}
 	}
 	return classifyVerbs(pos[start+1:], gcloudReadVerbs, gcloudWriteVerbs, gcloudDestructiveVerbs)
 }

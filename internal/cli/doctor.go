@@ -52,8 +52,6 @@ var extraTools = []tool{
 	{"kubectl", "Kubernetes CLI (mek kubectl, mek kube --merge)", []string{"version", "--client"},
 		anyContext(func(x *config.Context) bool { return len(x.Clusters) > 0 }),
 		"brew install kubectl", "https://kubernetes.io/docs/tasks/tools/"},
-	{"session-manager-plugin", "AWS SSM tunnels/shell (upcoming `mek tunnel`/`mek shell`)", []string{"--version"}, nil,
-		"brew install --cask session-manager-plugin", "https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html"},
 	{"k9s", "Kubernetes TUI", []string{"version", "--short"}, nil,
 		"brew install k9s", "https://k9scli.io/topics/install/"},
 }

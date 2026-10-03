@@ -33,3 +33,59 @@ type Plugin struct {
 }
 
 func hasClusters(c *config.Context) bool { return len(c.Clusters) > 0 }
+
+func hasTargets(c *config.Context) bool { return len(c.Targets) > 0 }
+
+// FindPlugin looks a plugin up by binary name, for install hints.
+func FindPlugin(bin string) (Plugin, bool) {
+	for _, c := range clouds {
+		for _, p := range c.Plugins {
+			if p.Bin == bin {
+				return p, true
+			}
+		}
+	}
+	return Plugin{}, false
+}
+
+// Instance is a resolved host that a session (or tunnel) connects to.
+type Instance struct {
+	ID    string // aws instance id, gcp VM name
+	Zone  string // gcp
+	User  string // gcp SSH user ("" = gcloud's default)
+	Alias string // the configured target name, if it came from config
+}
+
+// Label names the instance for messages and the audit log.
+func (i Instance) Label() string {
+	s := i.ID
+	if i.User != "" {
+		s = i.User + "@" + s
+	}
+	if i.Zone != "" {
+		s += " (" + i.Zone + ")"
+	}
+	if i.Alias != "" {
+		s = i.Alias + " → " + s
+	}
+	return s
+}
+
+// TargetOptions are per-command overrides of a target (mek shell flags).
+type TargetOptions struct{ Zone, User string }
+
+// Command is a process mek runs for an access path.
+type Command struct {
+	Argv     []string
+	Env      map[string]string // set for this process only (e.g. HOME)
+	Requires []string          // plugins it needs on PATH
+}
+
+// Sessioner is implemented by providers that `mek shell` supports.
+type Sessioner interface {
+	// ResolveTarget turns what the user typed (a configured name, an instance
+	// id, a tag or VM name) into an instance, looking it up through q.
+	ResolveTarget(spec string, o TargetOptions, q Query) (Instance, error)
+	// ShellCommand opens an interactive session on the instance.
+	ShellCommand(in Instance) (Command, error)
+}

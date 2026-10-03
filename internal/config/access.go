@@ -14,8 +14,30 @@ type Cluster struct {
 	Namespace string `yaml:"namespace,omitempty"` // default namespace in the kubeconfig
 }
 
-// Names that would clash with subcommands (`mek kube token`).
-var reservedClusterNames = map[string]bool{"token": true}
+// Target is a host reachable from a context (mek shell, tunnel hops).
+type Target struct {
+	Instance string `yaml:"instance"`       // aws: i-… or tag:Key=Value; gcp: VM name
+	Zone     string `yaml:"zone,omitempty"` // gcp: looked up when empty
+	User     string `yaml:"user,omitempty"` // gcp: SSH user (default: gcloud's)
+}
+
+// Names that would clash with subcommands (`mek kube token`, `mek tunnel ls`).
+var (
+	reservedClusterNames = map[string]bool{"token": true}
+	reservedTargetNames  = map[string]bool{"ls": true, "list": true, "stop": true, "logs": true}
+)
+
+type field struct{ key, val string }
+
+// argValues checks every field of an entry with argValue.
+func argValues(prefix string, fs ...field) error {
+	for _, f := range fs {
+		if err := argValue(f.val); err != nil {
+			return fmt.Errorf("%s.%s %w", prefix, f.key, err)
+		}
+	}
+	return nil
+}
 
 // validateAccess checks the access sections every cloud shares; each cloud
 // adds its own rules (provider.Cloud.Validate).
@@ -27,12 +49,20 @@ func (c *Context) validateAccess() error {
 		if cl == nil || cl.Name == "" {
 			return fmt.Errorf("clusters.%s needs a name", alias)
 		}
-		for _, f := range []struct{ key, val string }{
-			{"name", cl.Name}, {"region", cl.Region}, {"location", cl.Location}, {"namespace", cl.Namespace},
-		} {
-			if err := argValue(f.val); err != nil {
-				return fmt.Errorf("clusters.%s.%s %w", alias, f.key, err)
-			}
+		if err := argValues("clusters."+alias, field{"name", cl.Name}, field{"region", cl.Region},
+			field{"location", cl.Location}, field{"namespace", cl.Namespace}); err != nil {
+			return err
+		}
+	}
+	for alias, t := range c.Targets {
+		if err := validateAlias("targets", alias, reservedTargetNames); err != nil {
+			return err
+		}
+		if t == nil || t.Instance == "" {
+			return fmt.Errorf("targets.%s needs an instance", alias)
+		}
+		if err := argValues("targets."+alias, field{"instance", t.Instance}, field{"zone", t.Zone}, field{"user", t.User}); err != nil {
+			return err
 		}
 	}
 	return nil

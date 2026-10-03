@@ -231,3 +231,84 @@ func TestRotationRaceRotatesOnce(t *testing.T) {
 		t.Error("rotated twice")
 	}
 }
+
+func readEntries(t *testing.T) []Entry {
+	t.Helper()
+	b, _ := os.ReadFile(Path())
+	var out []Entry
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		var e Entry
+		if err := json.Unmarshal([]byte(line), &e); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// A session that runs is logged when it starts and when it ends; one the
+// guard stops only once, without an event.
+func TestSessionEntries(t *testing.T) {
+	t.Setenv("MEK_HOME", t.TempDir())
+	ctx := &config.Context{Name: "prod", Provider: "aws"}
+	decide := func(d string) runner.Decorator {
+		return func(next runner.Runner) runner.Runner {
+			return runner.Func(func(inv *runner.Invocation) error {
+				inv.Decision = d
+				if d == "blocked" {
+					inv.ExitCode = -1
+					return errors.New("blocked")
+				}
+				return next.Run(inv)
+			})
+		}
+	}
+	exec := runner.Func(func(inv *runner.Invocation) error {
+		if len(readEntries(t)) == 0 || readEntries(t)[0].Event != "start" {
+			t.Error("start entry must be written before the session runs")
+		}
+		inv.ExitCode = 130
+		return nil
+	})
+	inv := &runner.Invocation{Context: ctx, Argv: []string{"aws", "ssm", "start-session", "--target", "i-1"},
+		Class: guard.Shell, Session: "abc", Target: "bastion → i-1"}
+	runner.Chain(exec, Recorder(nil), decide("confirmed"), SessionStart(nil)).Run(inv)
+	es := readEntries(t)
+	if len(es) != 2 {
+		t.Fatalf("entries: %+v", es)
+	}
+	start, end := es[0], es[1]
+	if start.Event != "start" || start.Session != "abc" || start.Target != "bastion → i-1" || start.Decision != "confirmed" || start.ExitCode != 0 || start.Class != "shell" {
+		t.Errorf("start: %+v", start)
+	}
+	if end.Event != "end" || end.Session != "abc" || end.ExitCode != 130 {
+		t.Errorf("end: %+v", end)
+	}
+
+	os.Remove(Path())
+	inv = &runner.Invocation{Context: ctx, Argv: []string{"aws"}, Class: guard.Shell, Session: "def"}
+	runner.Chain(exec, Recorder(nil), decide("blocked"), SessionStart(nil)).Run(inv)
+	if es := readEntries(t); len(es) != 1 || es[0].Event != "" || es[0].Decision != "blocked" || es[0].Session != "def" {
+		t.Errorf("blocked session: %+v", es)
+	}
+
+	// Not a session: SessionStart passes through without writing.
+	os.Remove(Path())
+	ran := false
+	SessionStart(nil)(runner.Func(func(*runner.Invocation) error { ran = true; return nil })).Run(&runner.Invocation{Context: ctx})
+	if _, err := os.Stat(Path()); !ran || !os.IsNotExist(err) {
+		t.Errorf("non-session: ran=%v err=%v", ran, err)
+	}
+
+	// A failed start write is reported and the session still runs.
+	os.WriteFile(Path(), nil, 0o600)
+	t.Setenv("MEK_HOME", filepath.Join(Path(), "not-a-dir"))
+	var reported error
+	ran = false
+	ok := runner.Func(func(*runner.Invocation) error { ran = true; return nil })
+	SessionStart(func(err error) { reported = err })(ok).Run(&runner.Invocation{Context: ctx, Session: "x"})
+	if !ran || reported == nil {
+		t.Errorf("ran=%v reported=%v", ran, reported)
+	}
+	SessionStart(nil)(ok).Run(&runner.Invocation{Context: ctx, Session: "x"})
+}

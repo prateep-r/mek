@@ -79,3 +79,29 @@ func TestDecideSessions(t *testing.T) {
 		t.Errorf("String: %s %s", Shell, Tunnel)
 	}
 }
+
+func TestClassifySessionCommands(t *testing.T) {
+	cases := []struct {
+		classify func([]string) Class
+		args     string
+		want     Class
+	}{
+		{ClassifyAWS, "ssm start-session --target i-1", Shell},
+		{ClassifyAWS, "ssm start-session --target i-1 --document-name AWS-StartPortForwardingSession", Tunnel},
+		{ClassifyAWS, "ssm start-session --target i-1 --document-name=AWS-StartPortForwardingSessionToRemoteHost", Tunnel},
+		{ClassifyAWS, "ssm start-session --target i-1 --document-name AWS-StartInteractiveCommand", Shell},
+		{ClassifyAWS, "ssm send-command --document-name AWS-RunShellScript", Write},
+		{ClassifyGCloud, "compute ssh vm-1 --zone z --tunnel-through-iap", Shell},
+		{ClassifyGCloud, "beta compute ssh vm-1", Shell},
+		{ClassifyGCloud, "compute start-iap-tunnel vm-1 22 --local-host-port=localhost:2222", Tunnel},
+		{ClassifyGCloud, "compute scp a vm-1:b", Write},
+	}
+	for _, c := range cases {
+		if got := c.classify(strings.Fields(c.args)); got != c.want {
+			t.Errorf("%q = %s, want %s", c.args, got, c.want)
+		}
+	}
+	if FlagValue([]string{"--document-name"}, "--document-name") != "" {
+		t.Error("flag without a value")
+	}
+}

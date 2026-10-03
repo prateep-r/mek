@@ -115,11 +115,14 @@ func TestInteractivePrompts(t *testing.T) {
 		{"Ctrl-D", []string{"-c", "prod", "aws", "ec2", "run-instances"}, "Continue? [y/N]:", "\x04", 1, false, "declined"},
 		{"gcloud on a protected project", []string{"-c", "gcp-prod", "gcloud", "compute", "instances", "delete", "vm-1"}, "Type gcp-prod to continue:", "gcp-prod\r", 0, true, "confirmed"},
 		{"exec asks too", []string{"-c", "prod", "exec", "--", "aws", "s3", "ls"}, "Continue? [y/N]:", "yes\r", 0, true, "confirmed"},
+		{"shell, answer y", []string{"-c", "prod", "shell", "i-0123456789abcdef0"}, "shell command on prod", "y\r", 0, true, "confirmed"},
+		{"shell, answer n", []string{"-c", "prod", "shell", "i-0123456789abcdef0"}, "Continue? [y/N]:", "n\r", 1, false, "declined"},
+		{"gcp shell asks too", []string{"-c", "gcp-prod", "shell", "vm-1", "--zone", "z"}, "Continue? [y/N]:", "y\r", 0, true, "confirmed"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			mekHome := t.TempDir()
-			stubs, log := testkit.Stubs(t, "aws", "gcloud")
+			stubs, log := testkit.Stubs(t, "aws", "gcloud", "session-manager-plugin")
 			os.WriteFile(filepath.Join(mekHome, "config.yaml"), []byte(`contexts:
   prod:     {provider: aws, aws_profile: prod-admin, protected: true}
   gcp-prod: {provider: gcp, project: acme-prod, protected: true}

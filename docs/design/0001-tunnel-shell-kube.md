@@ -1,7 +1,7 @@
 # 0001 — `mek tunnel`, `mek shell`, `mek kube`
 
-Status: **accepted** — `mek kube` / `mek kubectl` ship in v0.6.0; `shell` and foreground
-`tunnel` follow in v0.7.0, background tunnels in v0.8.0.
+Status: **accepted** — `mek kube` / `mek kubectl` shipped in v0.6.0; `mek shell` is done and
+ships with foreground `tunnel` in v0.7.0; background tunnels follow in v0.8.0.
 
 ## Problem
 
@@ -127,9 +127,12 @@ resolved with a read-only describe call and must match exactly one running insta
 | Abstract Factory (extended) | `provider.Cloud` gains capability interfaces (`KubeProvider`, later `Sessioner`/`Tunneler`) and `Plugins` |
 | Template Method | `kube.Describe`/`Render`/`Write`: fixed kubeconfig skeleton, cloud steps from `KubeProvider` |
 | Strategy | `guard.ClassifyKubectl`; later one `TunnelMethod` per tunnel kind |
+| Chain of Responsibility | `provider/resolve.go`: configured name → instance id → tag lookup (AWS) / VM-name lookup (GCP) |
+| Builder | `provider/argv.go`: `command(...).opt(...).env(...).needs(...)` assembles session commands |
+| Decorator (new) | `audit.SessionStart` after the guard: `audit → guard → sessionStart → exec` |
 | Command + Builder | `kube.MergeCommands`/`UnmergeCommands` build `kubectl config` argv lists |
 | Command / Decorator (extended) | `runner.Invocation.Stdout` lets lookups run through `audit → guard → exec` |
-| Factory Method, Chain of Responsibility, State, Observer, Facade | tunnel method selection, target resolution, tunnel states, supervisor events, `internal/tunnel` API (v0.7.0–v0.8.0) |
+| Factory Method, State, Observer, Facade | tunnel method selection, tunnel states, supervisor events, `internal/tunnel` API (v0.7.0–v0.8.0) |
 
 ## Spikes (M0)
 
@@ -138,9 +141,13 @@ resolved with a read-only describe call and must match exactly one running insta
   `CLOUDSDK_AUTH_ACCESS_TOKEN`.
 - Floci's EKS needs real subnets and the Docker socket (k3s), so kube is tested against a
   fake TLS EKS/GKE + Kubernetes API in the contract layer instead.
-- Still open, before v0.7.0: whether `gcloud compute ssh` writes `~/.ssh/google_compute_known_hosts`
-  despite `--ssh-key-file` (if so, override `HOME` for that child), and which address
-  session-manager-plugin binds.
+- `gcloud compute ssh --ssh-key-file <f>` creates the key at `<f>`, but always tells ssh
+  `-o UserKnownHostsFile=$HOME/.ssh/google_compute_known_hosts` — ssh options are
+  first-wins, so a later `--ssh-flag` can't override it. mek therefore runs it with
+  `HOME=<MEK_HOME>/ssh/<ctx>` (gcloud itself stays on the context's `CLOUDSDK_CONFIG`).
+  A real run also adds the key to the project's metadata: confirmed as a shell, not a read.
+- session-manager-plugin listens on `localhost:<port>` (or a Unix socket), for both its
+  basic and multiplexed port forwarding — loopback only, as tunnels require.
 
 ## Testing
 

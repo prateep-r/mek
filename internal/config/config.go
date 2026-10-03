@@ -54,6 +54,8 @@ type Context struct {
 
 	// Kubernetes clusters reachable from this context, by alias (mek kube).
 	Clusters map[string]*Cluster `yaml:"clusters,omitempty"`
+	// Hosts for `mek shell` (and as tunnel hops), by alias.
+	Targets map[string]*Target `yaml:"targets,omitempty"`
 }
 
 type Config struct {

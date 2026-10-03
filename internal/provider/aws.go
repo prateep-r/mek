@@ -25,6 +25,11 @@ var awsCloud = Cloud{
 	ValidateAll: validateSSOSessions,
 	Tool: Tool{VersionArgs: []string{"--version"}, Brew: "brew install awscli",
 		URL: "https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"},
+	Plugins: []Plugin{{
+		Bin: "session-manager-plugin", Purpose: "SSM sessions (mek shell)", Needed: hasTargets,
+		Tool: Tool{VersionArgs: []string{"--version"}, Brew: "brew install --cask session-manager-plugin",
+			URL: "https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html"},
+	}},
 }
 
 var accountID = regexp.MustCompile(`^[0-9]{12}$`)
@@ -48,6 +53,14 @@ func validateAWS(c *config.Context) error {
 		}
 		if cl.Region == "" && c.Region == "" {
 			return fmt.Errorf("clusters.%s needs a region (or set the context's region)", alias)
+		}
+	}
+	for alias, t := range c.Targets {
+		if t.Zone != "" || t.User != "" {
+			return fmt.Errorf("targets.%s: aws targets take only an instance", alias)
+		}
+		if err := awsTargetSpec(t.Instance); err != nil {
+			return fmt.Errorf("targets.%s: %w", alias, err)
 		}
 	}
 	if c.AWSProfile != "" {

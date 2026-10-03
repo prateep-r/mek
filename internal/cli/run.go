@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -105,16 +107,33 @@ Note: commands run this way bypass mek's guard and audit log.`,
 }
 
 // pipeline is audit → guard → exec, so a blocked or declined command is
-// audited just like one that ran.
+// audited just like one that ran. Sessions also get a start entry once the
+// guard let them through.
 func (a *app) pipeline() runner.Runner {
-	return runner.Chain(a.exec, audit.Recorder(warnAudit), a.guard)
+	return runner.Chain(a.exec, audit.Recorder(warnAudit), a.guard, audit.SessionStart(warnAudit))
 }
 
 // guarded runs argv in the context through the pipeline.
 func (a *app) guarded(l *loaded, argv []string, class guard.Class) error {
+	return a.run(l, &runner.Invocation{Argv: argv, Env: l.env.Apply(os.Environ()), Class: class})
+}
+
+// run sends an invocation in the context through the pipeline. Shells and
+// tunnels — `mek shell` or e.g. `mek kubectl exec` — are sessions.
+func (a *app) run(l *loaded, inv *runner.Invocation) error {
 	banner(l)
-	inv := &runner.Invocation{Context: l.ctx, Argv: argv, Env: l.env.Apply(os.Environ()), Class: class}
+	inv.Context = l.ctx
+	if inv.Class == guard.Shell || inv.Class == guard.Tunnel {
+		inv.Session = newSessionID()
+	}
 	return inv.Err(a.pipeline().Run(inv))
+}
+
+// newSessionID is a random id that ties a session's audit entries together.
+func newSessionID() string {
+	b := make([]byte, 8)
+	rand.Read(b) // never fails (crypto/rand panics instead)
+	return hex.EncodeToString(b)
 }
 
 // query is the provider.Query for a context: lookups (describe calls) run

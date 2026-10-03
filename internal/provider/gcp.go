@@ -28,6 +28,11 @@ var gcpCloud = Cloud{
 				return fmt.Errorf("clusters.%s needs a location (zone or region)", alias)
 			}
 		}
+		for alias, t := range c.Targets {
+			if !gcpVMName.MatchString(t.Instance) {
+				return fmt.Errorf("targets.%s: instance %q is not a VM name", alias, t.Instance)
+			}
+		}
 		return nil
 	},
 	Tool: Tool{VersionArgs: []string{"--version"}, URL: "https://cloud.google.com/sdk/docs/install"},

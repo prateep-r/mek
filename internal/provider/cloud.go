@@ -101,8 +101,12 @@ func validateContext(cfg *config.Config, ctx *config.Context) error {
 	if err := c.Validate(ctx); err != nil {
 		return err
 	}
-	if _, ok := c.New(cfg, ctx, "").(KubeProvider); !ok && len(ctx.Clusters) > 0 {
+	p := c.New(cfg, ctx, "")
+	if _, ok := p.(KubeProvider); !ok && len(ctx.Clusters) > 0 {
 		return fmt.Errorf("clusters are not supported on %s yet", c.Name)
+	}
+	if _, ok := p.(Sessioner); !ok && len(ctx.Targets) > 0 {
+		return fmt.Errorf("targets are not supported on %s yet", c.Name)
 	}
 	return nil
 }

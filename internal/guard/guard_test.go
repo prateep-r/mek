@@ -59,7 +59,7 @@ func TestClassifyGCloud(t *testing.T) {
 		"container clusters get-credentials c":     Read,
 		"config set project p":                     Read, // local only
 		"auth login":                               Read,
-		"compute ssh vm-1":                         Write,
+		"compute ssh vm-1":                         Shell, // IAP/SSH sessions: guard class shell
 		"compute":                                  Read,
 		"foo bar baz":                              Write,
 	}

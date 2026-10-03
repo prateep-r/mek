@@ -28,6 +28,26 @@ type Entry struct {
 	Decision   string    `json:"decision"` // allowed | confirmed | blocked | declined
 	ExitCode   int       `json:"exit_code"`
 	DurationMS int64     `json:"duration_ms"`
+	// Sessions get a "start" entry when they begin and an "end" entry with
+	// the exit code and duration; both carry the same session id.
+	Event   string `json:"event,omitempty"`
+	Session string `json:"session,omitempty"`
+	Target  string `json:"target,omitempty"`
+}
+
+// entry is the audit record of an invocation.
+func entry(inv *runner.Invocation, start time.Time) Entry {
+	return Entry{
+		Time: start, Context: inv.Context.Name, Provider: inv.Context.Provider,
+		Command: inv.Argv, Class: inv.Class.String(), Decision: inv.Decision,
+		ExitCode: inv.ExitCode, DurationMS: inv.Duration.Milliseconds(),
+		Session: inv.Session, Target: inv.Target,
+	}
+}
+
+// started reports whether the guard let the command run.
+func started(inv *runner.Invocation) bool {
+	return inv.Decision == "allowed" || inv.Decision == "confirmed"
 }
 
 func Path() string { return filepath.Join(config.Dir(), "audit.jsonl") }
@@ -40,14 +60,32 @@ func Recorder(onError func(error)) runner.Decorator {
 		return runner.Func(func(inv *runner.Invocation) error {
 			start := time.Now()
 			err := next.Run(inv)
-			if werr := Write(Entry{
-				Time: start, Context: inv.Context.Name, Provider: inv.Context.Provider,
-				Command: inv.Argv, Class: inv.Class.String(), Decision: inv.Decision,
-				ExitCode: inv.ExitCode, DurationMS: inv.Duration.Milliseconds(),
-			}); werr != nil && onError != nil {
+			e := entry(inv, start)
+			if inv.Session != "" && started(inv) {
+				e.Event = "end"
+			}
+			if werr := Write(e); werr != nil && onError != nil {
 				onError(werr)
 			}
 			return err
+		})
+	}
+}
+
+// SessionStart is a runner.Decorator that writes a session's "start" entry.
+// It goes after the guard, so a blocked or declined session has none; a
+// long session is then in the log while it runs, not only once it ends.
+func SessionStart(onError func(error)) runner.Decorator {
+	return func(next runner.Runner) runner.Runner {
+		return runner.Func(func(inv *runner.Invocation) error {
+			if inv.Session != "" {
+				e := entry(inv, time.Now())
+				e.Event, e.ExitCode = "start", 0
+				if werr := Write(e); werr != nil && onError != nil {
+					onError(werr)
+				}
+			}
+			return next.Run(inv)
 		})
 	}
 }
