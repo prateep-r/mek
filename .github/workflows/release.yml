@@ -7,17 +7,37 @@ on:
 permissions:
   contents: write # create the GitHub release and upload archives
 
+# GitHub occasionally delivers one tag push twice (v0.4.0 got two runs 3s
+# apart). Runs for the same tag wait for each other, and a run that finds the
+# tag already released stops instead of failing on duplicate uploads.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
     steps:
+      - name: Skip if this tag is already released
+        id: released
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets \
+               --jq '.assets[].name' 2>/dev/null | grep -qx checksums.txt; then
+            echo "$GITHUB_REF_NAME is already released; nothing to do."
+            echo "done=true" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/checkout@v7
+        if: steps.released.outputs.done != 'true'
         with:
           fetch-depth: 0 # full history for the changelog
       - uses: actions/setup-go@v7
+        if: steps.released.outputs.done != 'true'
         with:
           go-version: stable
       - uses: goreleaser/goreleaser-action@v7
+        if: steps.released.outputs.done != 'true'
         with:
           version: "~> v2"
           args: release --clean
