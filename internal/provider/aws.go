@@ -48,9 +48,6 @@ func ssoRegion(c *config.Context) string {
 }
 
 func validateAWS(c *config.Context) error {
-	if err := notAzure(c); err != nil {
-		return err
-	}
 	for alias, cl := range c.Clusters {
 		if cl.Location != "" {
 			return fmt.Errorf("clusters.%s: aws clusters use region, not location", alias)
@@ -203,8 +200,8 @@ func sessionName(startURL string) string {
 	return "mek-" + strings.Trim(nonAlnum.ReplaceAllString(host, "-"), "-")
 }
 
-func (a *AWS) LoginCommands(bool) ([][]string, error) {
-	return [][]string{{"aws", "sso", "login", "--profile", a.profile()}}, nil
+func (a *AWS) LoginCommands(bool) [][]string {
+	return [][]string{{"aws", "sso", "login", "--profile", a.profile()}}
 }
 
 func (a *AWS) WhoAmICommand() []string {

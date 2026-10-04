@@ -48,11 +48,7 @@ func (a *app) newPassthroughCmd(c provider.Cloud) *cobra.Command {
 				return fmt.Errorf("context %s is %s — `mek %s` needs a context with provider %s (try: mek -c <name> %s ...)",
 					l.ctx.Name, l.ctx.Provider, c.CLI, c.Name, c.CLI)
 			}
-			class := c.Classify(args)
-			if r, ok := l.prov.(provider.ArgsRewriter); ok {
-				args = r.RewriteArgs(args)
-			}
-			return a.guarded(l, append([]string{c.CLI}, args...), class)
+			return a.guarded(l, append([]string{c.CLI}, args...), c.Classify(args))
 		},
 	}
 }

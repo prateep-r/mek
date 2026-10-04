@@ -16,7 +16,6 @@ const kubeConfig = `contexts:
   prod: {provider: aws, aws_profile: p, region: ap-southeast-1, protected: true, clusters: {main: {name: prod-eks, namespace: app}, data: {name: data-eks, region: us-east-1}}}
   g:    {provider: gcp, project: p, readonly: true, clusters: {gke: {name: gke-1, location: asia-southeast1-a}}}
   bare: {provider: aws, aws_profile: p, region: ap-southeast-1}
-  hw:   {provider: huawei, hcloud_profile: x}
 `
 
 // cloudAPI scripts the describe calls: every cluster exists and is up, except
@@ -114,10 +113,8 @@ func TestKubeErrors(t *testing.T) {
 		{[]string{"-c", "prod", "kube", "nope"}, `no cluster "nope" (clusters: data, main)`},
 		{[]string{"-c", "bare", "kube"}, "has no clusters"},
 		{[]string{"-c", "bare", "kube", "--location", "x"}, "need --name"},
-		{[]string{"-c", "bare", "kube", "--name", "x", "--resource-group", "g"}, "resource_group is for azure"},
 		{[]string{"-c", "bare", "kube", "--name", "x", "--region=-r"}, "clusters.x.region must not start with '-'"},
 		{[]string{"-c", "bare", "kube", "--name", "x", "--location", "z"}, "use region, not location"},
-		{[]string{"-c", "hw", "kube"}, "doesn't support huawei"},
 		{[]string{"-c", "nope", "kube"}, "unknown context"},
 		{[]string{"-c", "prod", "kube", "--use"}, "--use needs --merge"},
 		{[]string{"-c", "bare", "kube", "--name", "down"}, "aws eks describe-cluster: exit status 254 (logged in? try: mek -c bare login)"},
@@ -159,8 +156,6 @@ func TestKubeToken(t *testing.T) {
 		t.Errorf("gke token: %q", got)
 	}
 
-	_, err = h.run("-c", "hw", "kube", "token", "--name", "x", "--location", "y")
-	wantErr(t, err, "doesn't support huawei")
 	_, err = h.run("-c", "nope", "kube", "token", "--name", "x", "--location", "y")
 	wantErr(t, err, "unknown context")
 }

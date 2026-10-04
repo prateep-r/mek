@@ -6,10 +6,8 @@
   </defs>
   <rect width="512" height="512" rx="112" fill="#F6F1E7"/>
   <g clip-path="url(#mek-base)" fill-opacity="0.85">
-    <circle cx="149" cy="310" r="72" fill="#0078D4"/>
-    <circle cx="221" cy="254" r="98" fill="#FF9900"/>
-    <circle cx="313" cy="252" r="96" fill="#4285F4"/>
-    <circle cx="375" cy="314" r="60" fill="#C7000B"/>
+    <circle cx="214" cy="248" r="118" fill="#FF9900"/>
+    <circle cx="328" cy="290" r="84" fill="#4285F4"/>
   </g>
   </svg>
   <path transform="translate(166 12.5) scale(0.85)" d="M0,100 V64 A24,24 0 0 1 48,64 V100 M48,64 A24,24 0 0 1 96,64 V100

@@ -1,8 +1,9 @@
 # 0001 — `mek tunnel`, `mek shell`, `mek kube`
 
-Status: **implemented** — `mek kube` / `mek kubectl` in v0.6.0, `mek shell` and foreground
-`mek tunnel` in v0.7.0, background tunnels (`-b`, `ls`, `stop`, `logs`) in v0.8.0, Azure
-(Bastion, AKS) in v0.9.0.
+Status: **implemented** for AWS and GCP — `mek kube` / `mek kubectl` in v0.6.0, `mek shell`
+and foreground `mek tunnel` in v0.7.0, background tunnels in v0.8.0. Azure (Bastion shells
+and tunnels, AKS) shipped in v0.9.0 and Azure and Huawei Cloud support was then paused; that
+code is kept on the `keep/azure-huawei` branch.
 
 ## Problem
 
@@ -19,7 +20,7 @@ and audited.
 - One verb per access path, the same on every cloud mek supports:
   `mek tunnel` (local port → private host), `mek shell` (interactive session on a host),
   `mek kube` (kubeconfig for a cluster, usable by kubectl / K9s / FreeLens).
-- Credentials always come from the context (generated AWS profile, isolated gcloud/az dirs).
+- Credentials always come from the context (generated AWS profile, isolated gcloud dirs).
 - Nothing written to the user's `~/.kube/config`, `~/.ssh`, `~/.aws` or `~/.azure` unless
   they opt in (`mek kube --merge`).
 - Protected/readonly contexts behave predictably; every session is in the audit log.
@@ -70,20 +71,12 @@ CLI arguments). Each cloud adds its own (`provider.Cloud.Validate`).
 
 ## How it maps to each cloud
 
-| | AWS | GCP | Azure (v0.9.0) | Huawei Cloud (later) |
+| | AWS | GCP | Azure (paused) | Huawei Cloud (paused) |
 |---|---|---|---|---|
-| kube | `aws eks describe-cluster` → kubeconfig; token `aws eks get-token` | `gcloud container clusters describe` → kubeconfig; token `gke-gcloud-auth-plugin` | `az aks get-credentials --file - --format exec` → kubeconfig (Entra ID clusters only); token `kubelogin get-token --login azurecli` | CCE (static certificate — undecided) |
-| shell | `aws ssm start-session --target <id>` | `gcloud compute ssh <vm> --tunnel-through-iap` | `az network bastion ssh --auth-type AAD` or `ssh-key` (context key) | ❓ |
-| tunnel | SSM `AWS-StartPortForwardingSession[ToRemoteHost]` | IAP → VM port; IAP + SSH `-L` to another host; `cloud-sql-proxy` | `az network bastion tunnel --target-resource-id` (VM port) or `--target-ip-address` (another host, still a tunnel) | ❓ |
-| needs | session-manager-plugin | gke-gcloud-auth-plugin, cloud-sql-proxy | kubelogin; az extensions `bastion` (+ `ssh` for Entra ID), installed by the user | — |
-
-Azure decisions (v0.9.0): the Bastion is set per context (`bastion: {name, resource_group}`)
-and a target may name its own; shells log in with Entra ID by default or the context's
-`id_ed25519` with `auth: ssh-key`; AKS clusters with only local accounts are not supported
-(long-lived certificates); mek points `AZURE_EXTENSION_DIR` at the user's own extensions and
-tells them to `az extension add` instead of installing code. Spikes: the bastion extension
-(1.4.3) binds `localhost` for tunnels, and `az network bastion ssh` gives ssh
-`UserKnownHostsFile=/dev/null`, so nothing lands in `~/.ssh`.
+| kube | `aws eks describe-cluster` → kubeconfig; token `aws eks get-token` | `gcloud container clusters describe` → kubeconfig; token `gke-gcloud-auth-plugin` | `az aks` + kubelogin | CCE (static certificate — undecided) |
+| shell | `aws ssm start-session --target <id>` | `gcloud compute ssh <vm> --tunnel-through-iap` | `az network bastion ssh` | ❓ |
+| tunnel | SSM `AWS-StartPortForwardingSession[ToRemoteHost]` | IAP → VM port; IAP + SSH `-L` to another host; `cloud-sql-proxy` | `az network bastion tunnel` | ❓ |
+| needs | session-manager-plugin | gke-gcloud-auth-plugin, cloud-sql-proxy | kubelogin | — |
 
 Target resolution: an instance id is used as is; `tag:Key=Value` (AWS) / VM name (GCP) is
 resolved with a read-only describe call and must match exactly one running instance.

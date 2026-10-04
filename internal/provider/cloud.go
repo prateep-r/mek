@@ -41,10 +41,18 @@ type Tool struct {
 }
 
 // clouds is the registry, in the order mek lists them.
-var clouds = []Cloud{awsCloud, gcpCloud, azureCloud, huaweiCloud}
+var clouds = []Cloud{awsCloud, gcpCloud}
 
 // Clouds returns every supported cloud.
 func Clouds() []Cloud { return clouds }
+
+// Register adds a cloud to the registry and returns a function that removes
+// it again — how a new cloud plugs in, and how tests add a fake one.
+func Register(c Cloud) (unregister func()) {
+	old := clouds
+	clouds = append(clouds[:len(clouds):len(clouds)], c)
+	return func() { clouds = old }
+}
 
 // Lookup finds a cloud by its provider name.
 func Lookup(name string) (Cloud, bool) {

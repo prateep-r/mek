@@ -30,8 +30,6 @@ const config = `contexts:
   prod: {provider: aws, aws_profile: prod-admin, protected: true}
   ro:   {provider: aws, aws_profile: viewer, readonly: true}
   gcp:  {provider: gcp, project: my-project, region: asia-southeast1}
-  az:   {provider: azure, tenant_id: contoso.onmicrosoft.com, subscription_id: 00000000-1111-2222-3333-444444444444}
-  hw:   {provider: huawei, hcloud_profile: sso-prod, region: ap-southeast-2}
 `
 
 // env is one isolated user: their own MEK_HOME, HOME and stub CLIs on PATH.
@@ -49,7 +47,7 @@ func setup(t *testing.T, cfg string) *env {
 			t.Fatal(err)
 		}
 	}
-	stubs, log := testkit.Stubs(t, "aws", "gcloud", "az", "hcloud")
+	stubs, log := testkit.Stubs(t, "aws", "gcloud")
 	e.log = log
 	e.vars = []string{"MEK_HOME=" + e.mekHome, "HOME=" + e.home, "PATH=" + stubs + ":/usr/bin:/bin", "STUB_LOG=" + log}
 	return e
@@ -95,8 +93,7 @@ func ok(t *testing.T, r testkit.Result) {
 // Each cloud's CLI gets the context's environment, and credentials from the
 // user's shell that would override the context are removed.
 func TestCloudEnvironments(t *testing.T) {
-	leaky := []string{"AWS_ACCESS_KEY_ID=AKIAEXAMPLE", "AWS_SECRET_ACCESS_KEY=s", "GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json",
-		"AZURE_CLIENT_SECRET=s", "ARM_CLIENT_SECRET=s", "HW_ACCESS_KEY=ak", "HW_SECRET_KEY=sk"}
+	leaky := []string{"AWS_ACCESS_KEY_ID=AKIAEXAMPLE", "AWS_SECRET_ACCESS_KEY=s", "GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json"}
 	cases := []struct {
 		ctx, cli string
 		args     []string
@@ -110,12 +107,6 @@ func TestCloudEnvironments(t *testing.T) {
 		{"gcp", "gcloud", []string{"compute", "instances", "list"}, "compute instances list",
 			map[string]string{"CLOUDSDK_CORE_PROJECT": "my-project", "CLOUDSDK_COMPUTE_REGION": "asia-southeast1"},
 			[]string{"GOOGLE_APPLICATION_CREDENTIALS"}},
-		{"az", "az", []string{"vm", "list"}, "vm list",
-			map[string]string{"ARM_SUBSCRIPTION_ID": "00000000-1111-2222-3333-444444444444", "AZURE_TENANT_ID": "contoso.onmicrosoft.com"},
-			[]string{"AZURE_CLIENT_SECRET", "ARM_CLIENT_SECRET"}},
-		{"hw", "hcloud", []string{"ECS", "ListServersDetails"}, "ECS ListServersDetails --cli-profile=sso-prod --cli-region=ap-southeast-2",
-			map[string]string{"HW_PROFILE": "sso-prod", "HW_REGION_NAME": "ap-southeast-2"},
-			[]string{"HW_ACCESS_KEY", "HW_SECRET_KEY"}},
 	}
 	for _, c := range cases {
 		t.Run(c.cli, func(t *testing.T) {
@@ -143,16 +134,12 @@ func TestIsolatedConfigDirs(t *testing.T) {
 	e := setup(t, config)
 	ok(t, e.run("-c", "uat", "aws", "sts", "get-caller-identity"))
 	ok(t, e.run("-c", "gcp", "gcloud", "config", "list"))
-	ok(t, e.run("-c", "az", "az", "account", "show"))
 	calls := e.calls()
 	if got := calls[0].Env["AWS_CONFIG_FILE"]; got != filepath.Join(e.mekHome, "aws", "config") {
 		t.Errorf("AWS_CONFIG_FILE = %s", got)
 	}
 	if got := calls[1].Env["CLOUDSDK_CONFIG"]; got != filepath.Join(e.mekHome, "gcloud", "gcp") {
 		t.Errorf("CLOUDSDK_CONFIG = %s", got)
-	}
-	if got := calls[2].Env["AZURE_CONFIG_DIR"]; got != filepath.Join(e.mekHome, "azure", "az") {
-		t.Errorf("AZURE_CONFIG_DIR = %s", got)
 	}
 	b, err := os.ReadFile(filepath.Join(e.mekHome, "aws", "config"))
 	if err != nil {
@@ -211,8 +198,8 @@ func TestExitCodes(t *testing.T) {
 	if r.Code != 5 || strings.Contains(r.Stderr, "mek:") {
 		t.Errorf("child exit: code %d stderr %q, want 5 and no mek error", r.Code, r.Stderr)
 	}
-	r = e.with("PATH="+t.TempDir()).run("-c", "hw", "hcloud", "ECS", "ListServersDetails") // no CLIs at all
-	if r.Code != 1 || !strings.Contains(r.Stderr, "hcloud not found in PATH") {
+	r = e.with("PATH="+t.TempDir()).run("-c", "gcp", "gcloud", "compute", "instances", "list") // no CLIs at all
+	if r.Code != 1 || !strings.Contains(r.Stderr, "gcloud not found in PATH") {
 		t.Errorf("missing CLI: code %d stderr %q", r.Code, r.Stderr)
 	}
 	if r := e.run("nope"); r.Code != 1 || !strings.Contains(r.Stderr, "unknown command") {
@@ -305,16 +292,11 @@ func TestLoginFlows(t *testing.T) {
 	}{
 		{"uat", nil, []string{"aws sso login --profile mek-uat", "aws sts get-caller-identity --output table"}},
 		{"gcp", []string{"--adc"}, []string{"gcloud auth login", "gcloud auth application-default login", "gcloud auth list --filter=status:ACTIVE --format=value(account)"}},
-		{"az", nil, []string{"az login --tenant contoso.onmicrosoft.com", "az account set --subscription 00000000-1111-2222-3333-444444444444", "az account show --output table"}},
-		{"hw", nil, []string{"hcloud configure sso --cli-profile=sso-prod", "hcloud configure show --cli-profile=sso-prod"}},
 	}
 	for _, c := range cases {
 		t.Run(c.ctx, func(t *testing.T) {
 			e := setup(t, config)
-			hcloud := filepath.Join(e.home, "hcloud-config.json")
-			os.WriteFile(hcloud, []byte(`{"profiles":[{"name":"sso-prod","mode":"SSO"}]}`), 0o600)
-
-			ok(t, e.with("MEK_HCLOUD_CONFIG="+hcloud).run(append([]string{"login", c.ctx}, c.args...)...))
+			ok(t, e.run(append([]string{"login", c.ctx}, c.args...)...))
 			var got []string
 			for _, call := range e.calls() {
 				got = append(got, call.Name+" "+call.ArgLine())
@@ -377,7 +359,7 @@ func TestUseShellPerTerminal(t *testing.T) {
 func TestLoginFlagsReachTheCLI(t *testing.T) {
 	e := setup(t, config)
 	ok(t, e.run("login", "uat", "--", "--no-browser"))
-	ok(t, e.run("login", "az", "--", "--service-principal", "-u", "app", "-p", "s3cret"))
+	ok(t, e.run("login", "gcp", "--adc", "--", "--cred-file=key.json"))
 	var got []string
 	for _, c := range e.calls() {
 		got = append(got, c.Name+" "+c.ArgLine())
@@ -385,9 +367,9 @@ func TestLoginFlagsReachTheCLI(t *testing.T) {
 	want := []string{
 		"aws sso login --profile mek-uat --no-browser",
 		"aws sts get-caller-identity --output table",
-		"az login --tenant contoso.onmicrosoft.com --service-principal -u app -p s3cret",
-		"az account set --subscription 00000000-1111-2222-3333-444444444444",
-		"az account show --output table",
+		"gcloud auth login --cred-file=key.json", // only the login gets the flags
+		"gcloud auth application-default login",
+		"gcloud auth list --filter=status:ACTIVE --format=value(account)",
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("login ran:\n  %s\nwant:\n  %s", strings.Join(got, "\n  "), strings.Join(want, "\n  "))

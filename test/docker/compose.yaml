@@ -1,7 +1,7 @@
-# mek's own Docker environment: Floci emulators for AWS, GCP and Azure, plus
+# mek's own Docker environment: Floci emulators for AWS and GCP, plus
 # the test image with the real cloud CLIs. Isolated from other projects: its
 # own compose project name, network and volumes, and host ports that are not
-# the emulators' defaults (14566/14588/14577, bound to 127.0.0.1 only).
+# the emulators' defaults (14566/14588, bound to 127.0.0.1 only).
 #
 #   make docker-test    # run every test layer in the container
 #   make docker-up      # start only the emulators (for local runs/debugging)
@@ -27,12 +27,6 @@ services:
     ports: ["127.0.0.1:14588:4588"]
     networks: [mek-test]
 
-  floci-az:
-    image: floci/floci-az:0.13.0
-    labels: *labels
-    ports: ["127.0.0.1:14577:4577"]
-    networks: [mek-test]
-
   tests:
     build:
       context: ..            # test/: the Dockerfile only needs these files
@@ -40,7 +34,7 @@ services:
     image: mek-test:local
     labels: *labels
     profiles: [tests]       # not started by `docker compose up`
-    depends_on: [floci-aws, floci-gcp, floci-az]
+    depends_on: [floci-aws, floci-gcp]
     networks: [mek-test]
     volumes:
       - ../..:/src:ro       # the repository, read-only
@@ -49,11 +43,8 @@ services:
       # A missing CLI or emulator is a failure here, never a skip.
       MEK_CONTRACT_REQUIRE: "1"
       MEK_EMULATOR_REQUIRE: "1"
-      # Safe in a throwaway container: KooCLI writes the user's ~/.hcloud.
-      MEK_CONTRACT_HCLOUD: "1"
       MEK_FLOCI_AWS_URL: http://floci-aws:4566
       MEK_FLOCI_GCP_URL: http://floci-gcp:4588
-      MEK_FLOCI_AZ_URL: http://floci-az:4577
 
 networks:
   mek-test:

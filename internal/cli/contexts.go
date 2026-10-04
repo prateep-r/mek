@@ -132,28 +132,19 @@ func (a *app) newLoginCmd() *cobra.Command {
 	var adc bool
 	cmd := &cobra.Command{
 		Use:   "login [context] [-- <login flags>]",
-		Short: "Log in to a context (AWS IAM Identity Center / gcloud / az / hcloud SSO)",
+		Short: "Log in to a context (AWS IAM Identity Center / gcloud)",
 		Long: `Log in to a context using the official CLI's own login flow.
 
 AWS: runs "aws sso login". Contexts that share the same sso_start_url share
 one login, so you usually log in once per day for all accounts.
 GCP: runs "gcloud auth login" in the context's isolated config dir;
 add --adc to also create Application Default Credentials for SDKs/terraform.
-Azure: runs "az login --tenant" and "az account set --subscription" in the
-context's isolated AZURE_CONFIG_DIR.
-Huawei Cloud: runs "hcloud configure sso" for the context's KooCLI profile.
-mek never edits KooCLI's profiles; create an SSO profile once with:
-
-  hcloud configure set --cli-profile=<name> --cli-mode=SSO --cli-region=<region> \
-    --cli-sso-start-url=<portal-url> --cli-sso-region=<region> \
-    --cli-sso-account-name=<account> --cli-sso-permission-set-name=<permission-set>
 
 Flags after -- go to the CLI's own login command, e.g. without a browser or
 in CI (the login still lands in the context's isolated config):
 
   mek login dev    -- --no-browser                   # aws sso login
-  mek login ci-gcp -- --cred-file=key.json           # gcloud auth login
-  mek login ci-az  -- --service-principal -u "$APP_ID" -p "$SECRET"   # az login`,
+  mek login ci-gcp -- --cred-file=key.json           # gcloud auth login`,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if n := len(contextArgs(cmd, args)); n > 1 {
 				return fmt.Errorf("accepts at most 1 context, got %d (put login flags after --)", n)
@@ -171,12 +162,9 @@ in CI (the login still lands in the context's isolated config):
 				return err
 			}
 			ui.Info("→ logging in to %s %s", ui.Bold(l.ctx.Name), ui.Dim(l.prov.Describe()))
-			cmds, err := l.prov.LoginCommands(adc)
-			if err != nil {
-				return err
-			}
+			cmds := l.prov.LoginCommands(adc)
 			// Extra flags belong to the actual login (the first command), not to
-			// follow-ups like `az account set`.
+			// follow-ups like `gcloud auth application-default login`.
 			cmds[0] = append(cmds[0], loginFlags(cmd, args)...)
 			env := l.env.Apply(os.Environ())
 			for _, argv := range cmds {

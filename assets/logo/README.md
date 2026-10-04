@@ -1,9 +1,9 @@
 # mek logo
 
-Four translucent circles overlap into one cloud (เมฆ, *mek*): one circle per
-supported cloud, in that cloud's brand color, brought together in one place.
-AWS and GCP are the large circles; the two blues (Azure, GCP) are kept apart so
-they stay distinguishable. Add a circle when mek supports another cloud.
+Translucent circles overlap into one cloud (เมฆ, *mek*): one circle per
+supported cloud, in that cloud's brand color, brought together in one place —
+AWS the larger, GCP the smaller. Add a circle when mek supports another cloud
+(v0.4.0–v0.9.0 had four, with Azure `#0078D4` and Huawei Cloud `#C7000B`).
 
 | File | Use |
 |---|---|
@@ -20,10 +20,8 @@ The wordmark is drawn as strokes, not font text, so it renders the same everywhe
 | Role | Hex |
 |---|---|
 | Background (paper) | `#F6F1E7` |
-| Circle 1 (small) · Azure | `#0078D4` |
-| Circle 2 (large) · AWS | `#FF9900` |
-| Circle 3 (large) · GCP | `#4285F4` |
-| Circle 4 (small) · Huawei Cloud | `#C7000B` |
+| Circle 1 (large) · AWS | `#FF9900` |
+| Circle 2 (small) · GCP | `#4285F4` |
 | Circle opacity | `0.85` |
 | Wordmark on light | `#1C1917` |
 | Wordmark on dark | `#F6F1E7` |

@@ -9,43 +9,26 @@ import (
 
 // Cluster is a Kubernetes cluster reachable from a context (mek kube).
 type Cluster struct {
-	Name          string `yaml:"name"`                     // the cloud's cluster name
-	Region        string `yaml:"region,omitempty"`         // aws: defaults to the context's region
-	Location      string `yaml:"location,omitempty"`       // gcp: zone or region
-	ResourceGroup string `yaml:"resource_group,omitempty"` // azure
-	Namespace     string `yaml:"namespace,omitempty"`      // default namespace in the kubeconfig
+	Name      string `yaml:"name"`                // the cloud's cluster name
+	Region    string `yaml:"region,omitempty"`    // aws: defaults to the context's region
+	Location  string `yaml:"location,omitempty"`  // gcp: zone or region
+	Namespace string `yaml:"namespace,omitempty"` // default namespace in the kubeconfig
 }
-
-// Bastion is an Azure Bastion host (Standard SKU or above, native client
-// support on).
-type Bastion struct {
-	Name          string `yaml:"name"`
-	ResourceGroup string `yaml:"resource_group"`
-}
-
-// Target auth values (azure).
-const (
-	AuthAAD    = "aad"     // Microsoft Entra ID login: no key at all (the default)
-	AuthSSHKey = "ssh-key" // the context's key in <MEK_HOME>/ssh/<context>
-)
 
 // Target is a host reachable from a context (mek shell, tunnel hops).
 type Target struct {
-	Instance      string   `yaml:"instance"`                 // aws: i-… or tag:Key=Value; gcp, azure: VM name (azure: or resource id)
-	Zone          string   `yaml:"zone,omitempty"`           // gcp: looked up when empty
-	ResourceGroup string   `yaml:"resource_group,omitempty"` // azure: looked up when empty
-	User          string   `yaml:"user,omitempty"`           // gcp, azure: SSH user
-	Auth          string   `yaml:"auth,omitempty"`           // azure: aad (default) or ssh-key
-	Bastion       *Bastion `yaml:"bastion,omitempty"`        // azure: instead of the context's
+	Instance string `yaml:"instance"`       // aws: i-… or tag:Key=Value; gcp: VM name
+	Zone     string `yaml:"zone,omitempty"` // gcp: looked up when empty
+	User     string `yaml:"user,omitempty"` // gcp: SSH user (default: gcloud's)
 }
 
 // Tunnel is a local port forwarded to a private host (mek tunnel). Which
 // way it goes follows from the fields set: cloudsql → Cloud SQL Auth Proxy;
 // via alone → a port on that instance; via and host → another host,
-// reached through the instance; host alone → (azure) Bastion connects to it.
+// reached through the instance.
 type Tunnel struct {
 	Via       string `yaml:"via,omitempty"`        // a target name or instance spec
-	Host      string `yaml:"host,omitempty"`       // remote host: through via, or (azure) from Bastion directly
+	Host      string `yaml:"host,omitempty"`       // remote host reached through via
 	Port      int    `yaml:"port,omitempty"`       // remote port
 	LocalPort int    `yaml:"local_port,omitempty"` // default: port + 10000
 	CloudSQL  string `yaml:"cloudsql,omitempty"`   // gcp: PROJECT:REGION:INSTANCE
@@ -80,8 +63,8 @@ func (t *Tunnel) Validate() error {
 	if t.PrivateIP {
 		return errors.New("private_ip is only for cloudsql tunnels")
 	}
-	if t.Via == "" && t.Host == "" {
-		return errors.New("needs via (a target), host or cloudsql")
+	if t.Via == "" {
+		return errors.New("needs via (a target) or cloudsql")
 	}
 	if t.Port < 1 || t.Port > 65535 {
 		return fmt.Errorf("port %d is not a port (1-65535)", t.Port)
@@ -90,16 +73,6 @@ func (t *Tunnel) Validate() error {
 		return fmt.Errorf("port %d + 10000 is not a port: set local_port", t.Port)
 	}
 	return nil
-}
-
-func (b *Bastion) validate(key string) error {
-	if b == nil {
-		return nil
-	}
-	if b.Name == "" || b.ResourceGroup == "" {
-		return fmt.Errorf("%s needs name and resource_group", key)
-	}
-	return argValues(key, field{"name", b.Name}, field{"resource_group", b.ResourceGroup})
 }
 
 // Names that would clash with subcommands (`mek kube token`, `mek tunnel ls`).
@@ -137,7 +110,7 @@ func (c *Context) validateAccess() error {
 			return fmt.Errorf("clusters.%s needs a name", alias)
 		}
 		if err := argValues("clusters."+alias, field{"name", cl.Name}, field{"region", cl.Region},
-			field{"location", cl.Location}, field{"resource_group", cl.ResourceGroup}, field{"namespace", cl.Namespace}); err != nil {
+			field{"location", cl.Location}, field{"namespace", cl.Namespace}); err != nil {
 			return err
 		}
 	}
@@ -148,24 +121,9 @@ func (c *Context) validateAccess() error {
 		if t == nil || t.Instance == "" {
 			return fmt.Errorf("targets.%s needs an instance", alias)
 		}
-		if err := argValues("targets."+alias, field{"instance", t.Instance}, field{"zone", t.Zone},
-			field{"resource_group", t.ResourceGroup}, field{"user", t.User}); err != nil {
+		if err := argValues("targets."+alias, field{"instance", t.Instance}, field{"zone", t.Zone}, field{"user", t.User}); err != nil {
 			return err
 		}
-		switch t.Auth {
-		case "", AuthAAD, AuthSSHKey:
-		default:
-			return fmt.Errorf("targets.%s.auth must be %s or %s", alias, AuthAAD, AuthSSHKey)
-		}
-		if t.Auth == AuthSSHKey && t.User == "" {
-			return fmt.Errorf("targets.%s: auth ssh-key needs a user", alias)
-		}
-		if err := t.Bastion.validate("targets." + alias + ".bastion"); err != nil {
-			return err
-		}
-	}
-	if err := c.Bastion.validate("bastion"); err != nil {
-		return err
 	}
 	for alias, t := range c.Tunnels {
 		if err := validateAlias("tunnels", alias, reservedTunnelNames); err != nil {

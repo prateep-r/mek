@@ -21,8 +21,7 @@ const testConfig = `contexts:
   uat:  {provider: aws, sso_start_url: "https://o.awsapps.com/start", sso_region: ap-southeast-1, account_id: "111122223333", role: Dev}
   prod: {provider: aws, aws_profile: prod-admin, protected: true}
   ro:   {provider: gcp, project: p, readonly: true}
-  az:   {provider: azure, tenant_id: t, subscription_id: 00000000-1111-2222-3333-444444444444}
-  hw:   {provider: huawei, hcloud_profile: sso-prod, region: ap-southeast-2}
+  gcp:  {provider: gcp, project: acme-dev, account: me@example.com}
 `
 
 // recorder is a fake runner: it records invocations instead of starting processes.
@@ -68,7 +67,6 @@ func newHarness(t *testing.T, cfg string) *harness {
 	t.Setenv("MEK_HOME", home)
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("MEK_CONTEXT", "")
-	t.Setenv("MEK_HCLOUD_CONFIG", filepath.Join(t.TempDir(), "no-hcloud-config.json"))
 	if cfg != "" {
 		if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte(cfg), 0o600); err != nil {
 			t.Fatal(err)
@@ -127,14 +125,14 @@ func TestUseAndCtx(t *testing.T) {
 		t.Errorf("ctx --short: %q", out)
 	}
 	out := h.mustRun("ctx", "ls")
-	for _, want := range []string{"* uat", "prod", "[protected]", "[readonly]", "huawei profile sso-prod"} {
+	for _, want := range []string{"* uat", "prod", "[protected]", "[readonly]", "gcp acme-dev"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("ctx ls missing %q:\n%s", want, out)
 		}
 	}
 
 	t.Setenv("MEK_CONTEXT", "prod") // still wins after `use`; mek says so
-	h.mustRun("use", "az")
+	h.mustRun("use", "gcp")
 	if out := h.mustRun("ctx", "--short"); out != "prod\n" {
 		t.Errorf("MEK_CONTEXT should take precedence: %q", out)
 	}
@@ -173,11 +171,8 @@ func TestLogin(t *testing.T) {
 		t.Error("login must run with the context's environment")
 	}
 
-	_, err := h.run("login", "hw") // no KooCLI config
-	wantErr(t, err, "no KooCLI config")
-
 	h.exec.code = 1 // the CLI's login failed: its exit code reaches main
-	_, err = h.run("login", "az")
+	_, err := h.run("login", "gcp")
 	var exit *runner.ExitError
 	if !errors.As(err, &exit) || exit.Code != 1 || len(h.exec.invs) != 3 {
 		t.Errorf("failed login: %v (ran %q)", err, h.exec.argv())
@@ -190,11 +185,6 @@ func TestPassthrough(t *testing.T) {
 	inv := h.exec.invs[0]
 	if strings.Join(inv.Argv, " ") != "aws s3 ls" || !slices.Contains(inv.Env, "AWS_PROFILE=mek-uat") || inv.Decision != "allowed" {
 		t.Errorf("aws: %+v", inv)
-	}
-
-	h.mustRun("-c", "hw", "hcloud", "ECS", "ListServersDetails")
-	if got := h.exec.argv()[1]; got != "hcloud ECS ListServersDetails --cli-profile=sso-prod --cli-region=ap-southeast-2" {
-		t.Errorf("hcloud args not rewritten: %q", got)
 	}
 
 	_, err := h.run("-c", "uat", "gcloud", "projects", "list")
@@ -214,12 +204,12 @@ func TestPassthrough(t *testing.T) {
 
 func TestExecAndEnv(t *testing.T) {
 	h := newHarness(t, testConfig)
-	h.mustRun("-c", "az", "exec", "--", "terraform", "plan")
+	h.mustRun("-c", "gcp", "exec", "--", "terraform", "plan")
 	if inv := h.exec.invs[0]; strings.Join(inv.Argv, " ") != "terraform plan" || inv.Class.String() != "unknown" {
 		t.Errorf("exec: %+v", inv)
 	}
-	out := h.mustRun("env", "az")
-	if !strings.Contains(out, "export AZURE_CONFIG_DIR=") || !strings.Contains(out, "unset AZURE_CLIENT_SECRET") {
+	out := h.mustRun("env", "gcp")
+	if !strings.Contains(out, "export CLOUDSDK_CONFIG=") || !strings.Contains(out, "unset GOOGLE_APPLICATION_CREDENTIALS") {
 		t.Errorf("env: %s", out)
 	}
 	_, err := h.run("env", "nope")
@@ -327,7 +317,7 @@ func TestSelfUpdateCmd(t *testing.T) {
 func TestCompleteContexts(t *testing.T) {
 	newHarness(t, testConfig)
 	names, _ := completeContexts(nil, nil, "")
-	if !slices.Equal(names, []string{"az", "hw", "prod", "ro", "uat"}) {
+	if !slices.Equal(names, []string{"gcp", "prod", "ro", "uat"}) {
 		t.Errorf("names: %v", names)
 	}
 	newHarness(t, "")
@@ -360,9 +350,9 @@ func TestUseShell(t *testing.T) {
 
 func TestLoginPassesFlagsToTheCLI(t *testing.T) {
 	h := newHarness(t, testConfig)
-	h.mustRun("login", "az", "--", "--service-principal", "-u", "app", "-p", "s3cret")
+	h.mustRun("login", "gcp", "--adc", "--", "--cred-file=key.json")
 	got := h.exec.argv()
-	if got[0] != "az login --tenant t --service-principal -u app -p s3cret" || got[1] != "az account set --subscription 00000000-1111-2222-3333-444444444444" {
+	if got[0] != "gcloud auth login me@example.com --cred-file=key.json" || got[1] != "gcloud auth application-default login" {
 		t.Errorf("flags must go to the login command only: %q", got)
 	}
 
@@ -373,6 +363,6 @@ func TestLoginPassesFlagsToTheCLI(t *testing.T) {
 		t.Errorf("login -- without context: %q", got)
 	}
 
-	_, err := h.run("login", "uat", "az")
+	_, err := h.run("login", "uat", "gcp")
 	wantErr(t, err, "at most 1 context")
 }

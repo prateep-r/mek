@@ -6,22 +6,20 @@
 </h1>
 
 **mek** (เมฆ — Thai for *cloud*) logs you in, switches between cloud accounts
-and runs the official CLIs with the right credentials — for AWS, GCP, Azure and
-Huawei Cloud. Think *K9s/Lens, but for cloud accounts*.
+and runs the official CLIs with the right credentials — for AWS and GCP. Think
+*K9s/Lens, but for cloud accounts*.
 
 ```bash
 mek login baas-uat          # SSO once, covers every account behind the same portal
 mek use baas-uat            # switch context
 mek aws s3 ls               # any aws command, in that context
 mek gcloud compute instances list
-mek az vm list
-mek hcloud ECS ListServersDetails
 mek exec -- terraform plan  # any tool, same credentials
 ```
 
-- **Every CLI feature, day one** — `mek aws …` / `mek gcloud …` / `mek az …` / `mek hcloud …` pass everything through to the real CLI.
-- **No long-lived keys** — AWS and Huawei Cloud use IAM Identity Center (SSO) through their CLIs' own token caches; GCP and Azure use an isolated CLI config per context.
-- **Your files stay untouched** — mek writes its own AWS config (`~/.config/mek/aws/config`) instead of editing `~/.aws/config`, and never edits KooCLI profiles.
+- **Every CLI feature, day one** — `mek aws …` / `mek gcloud …` pass everything through to the real CLI.
+- **No long-lived keys** — AWS uses IAM Identity Center (SSO) through the AWS CLI's own token cache; GCP uses an isolated gcloud config per context.
+- **Your files stay untouched** — mek writes its own AWS config (`~/.config/mek/aws/config`) instead of editing `~/.aws/config`, and keeps gcloud off `~/.config/gcloud`.
 - **Prod guard** — `protected` contexts confirm writes and require typing the context name for destructive commands; `readonly` contexts block them.
 - **Audit log** — every command is recorded in `~/.config/mek/audit.jsonl` with secrets masked (rotated at 10 MiB, 3 old files kept); shells and tunnels get an entry when they start and one when they end.
 
@@ -62,13 +60,9 @@ Update with `brew upgrade mek` (Homebrew) or `mek self-update` (script / manual 
 |---|---|
 | AWS contexts | [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) |
 | GCP contexts | [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) |
-| Azure contexts | [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) |
-| Huawei Cloud contexts | [KooCLI (`hcloud`)](https://support.huaweicloud.com/intl/en-us/qs-hcli/hcli_02_003.html) |
 | `mek kubectl`, `mek kube --merge` | [kubectl](https://kubernetes.io/docs/tasks/tools/) |
 | GKE clusters (`clusters:` on a GCP context) | [gke-gcloud-auth-plugin](https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_plugin) |
 | Cloud SQL tunnels (`mek tunnel --cloudsql`) | [cloud-sql-proxy](https://cloud.google.com/sql/docs/postgres/connect-auth-proxy#install) |
-| AKS clusters (`clusters:` on an Azure context) | [kubelogin](https://azure.github.io/kubelogin/install.html) |
-| `mek shell` / `mek tunnel` on Azure | the az `bastion` extension (`ssh` too for Entra ID logins): `az extension add --name bastion --name ssh` |
 | `mek shell` / `mek tunnel` on AWS | [session-manager-plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html) |
 
 ## Configure
@@ -103,46 +97,16 @@ contexts:
     provider: gcp
     project: my-sandbox
     region: asia-southeast1
-
-  azure-dev:
-    provider: azure
-    tenant_id: your-org.onmicrosoft.com              # Entra tenant ID or domain
-    subscription_id: 00000000-0000-0000-0000-000000000000
-    region: southeastasia                            # default location
-
-  huawei-prod:
-    provider: huawei
-    hcloud_profile: my-sso-profile    # a KooCLI profile (see below)
-    region: ap-southeast-2
-    protected: true
 ```
-
-**Huawei Cloud:** KooCLI keeps its profiles in `~/.hcloud/config.json`, and
-`hcloud configure set` also changes your current profile, so mek never edits it.
-Create an SSO profile once, then point a context at it:
-
-```bash
-hcloud configure set --cli-profile=my-sso-profile --cli-mode=SSO --cli-region=ap-southeast-2 \
-  --cli-sso-start-url=https://your-portal-url --cli-sso-region=ap-southeast-1 \
-  --cli-sso-account-name=your-account --cli-sso-permission-set-name=ReadOnly
-```
-
-mek adds `--cli-profile` / `--cli-region` to each `mek hcloud …` command (KooCLI has
-no environment variable for them) and sets `HW_PROFILE` / `HW_REGION_NAME` for terraform.
-Like KooCLI, mek finds `~/.hcloud` through your account's home directory, not `$HOME`;
-set `MEK_HCLOUD_CONFIG` to read KooCLI's profiles from somewhere else.
 
 Rules checked on load: context names use letters, digits, `.`, `_` and `-`;
 `account_id` is the 12-digit AWS account ID (quote it); SSO contexts need
-`sso_region` (or `region`), and contexts sharing an `sso_start_url` must agree on it;
-Azure `subscription_id` is a GUID. Cluster names (`clusters:`) follow the context-name
+`sso_region` (or `region`), and contexts sharing an `sso_start_url` must agree on it.
+Cluster names (`clusters:`) follow the context-name
 rules; EKS clusters take `region`, GKE clusters `location`. Targets (`targets:`) are an AWS
 instance id or `tag:Key=Value`, or a GCP VM name (with optional `zone` and `user`).
 Tunnels (`tunnels:`) need `via` (a target) and `port`, plus `host` to reach another
-host, or `cloudsql` and `local_port` (GCP). On Azure, targets are a VM name (with
-optional `resource_group`) or resource id, shells and tunnels go through the context's
-`bastion: {name, resource_group}`, and a tunnel to another host is just `host` (an IP)
-and `port`; clusters take `name` and `resource_group`.
+host, or `cloudsql` and `local_port` (GCP).
 
 > Never commit real account IDs or SSO URLs to a public repository. Share team configs from a private repo.
 
@@ -155,12 +119,12 @@ and `port`; clusters take `name` and `resource_group`.
 | `mek use <ctx>` | switch the current context (saved, shared by every terminal) |
 | `eval "$(mek use --shell <ctx>)"` | switch only this terminal |
 | `mek ctx` / `mek ctx --short` | show the current context (`--short` for shell prompts) |
-| `mek login [ctx] [--adc] [-- <flags>]` | `aws sso login` / `gcloud auth login` (+ application-default with `--adc`) / `az login` / `hcloud configure sso`; flags after `--` go to that login command |
-| `mek aws …` / `mek gcloud …` / `mek az …` / `mek hcloud …` | run the CLI in the context, through the guard and audit log |
-| `mek shell <target>` | open a shell on an instance through AWS SSM, GCP IAP or Azure Bastion ([Shell](#shell-on-an-instance)) |
+| `mek login [ctx] [--adc] [-- <flags>]` | `aws sso login` / `gcloud auth login` (+ application-default with `--adc`); flags after `--` go to that login command |
+| `mek aws …` / `mek gcloud …` | run the CLI in the context, through the guard and audit log |
+| `mek shell <target>` | open a shell on an instance through AWS SSM or GCP IAP ([Shell](#shell-on-an-instance)) |
 | `mek tunnel [name] [-b]` | forward a local port to a private host, in the foreground or background ([Tunnels](#tunnels)) |
 | `mek tunnel ls` / `stop` / `logs` | list (every context), stop or read tunnels |
-| `mek kube [cluster] [--merge \| --unmerge]` | write the context's kubeconfig for EKS/GKE/AKS clusters ([Kubernetes](#kubernetes-eks-gke-aks)) |
+| `mek kube [cluster] [--merge \| --unmerge]` | write the context's kubeconfig for EKS/GKE clusters ([Kubernetes](#kubernetes-eks-gke)) |
 | `mek kubectl …` | run kubectl on the context's clusters, through the guard and audit log |
 | `mek exec -- <cmd>` | run any command with the context's credentials |
 | `eval "$(mek env [ctx])"` | export the context into your shell (bypasses guard/audit) |
@@ -189,7 +153,6 @@ isolated config:
 ```bash
 mek login dev    -- --no-browser                                  # aws sso login
 mek login ci-gcp -- --cred-file="$GOOGLE_APPLICATION_CREDENTIALS"  # gcloud auth login
-mek login ci-az  -- --service-principal -u "$APP_ID" -p "$SECRET"   # az login
 ```
 
 mek removes `GOOGLE_APPLICATION_CREDENTIALS` and similar variables from the
@@ -203,14 +166,10 @@ mek -c prod shell bastion               # a name under the context's targets:
 mek -c prod shell i-0abc1234def567890   # aws: an instance id
 mek -c prod shell tag:Name=bastion      # aws: the one running instance with that tag
 mek -c gcp shell vm-1 [--zone Z]        # gcp: a VM name (the zone is looked up)
-mek -c az shell vm-jump                 # azure: a VM name or resource id, through Bastion
 ```
 
 AWS uses `aws ssm start-session` (needs session-manager-plugin); GCP uses
-`gcloud compute ssh --tunnel-through-iap`; Azure uses `az network bastion ssh` with a
-Microsoft Entra ID login (no key; the VM needs the AADSSHLogin extension), or with the
-context's key `~/.config/mek/ssh/<context>/id_ed25519` for targets with `auth: ssh-key`
-(you create it and add the `.pub` to the VM). No public IP, bastion key or open
+`gcloud compute ssh --tunnel-through-iap`. No public IP, bastion key or open
 port is needed. On GCP the context's SSH key and known hosts live under
 `~/.config/mek/ssh/<context>`, not `~/.ssh`. Protected contexts ask first;
 readonly contexts block shells. The same goes for `mek aws ssm start-session`
@@ -235,7 +194,6 @@ mek -c gcp tunnel --cloudsql my-project:asia-southeast1:db --local 15432
 |---|---|---|---|
 | AWS | SSM port forwarding | SSM port forwarding to a remote host | — |
 | GCP | `gcloud compute start-iap-tunnel` | `gcloud compute ssh` with `-L` (counts as a **shell**) | Cloud SQL Auth Proxy (needs `mek login --adc`) |
-| Azure | `az network bastion tunnel --target-resource-id` | `host` (an IP) without `via`: Bastion connects to it (`--target-ip-address`) | — |
 
 The local port defaults to the remote port + 10000 and always binds to
 `127.0.0.1`; mek says so up front when it is taken.
@@ -254,7 +212,7 @@ for as long as the tunnel lives — so `ls` knows it is alive without trusting
 pids — and writes the audit log's end entry when it stops. Two tunnels can't
 forward the same local port.
 
-### Kubernetes (EKS, GKE, AKS)
+### Kubernetes (EKS, GKE)
 
 List a context's clusters under `clusters:` (see `mek init`'s example), then:
 
@@ -268,9 +226,7 @@ mek -c prod exec -- k9s               # or any tool, for one command
 
 The kubeconfig holds no credentials: each request runs
 `mek --context prod kube token …`, which gets a short-lived token from
-`aws eks get-token`, `gke-gcloud-auth-plugin` or `kubelogin` (AKS, through the
-context's `az login`). AKS clusters need Microsoft Entra ID integration: clusters
-with only local accounts hand out long-lived certificates, which mek won't keep.
+`aws eks get-token` or `gke-gcloud-auth-plugin` with the context's login.
 So the file is safe to keep, works in K9s or FreeLens started from the Dock
 (`KUBECONFIG=~/.config/mek/kube/prod.yaml`), and can never use another
 context's credentials. Contexts are named `<context>/<cluster>`, e.g. `prod/main`.
@@ -302,7 +258,7 @@ Commands are classified from their operation name:
 
 | Class | Examples | `protected` | `readonly` |
 |---|---|---|---|
-| read | `describe-*`, `list-*`, `get-*`, `show`, `List*`/`Show*` (hcloud), `s3 ls`, `--dry-run` | run | run |
+| read | `describe-*`, `list-*`, `get-*`, `show`, `s3 ls`, `--dry-run` | run | run |
 | write | `create-*`, `update-*`, `Create*`/`Update*`, `s3 cp`, unknown verbs | confirm y/N | blocked |
 | destructive | `delete-*`, `terminate-*`, `stop-*`, `deallocate`, `Delete*`/`BatchStop*`, `s3 rm`, `sync --delete` | type context name | blocked |
 | unknown | anything via `mek exec` | confirm y/N | blocked |
@@ -317,9 +273,7 @@ enforcement belongs in IAM roles, SCPs and org policies.
 - Needs the official CLIs installed; passthrough speed equals the CLI's speed.
 - mek can't grant more than your IAM role/permissions allow.
 - AWS login supports IAM Identity Center (SSO) and existing profiles; SAML-only IdPs without Identity Center are not built in (use `aws_profile` with your existing tooling).
-- Azure contexts each have their own `az login` (isolated config dirs), so several subscriptions in one tenant mean one login per context.
-- Huawei Cloud contexts need a KooCLI profile you create yourself; `mek login` only logs in SSO profiles (AK/SK profiles are used as-is).
-- KooCLI exits with status 0 even when a command fails, so `mek hcloud …` (and its audit entry) reports success then; check its output.
+- mek supports AWS and GCP. Azure and Huawei Cloud were in v0.4.0–v0.9.0 and are paused; that code is kept on the `keep/azure-huawei` branch.
 - Every kubectl request through mek's kubeconfig fetches a fresh token (about 0.5–1 s); mek never caches tokens.
 - The kubeconfig records mek's path and `PATH` when it is written; run `mek kube` again after moving mek or the cloud CLIs.
 - `mek shell` on GCP runs ssh with the context's own home directory, so your `~/.ssh/config` doesn't apply to it.
@@ -332,9 +286,9 @@ enforcement belongs in IAM roles, SCPs and org policies.
 
 1. ✅ Contexts, SSO login, passthrough, exec/env, guard, audit, doctor, self-update
 2. Access paths ([design](docs/design/0001-tunnel-shell-kube.md)): ✅ `mek kube` / `mek kubectl` (EKS, GKE) · ✅ `mek shell` (SSM, IAP) · ✅ `mek tunnel` (SSM, IAP, Cloud SQL) · ✅ background tunnels
-3. TUI with a resource catalog generated from AWS/GCP/Azure/Huawei API models
-4. ✅ Azure: Bastion shells and tunnels, AKS · Huawei Cloud CCE (undecided: it needs long-lived certificates)
-5. Desktop GUI (Wails)
+3. TUI with a resource catalog generated from AWS/GCP API models
+4. Desktop GUI (Wails)
+5. Azure and Huawei Cloud again, later (see `keep/azure-huawei`)
 
 ## Development
 
@@ -365,9 +319,9 @@ Tests come in five layers, all run by CI (integration and e2e on Linux and macOS
 |---|---|---|
 | Unit | `*_test.go` next to the code | every package, with fakes for processes, prompts, HTTP and the filesystem |
 | Integration (`-tags integration`) | `test/integration` | the real binary against recording stub CLIs: env per cloud, leaked credentials removed, guard + audit, exit codes, signal forwarding, concurrent runs, login flows |
-| E2E (`-tags e2e`) | `test/e2e` | release archives served over HTTP, installed by the real `install.sh` (including tampered / unlisted archives being refused), a new user's first session on all four clouds, and the confirmation prompts answered on a real pseudo-terminal |
-| Contract (`-tags contract`) | `test/contract` | mek with the **real** `aws`, `gcloud`, `az` and `hcloud`, offline: each CLI reads the config, directories and flags mek hands it. A missing CLI is skipped; `MEK_CONTRACT_REQUIRE=1` makes it fail. The Huawei test also needs `MEK_CONTRACT_HCLOUD=1`, since KooCLI writes your real `~/.hcloud` — run it only on a throwaway machine (CI does). `sh test/contract/install-clis.sh` installs the CLIs on Debian/Ubuntu |
-| Emulator (`-tags emulator`) | `test/emulator` | the real CLIs making **real API calls** against [Floci](https://floci.io) emulators in docker — AWS, GCP (Cloud Storage) and Azure (Storage): a command the guard blocks never reaches the API, a confirmed one really changes state, API errors come back with the CLI's exit code. Each test starts its own container on a random local port (never an emulator you already run). Huawei Cloud has no emulator. AWS also runs the **full IAM Identity Center login** — `mek login` → `aws sso login` (device code) → approval → role credentials through the profile mek generates — with a small test proxy adding the `x-amzn-ErrorType` header Floci 2.1.0 leaves out of pending-token responses |
+| E2E (`-tags e2e`) | `test/e2e` | release archives served over HTTP, installed by the real `install.sh` (including tampered / unlisted archives being refused), a new user's first session on both clouds, and the confirmation prompts answered on a real pseudo-terminal |
+| Contract (`-tags contract`) | `test/contract` | mek with the **real** `aws`, `gcloud`, `gke-gcloud-auth-plugin` and `kubectl`, offline: each CLI reads the config, directories, kubeconfigs and session commands mek hands it, against local fake APIs where one is needed. A missing CLI is skipped; `MEK_CONTRACT_REQUIRE=1` makes it fail. `sh test/contract/install-clis.sh` installs the CLIs on Debian/Ubuntu |
+| Emulator (`-tags emulator`) | `test/emulator` | the real CLIs making **real API calls** against [Floci](https://floci.io) emulators in docker — AWS and GCP (Cloud Storage): a command the guard blocks never reaches the API, a confirmed one really changes state, API errors come back with the CLI's exit code. Each test starts its own container on a random local port (never an emulator you already run). AWS also runs the **full IAM Identity Center login** — `mek login` → `aws sso login` (device code) → approval → role credentials through the profile mek generates — with a small test proxy adding the `x-amzn-ErrorType` header Floci 2.1.0 leaves out of pending-token responses |
 
 `make cover` merges unit coverage with coverage from the instrumented binary the
 integration tests run, so `main()` and real process paths count too. Tests that
@@ -375,9 +329,9 @@ check permission errors need a non-root user.
 
 ### Everything in Docker
 
-`test/docker/` is mek's own test environment, so you don't install four cloud CLIs
-or start emulators by hand: an image with Go and the real `aws`, `gcloud`, `az` and
-`hcloud`, plus Floci emulators for AWS, GCP and Azure.
+`test/docker/` is mek's own test environment, so you don't install the cloud CLIs
+or start emulators by hand: an image with Go and the real `aws`, `gcloud` (with
+`gke-gcloud-auth-plugin`) and `kubectl`, plus Floci emulators for AWS and GCP.
 
 ```bash
 make docker-test                          # every layer + coverage, nothing skipped
@@ -390,13 +344,12 @@ make docker-clean                         # ...and the mek-test image (~3.5 GB)
 It is isolated from other projects on the same machine: compose project
 `mek-test` with its own network and volume, everything labelled
 `io.github.prateep-r.mek=test`, and emulator ports that aren't Floci's defaults —
-`127.0.0.1:14566` (AWS), `14588` (GCP), `14577` (Azure) — so an emulator another
+`127.0.0.1:14566` (AWS) and `14588` (GCP) — so an emulator another
 project runs on 4566 is never touched. With `make docker-up` running, point the
 emulator tests at it:
 
 ```bash
-MEK_FLOCI_AWS_URL=http://127.0.0.1:14566 MEK_FLOCI_GCP_URL=http://127.0.0.1:14588 \
-MEK_FLOCI_AZ_URL=http://127.0.0.1:14577 make test-emulator
+MEK_FLOCI_AWS_URL=http://127.0.0.1:14566 MEK_FLOCI_GCP_URL=http://127.0.0.1:14588 make test-emulator
 ```
 
 Releases: push a tag `vX.Y.Z` — GitHub Actions runs GoReleaser, publishes the

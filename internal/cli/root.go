@@ -35,11 +35,10 @@ func NewRoot() *cobra.Command { return newRoot(&app{exec: runner.Exec}) }
 func newRoot(a *app) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "mek",
-		Short: "Log in, switch and run commands across AWS, GCP, Azure and Huawei Cloud",
-		Long: `mek (เมฆ, "cloud") manages cloud contexts — an AWS account+role, a GCP
-project, an Azure subscription or a Huawei Cloud profile — and runs the
-official CLIs (aws, gcloud, az, hcloud) with the right credentials, plus a
-safety guard and audit log for protected contexts.`,
+		Short: "Log in, switch and run commands across AWS and GCP",
+		Long: `mek (เมฆ, "cloud") manages cloud contexts — an AWS account+role or a GCP
+project — and runs the official CLIs (aws, gcloud) with the right
+credentials, plus a safety guard and audit log for protected contexts.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -107,6 +106,9 @@ func (a *app) load(name string) (*loaded, error) {
 	if l.env, err = l.prov.Prepare(); err != nil {
 		return nil, err
 	}
+	if l.env.Set == nil { // a provider with nothing to set
+		l.env.Set = map[string]string{}
+	}
 	l.env.Set["MEK_CONTEXT"] = l.ctx.Name
 	kubeEnv(l.ctx, &l.env)
 	return l, nil
@@ -120,6 +122,17 @@ func kubeEnv(ctx *config.Context, env *provider.Env) {
 	} else if kube.Owned(os.Getenv("KUBECONFIG")) {
 		env.Unset = append(env.Unset, "KUBECONFIG")
 	}
+}
+
+// capability is the context's provider as an optional capability T (kube,
+// shell, tunnel: provider.KubeProvider, Sessioner, Tunneler), or an error
+// naming the command that needs it.
+func capability[T any](l *loaded, command string) (T, error) {
+	c, ok := l.prov.(T)
+	if !ok {
+		return c, fmt.Errorf("%s doesn't support %s yet", command, l.ctx.Provider)
+	}
+	return c, nil
 }
 
 func completeContexts(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {

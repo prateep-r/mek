@@ -17,10 +17,8 @@ import (
 )
 
 const (
-	ProviderAWS    = "aws"
-	ProviderGCP    = "gcp"
-	ProviderAzure  = "azure"
-	ProviderHuawei = "huawei"
+	ProviderAWS = "aws"
+	ProviderGCP = "gcp"
 )
 
 // Context is one cloud target: an AWS account+role or a GCP project.
@@ -45,21 +43,12 @@ type Context struct {
 	Project string `yaml:"project,omitempty"`
 	Account string `yaml:"account,omitempty"` // optional, e.g. you@example.com
 
-	// Azure
-	TenantID       string `yaml:"tenant_id,omitempty"` // Entra tenant ID or domain
-	SubscriptionID string `yaml:"subscription_id,omitempty"`
-
-	// Huawei Cloud — an existing KooCLI profile (created with `hcloud configure set`)
-	HcloudProfile string `yaml:"hcloud_profile,omitempty"`
-
 	// Kubernetes clusters reachable from this context, by alias (mek kube).
 	Clusters map[string]*Cluster `yaml:"clusters,omitempty"`
 	// Hosts for `mek shell` (and as tunnel hops), by alias.
 	Targets map[string]*Target `yaml:"targets,omitempty"`
 	// Port forwards for `mek tunnel`, by alias.
 	Tunnels map[string]*Tunnel `yaml:"tunnels,omitempty"`
-	// Azure Bastion host that shells and tunnels go through.
-	Bastion *Bastion `yaml:"bastion,omitempty"`
 }
 
 type Config struct {
@@ -135,7 +124,6 @@ func (c *Context) Validate() error {
 		{"region", c.Region}, {"sso_start_url", c.SSOStartURL}, {"sso_region", c.SSORegion},
 		{"account_id", c.AccountID}, {"role", c.Role}, {"aws_profile", c.AWSProfile},
 		{"project", c.Project}, {"account", c.Account},
-		{"tenant_id", c.TenantID}, {"subscription_id", c.SubscriptionID}, {"hcloud_profile", c.HcloudProfile},
 	} {
 		if strings.ContainsAny(f.val, "\r\n") {
 			return fmt.Errorf("%s must not contain line breaks", f.key)

@@ -95,8 +95,8 @@ func TestGuardedPipeline(t *testing.T) {
 // describer is the minimal Provider banner() needs.
 type describer struct{}
 
-func (describer) CLI() string                            { return "aws" }
-func (describer) Prepare() (provider.Env, error)         { return provider.Env{}, nil }
-func (describer) LoginCommands(bool) ([][]string, error) { return nil, nil }
-func (describer) WhoAmICommand() []string                { return nil }
-func (describer) Describe() string                       { return "test" }
+func (describer) CLI() string                    { return "aws" }
+func (describer) Prepare() (provider.Env, error) { return provider.Env{}, nil }
+func (describer) LoginCommands(bool) [][]string  { return nil }
+func (describer) WhoAmICommand() []string        { return nil }
+func (describer) Describe() string               { return "test" }

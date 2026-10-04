@@ -70,60 +70,6 @@ func TestClassifyGCloud(t *testing.T) {
 	}
 }
 
-func TestClassifyAzure(t *testing.T) {
-	cases := map[string]Class{
-		"":                                      Read,
-		"vm list":                               Read,
-		"vm show -g rg -n vm1":                  Read,
-		"-o table vm list":                      Read,
-		"aks get-credentials -g rg -n c":        Read,
-		"webapp log tail -g rg -n app":          Read,
-		"vm create -g rg -n vm1 --image Ubuntu": Write,
-		"vm restart -g rg -n vm1":               Write,
-		"group create -n rg -l eastus":          Write,
-		"vm delete -g rg -n vm1 --yes":          Destructive,
-		"vm deallocate -g rg -n vm1":            Destructive,
-		"storage account keys regenerate":       Destructive,
-		"account set --subscription s":          Read, // local only
-		"login --tenant t":                      Read,
-		"vm":                                    Read,
-		"vm delete --help":                      Read,
-		"foo bar baz":                           Write,
-	}
-	for in, want := range cases {
-		if got := ClassifyAzure(strings.Fields(in)); got != want {
-			t.Errorf("az %q = %s, want %s", in, got, want)
-		}
-	}
-}
-
-func TestClassifyHuawei(t *testing.T) {
-	cases := map[string]Class{
-		"":                             Read,
-		"ECS ListServersDetails":       Read,
-		"ECS ShowServer --server_id=x": Read,
-		"--cli-region ap-southeast-2 ECS ListServersDetails": Read,
-		"ECS NovaListServers":                                Read,
-		"ECS CreateServers --cli-jsonInput=a.json":           Write,
-		"ECS UpdateServer --server_id=x":                     Write,
-		"ECS DeleteServers --servers.1.id=x":                 Destructive,
-		"ECS BatchStopServers":                               Destructive,
-		"ECS BatchRebootServers":                             Destructive,
-		"ECS DeleteServers --dryrun":                         Read,
-		"obs ls obs://bucket":                                Read,
-		"obs cp a obs://bucket/a":                            Write,
-		"obs rm obs://bucket/a":                              Destructive,
-		"configure list":                                     Read,
-		"version":                                            Read,
-		"ECS":                                                Read,
-	}
-	for in, want := range cases {
-		if got := ClassifyHuawei(strings.Fields(in)); got != want {
-			t.Errorf("hcloud %q = %s, want %s", in, got, want)
-		}
-	}
-}
-
 func TestDecide(t *testing.T) {
 	plain := &config.Context{}
 	prot := &config.Context{Protected: true}
@@ -176,37 +122,10 @@ func TestClassifyRegressions(t *testing.T) {
 		{ClassifyGCloud, "storage rsync . gs://b --delete-unmatched-destination-objects", Destructive},
 		{ClassifyGCloud, "secrets versions access latest --secret=s", Read},
 		{ClassifyGCloud, "beta", Read},
-		{ClassifyAzure, "vm reimage -g rg -n vm", Destructive},
-		{ClassifyAzure, "provider unregister -n Microsoft.Web", Destructive},
-		{ClassifyHuawei, "ECS ReinstallServerWithCloudInit", Destructive},
-		{ClassifyHuawei, "ECS ResizeServer", Write},
-		{ClassifyHuawei, "obs mb obs://b", Write},
-		{ClassifyHuawei, "obs stat obs://b", Read},
-		{ClassifyHuawei, "obs rb obs://b", Destructive},
-		{ClassifyHuawei, "ECS --skeleton", Read},
 	}
 	for _, c := range cases {
 		if got := c.classify(strings.Fields(c.args)); got != c.want {
 			t.Errorf("%q = %s, want %s", c.args, got, c.want)
-		}
-	}
-	if got := ClassifyHuawei([]string{"ECS", ""}); got != Write {
-		t.Errorf("empty operation = %s, want write", got)
-	}
-}
-
-func TestIsHcloudAPICommand(t *testing.T) {
-	cases := map[string]bool{
-		"ECS ListServersDetails":                 true,
-		"--cli-profile p ECS ListServersDetails": true,
-		"configure list":                         false,
-		"--cli-region ap-southeast-2 version":    false,
-		"":                                       false,
-		"--help":                                 false,
-	}
-	for in, want := range cases {
-		if got := IsHcloudAPICommand(strings.Fields(in)); got != want {
-			t.Errorf("IsHcloudAPICommand(%q) = %v", in, got)
 		}
 	}
 }

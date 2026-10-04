@@ -1,10 +1,6 @@
 package provider
 
-import (
-	"fmt"
-
-	"github.com/prateep-r/mek/internal/config"
-)
+import "github.com/prateep-r/mek/internal/config"
 
 // Query runs a read-only CLI command for a provider and returns its stdout
 // (describe calls). The caller decides how it runs and is audited, so
@@ -63,12 +59,10 @@ func FindPlugin(bin string) (Plugin, bool) {
 
 // Instance is a resolved host that a session (or tunnel) connects to.
 type Instance struct {
-	ID      string          // aws instance id, gcp VM name, azure VM resource id
-	Zone    string          // gcp
-	User    string          // gcp, azure SSH user ("" = the CLI's default)
-	Auth    string          // azure: config.AuthAAD or config.AuthSSHKey
-	Bastion *config.Bastion // azure: the target's own Bastion, if any
-	Alias   string          // the configured target name, if it came from config
+	ID    string // aws instance id, gcp VM name
+	Zone  string // gcp
+	User  string // gcp SSH user ("" = gcloud's default)
+	Alias string // the configured target name, if it came from config
 }
 
 // Label names the instance for messages and the audit log.
@@ -87,7 +81,7 @@ func (i Instance) Label() string {
 }
 
 // TargetOptions are per-command overrides of a target (mek shell flags).
-type TargetOptions struct{ Zone, ResourceGroup, User string }
+type TargetOptions struct{ Zone, User string }
 
 // Command is a process mek runs for an access path.
 type Command struct {
@@ -103,22 +97,4 @@ type Sessioner interface {
 	ResolveTarget(spec string, o TargetOptions, q Query) (Instance, error)
 	// ShellCommand opens an interactive session on the instance.
 	ShellCommand(in Instance) (Command, error)
-}
-
-// notAzure rejects the Azure-only fields on another cloud's context.
-func notAzure(c *config.Context) error {
-	if c.Bastion != nil {
-		return fmt.Errorf("bastion is for azure contexts")
-	}
-	for alias, t := range c.Targets {
-		if t.ResourceGroup != "" || t.Auth != "" || t.Bastion != nil {
-			return fmt.Errorf("targets.%s: resource_group, auth and bastion are for azure", alias)
-		}
-	}
-	for alias, cl := range c.Clusters {
-		if cl.ResourceGroup != "" {
-			return fmt.Errorf("clusters.%s: resource_group is for azure", alias)
-		}
-	}
-	return nil
 }

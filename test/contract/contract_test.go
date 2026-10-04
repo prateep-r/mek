@@ -2,13 +2,11 @@
 
 // Contract tests run mek with the REAL cloud CLIs (no cloud account needed):
 // they prove each CLI understands what mek hands it — the generated AWS
-// config, gcloud and az config dirs, KooCLI flags — using only offline,
-// read-only commands. Run with `make test-contract`.
+// config, gcloud's config dir, kubeconfigs, session commands — using only
+// offline commands and local fake APIs. Run with `make test-contract`.
 //
 // A missing CLI skips its test, unless MEK_CONTRACT_REQUIRE=1 (CI) makes it
-// fail. The Huawei test also needs MEK_CONTRACT_HCLOUD=1, because KooCLI
-// always writes ~/.hcloud of the real user, ignoring $HOME: only enable it
-// on a throwaway machine (CI runner, container).
+// fail.
 package contract
 
 import (
@@ -47,7 +45,7 @@ func realCLI(t *testing.T, name string) string {
 }
 
 // user is an isolated user: their own MEK_HOME and HOME, and a PATH with
-// the real CLIs' directories (not symlinks: wrappers like Debian's az find
+// the real CLIs' directories (not symlinks: wrappers like gcloud's find
 // their runtime relative to their own location) plus the system dirs.
 type user struct {
 	t             *testing.T
@@ -145,53 +143,4 @@ func TestGcloudUsesContextConfigDir(t *testing.T) {
 		t.Errorf("a fresh context must have no accounts (isolated from the user's gcloud):\n%s", out)
 	}
 	u.homeUntouched(".config/gcloud")
-}
-
-func TestAzureCLIUsesContextConfigDir(t *testing.T) {
-	u := newUser(t, `contexts:
-  az-dev: {provider: azure, tenant_id: acme.onmicrosoft.com, subscription_id: 00000000-1111-2222-3333-444444444444}
-`, []string{realCLI(t, "az")}, "AZURE_CORE_COLLECT_TELEMETRY=no")
-
-	if out, code := u.run("-c", "az-dev", "az", "config", "set", "core.output=table"); code != 0 {
-		t.Fatalf("az config set: exit %d\n%s", code, out)
-	}
-	b, err := os.ReadFile(filepath.Join(u.mekHome, "azure", "az-dev", "config"))
-	if err != nil || !strings.Contains(string(b), "output = table") {
-		t.Errorf("az did not write the context's AZURE_CONFIG_DIR: %v\n%s", err, b)
-	}
-	// Not logged in to this context, whatever the user's own az state is.
-	if out, code := u.run("-c", "az-dev", "az", "account", "show"); code == 0 || !strings.Contains(out, "az login") {
-		t.Errorf("az account show in a fresh context should ask for az login (exit %d):\n%s", code, out)
-	}
-	u.homeUntouched(".azure")
-}
-
-func TestKooCLIAcceptsMekFlags(t *testing.T) {
-	if os.Getenv("MEK_CONTRACT_HCLOUD") == "" {
-		t.Skip("set MEK_CONTRACT_HCLOUD=1 on a throwaway machine: KooCLI writes the real ~/.hcloud")
-	}
-	hcloud := realCLI(t, "hcloud")
-	// KooCLI setup a user does once: accept the privacy statement, create profiles.
-	for _, args := range [][]string{
-		{"configure", "set", "--cli-agree-privacy-statement=true"},
-		{"configure", "set", "--cli-profile=mek-keys", "--cli-mode=AKSK", "--cli-region=ap-southeast-2", "--cli-access-key=AKFAKE", "--cli-secret-key=SKFAKE"},
-	} {
-		if out, err := exec.Command(hcloud, args...).CombinedOutput(); err != nil {
-			t.Fatalf("hcloud %v: %v\n%s", args, err, out)
-		}
-	}
-	u := newUser(t, `contexts:
-  hw:      {provider: huawei, hcloud_profile: mek-keys, region: ap-southeast-2}
-  hw-gone: {provider: huawei, hcloud_profile: mek-no-such-profile}
-`, []string{hcloud})
-
-	// KooCLI honours the --cli-profile mek appends after the operation...
-	u.want("Profile mek-no-such-profile does not exist", "-c", "hw-gone", "hcloud", "ECS", "ListServersDetails")
-	// ...and rejects it on its own commands, which is why mek leaves those alone.
-	if out, _ := u.run("-c", "hw", "hcloud", "version"); strings.Contains(out, "Invalid parameter") || !strings.Contains(out, "KooCLI version") {
-		t.Errorf("mek must not add flags to `hcloud version`:\n%s", out)
-	}
-	u.want(`"name": "mek-keys"`, "-c", "hw", "hcloud", "configure", "show", "--cli-profile=mek-keys")
-	// mek reads KooCLI's real config format to decide how to log in.
-	u.want("uses AKSK mode", "login", "hw")
 }

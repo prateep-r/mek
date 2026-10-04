@@ -1,6 +1,6 @@
-# mek's test image: Go plus the four real cloud CLIs (aws, gcloud, az,
-# hcloud), kubectl and gke-gcloud-auth-plugin, so every test layer runs the
-# same on any machine. Built and run
+# mek's test image: Go plus the real cloud CLIs (aws, gcloud with
+# gke-gcloud-auth-plugin, kubectl), so every test layer runs the same on any
+# machine. Built and run
 # through compose.yaml (`make docker-test`); used by this project only.
 FROM golang:1.27
 
@@ -12,10 +12,8 @@ RUN apt-get update -qq \
  && apt-get install -y -qq --no-install-recommends make rsync >/dev/null \
  && rm -rf /var/lib/apt/lists/*
 
-# az extensions go where the (non-root) test user finds them too.
-ENV AZURE_EXTENSION_DIR=/opt/az-extensions
 COPY contract/install-clis.sh /tmp/install-clis.sh
-RUN sh /tmp/install-clis.sh && rm /tmp/install-clis.sh && chmod -R a+rX /opt/az-extensions
+RUN sh /tmp/install-clis.sh && rm /tmp/install-clis.sh
 
 # Tests that check permission errors need a non-root user. The Go cache dir
 # exists (owned by mek) before compose mounts its volume there, so the
@@ -27,7 +25,6 @@ USER mek
 WORKDIR /home/mek/mek
 ENV GOFLAGS=-buildvcs=false \
     GOPATH=/home/mek/go \
-    AZURE_CORE_COLLECT_TELEMETRY=no \
     CLOUDSDK_CORE_DISABLE_USAGE_REPORTING=true
 
 COPY --chown=mek docker/run-tests.sh /usr/local/bin/run-tests

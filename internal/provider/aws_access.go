@@ -40,8 +40,8 @@ func parseTag(s string) (key, value string, err error) {
 }
 
 func (a *AWS) ResolveTarget(spec string, o TargetOptions, q Query) (Instance, error) {
-	if o.Zone != "" || o.User != "" || o.ResourceGroup != "" {
-		return Instance{}, errors.New("--zone, --user and --resource-group are for gcp and azure; SSM sessions need none")
+	if o.Zone != "" || o.User != "" {
+		return Instance{}, errors.New("--zone and --user are for gcp; SSM sessions need neither")
 	}
 	return chain(unresolved{"use a name under targets:, an instance id (i-…) or tag:Key=Value"},
 		configured(a.ctx.Targets), awsLiteralID, a.awsTagLookup(q),
@@ -97,8 +97,6 @@ func (a *AWS) TunnelMethod(t config.Tunnel) (TunnelMethod, error) {
 	switch {
 	case t.CloudSQL != "":
 		return nil, errors.New("cloudsql tunnels are gcp only")
-	case t.Via == "":
-		return nil, errors.New("needs via: the instance to go through")
 	case t.Host != "":
 		return ssmRemoteHost{h, t.Host}, nil
 	}

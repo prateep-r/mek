@@ -228,33 +228,6 @@ func ClassifyGCloud(args []string) Class {
 	return classifyVerbs(pos[start+1:], gcloudReadVerbs, gcloudWriteVerbs, gcloudDestructiveVerbs)
 }
 
-// ---------- az (Azure) ----------
-
-var azValueFlags = map[string]bool{
-	"--subscription": true, "--resource-group": true, "-g": true, "--output": true, "-o": true,
-	"--query": true, "--name": true, "-n": true, "--location": true, "-l": true,
-}
-
-var (
-	azLocalGroups = map[string]bool{
-		"login": true, "logout": true, "account": true, "config": true, "configure": true,
-		"extension": true, "version": true, "upgrade": true, "interactive": true, "find": true,
-		"init": true, "feedback": true, "cloud": true, "self-test": true, "bicep": true,
-	}
-	azReadVerbs        = []string{"list", "show", "get", "exists", "check", "wait", "query", "tail", "download", "browse"}
-	azDestructiveVerbs = []string{"delete", "remove", "purge", "deallocate", "stop", "reset", "revoke", "detach", "disable", "cancel", "abort", "failover", "regenerate", "reimage", "unregister"}
-	azWriteVerbs       = []string{"create", "update", "set", "add", "start", "restart", "deploy", "apply", "import", "enable", "attach", "assign", "scale", "resize", "upgrade", "invoke", "run", "swap", "move", "copy", "upload", "patch", "restore", "approve", "grant", "register", "rotate"}
-)
-
-// ClassifyAzure classifies `az <group>... <command> ...` arguments.
-func ClassifyAzure(args []string) Class {
-	pos := positionals(args, azValueFlags)
-	if len(pos) == 0 || azLocalGroups[pos[0]] || HasFlag(args, "--help") || HasFlag(args, "-h") {
-		return Read
-	}
-	return classifyVerbs(pos[1:], azReadVerbs, azWriteVerbs, azDestructiveVerbs)
-}
-
 // classifyVerbs lets the first known verb after the top-level group decide,
 // for CLIs shaped like `<cli> <group> [<subgroup>...] <verb>`.
 func classifyVerbs(rest []string, read, write, destructive []string) Class {
@@ -272,78 +245,4 @@ func classifyVerbs(rest []string, read, write, destructive []string) Class {
 		return Read // bare group prints usage
 	}
 	return Write // unknown verb: be conservative
-}
-
-// ---------- hcloud (Huawei Cloud KooCLI) ----------
-
-var hcloudValueFlags = map[string]bool{
-	"--cli-profile": true, "--cli-region": true, "--cli-output": true, "--cli-query": true,
-	"--cli-jsonInput": true, "--cli-mode": true, "--cli-endpoint": true,
-}
-
-var (
-	hcloudLocalCommands = map[string]bool{
-		"configure": true, "version": true, "update": true, "meta": true,
-		"log": true, "auto-complete": true, "help": true,
-	}
-	// First word of an API operation name, e.g. "List" in ListServersDetails.
-	hcloudReadOps        = map[string]bool{"List": true, "Show": true, "Get": true, "Check": true, "Count": true, "Query": true, "Search": true, "Describe": true, "Validate": true, "Preview": true, "Estimate": true}
-	hcloudDestructiveOps = map[string]bool{"Delete": true, "Remove": true, "Stop": true, "Reboot": true, "Reset": true, "Detach": true, "Disassociate": true, "Unbind": true, "Revoke": true, "Cancel": true, "Disable": true, "Terminate": true, "Release": true, "Purge": true, "Uninstall": true, "Abort": true, "Deregister": true, "Unregister": true, "Unsubscribe": true, "Shutdown": true, "Reinstall": true}
-	// Prefixes that come before the verb (OpenStack-compatible APIs, batch variants).
-	hcloudOpPrefixes = map[string]bool{"Batch": true, "Nova": true, "Keystone": true, "Neutron": true, "Cinder": true}
-)
-
-// IsHcloudAPICommand reports whether hcloud args call a cloud API (as opposed
-// to one of KooCLI's own commands like configure or version, or bare help).
-func IsHcloudAPICommand(args []string) bool {
-	pos := positionals(args, hcloudValueFlags)
-	return len(pos) > 0 && !hcloudLocalCommands[pos[0]]
-}
-
-// ClassifyHuawei classifies `hcloud <Service> <Operation> ...` arguments and
-// the bundled obsutil (`hcloud obs <command> ...`).
-func ClassifyHuawei(args []string) Class {
-	pos := positionals(args, hcloudValueFlags)
-	if len(pos) < 2 || hcloudLocalCommands[pos[0]] ||
-		HasFlag(args, "--dryrun") || HasFlag(args, "--help") || HasFlag(args, "--skeleton") {
-		return Read
-	}
-	if pos[0] == "obs" {
-		switch pos[1] {
-		case "ls", "stat":
-			return Read
-		case "rm", "rb":
-			return Destructive
-		}
-		return Write
-	}
-	words := pascalWords(pos[1])
-	for len(words) > 1 && hcloudOpPrefixes[words[0]] {
-		words = words[1:]
-	}
-	switch {
-	case len(words) == 0:
-		return Write
-	case hcloudReadOps[words[0]]:
-		return Read
-	case hcloudDestructiveOps[words[0]]:
-		return Destructive
-	}
-	return Write
-}
-
-// pascalWords splits "BatchDeleteServers" into [Batch Delete Servers].
-func pascalWords(s string) []string {
-	var words []string
-	start := 0
-	for i := 1; i < len(s); i++ {
-		if s[i] >= 'A' && s[i] <= 'Z' {
-			words = append(words, s[start:i])
-			start = i
-		}
-	}
-	if s != "" {
-		words = append(words, s[start:])
-	}
-	return words
 }

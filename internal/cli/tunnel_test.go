@@ -17,7 +17,6 @@ const tunnelConfig = `contexts:
   gcp:  {provider: gcp, project: p, targets: {web: {instance: web-1, zone: asia-southeast1-b}},
          tunnels: {app: {via: web, port: 8080, local_port: 28080}, pg: {via: web, host: 10.0.0.9, port: 5432, local_port: 25434},
                    sql: {cloudsql: "p:asia-southeast1:db", local_port: 25435}}}
-  hw:   {provider: huawei, hcloud_profile: x}
 `
 
 func newTunnelHarness(t *testing.T) *harness {
@@ -117,7 +116,6 @@ func TestTunnelErrors(t *testing.T) {
 		{[]string{"-c", "prod", "tunnel", "--cloudsql", "p:r:i", "--local", "1"}, "cloudsql tunnels are gcp only"},
 		{[]string{"-c", "prod", "tunnel", "--via", "web-1", "--to", ":80"}, `unknown target "web-1"`},
 		{[]string{"-c", "prod", "-y", "tunnel", "web", "--local", busy}, "localhost:" + busy + " is in use — pick another port with --local"},
-		{[]string{"-c", "hw", "tunnel", "x"}, "mek tunnel doesn't support huawei yet"},
 		{[]string{"-c", "nope", "tunnel", "x"}, "unknown context"},
 	} {
 		_, err := h.run(c.args...)

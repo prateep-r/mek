@@ -1,10 +1,8 @@
 package provider
 
 import (
-	"errors"
 	"fmt"
 	"os"
-	"os/user"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -96,83 +94,6 @@ func TestAWSPrepareWritesSharedSession(t *testing.T) {
 	}
 }
 
-func TestAzurePrepare(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("MEK_HOME", home)
-	ctx := &config.Context{Name: "dev", Provider: config.ProviderAzure, TenantID: "t1",
-		SubscriptionID: "00000000-1111-2222-3333-444444444444", Region: "southeastasia"}
-	p := For(&config.Config{}, ctx)
-	env, err := p.Prepare()
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]string{
-		"AZURE_CONFIG_DIR":        filepath.Join(home, "azure", "dev"),
-		"ARM_SUBSCRIPTION_ID":     ctx.SubscriptionID,
-		"ARM_TENANT_ID":           "t1",
-		"AZURE_DEFAULTS_LOCATION": "southeastasia",
-	}
-	for k, v := range want {
-		if env.Set[k] != v {
-			t.Errorf("%s = %q, want %q", k, env.Set[k], v)
-		}
-	}
-	if fi, err := os.Stat(want["AZURE_CONFIG_DIR"]); err != nil || !fi.IsDir() {
-		t.Errorf("config dir not created: %v", err)
-	}
-	cmds, _ := p.LoginCommands(false)
-	if got := fmt.Sprint(cmds); got != "[[az login --tenant t1] [az account set --subscription "+ctx.SubscriptionID+"]]" {
-		t.Errorf("login: %s", got)
-	}
-}
-
-func TestHuawei(t *testing.T) {
-	h := &Huawei{ctx: &config.Context{Name: "hw", Provider: config.ProviderHuawei, HcloudProfile: "sso-prod", Region: "ap-southeast-2"}}
-
-	env, _ := h.Prepare()
-	if env.Set["HW_PROFILE"] != "sso-prod" || env.Set["HW_REGION_NAME"] != "ap-southeast-2" {
-		t.Errorf("env: %+v", env.Set)
-	}
-
-	rewrite := map[string]string{
-		"ECS ListServersDetails":                         "ECS ListServersDetails --cli-profile=sso-prod --cli-region=ap-southeast-2",
-		"ECS ListServersDetails --cli-region=cn-north-4": "ECS ListServersDetails --cli-region=cn-north-4 --cli-profile=sso-prod",
-		"--cli-profile other ECS ListServersDetails":     "--cli-profile other ECS ListServersDetails --cli-region=ap-southeast-2",
-		"configure list":                                 "configure list", // KooCLI's own commands are left alone
-		"version":                                        "version",
-		"--help":                                         "--help",
-	}
-	for in, want := range rewrite {
-		if got := strings.Join(h.RewriteArgs(strings.Fields(in)), " "); got != want {
-			t.Errorf("RewriteArgs(%q) = %q, want %q", in, got, want)
-		}
-	}
-
-	// Login depends on the profile's mode in KooCLI's config (read-only).
-	cfg := filepath.Join(t.TempDir(), "config.json")
-	old := hcloudConfigPath
-	hcloudConfigPath = func() string { return cfg }
-	t.Cleanup(func() { hcloudConfigPath = old })
-
-	if _, err := h.LoginCommands(false); err == nil || !strings.Contains(err.Error(), "no KooCLI config") {
-		t.Errorf("missing config: %v", err)
-	}
-	if err := os.WriteFile(cfg, []byte(`{"current":"x","profiles":[{"name":"sso-prod","mode":"SSO"},{"name":"keys","mode":"AKSK"}]}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if cmds, err := h.LoginCommands(false); err != nil || fmt.Sprint(cmds) != "[[hcloud configure sso --cli-profile=sso-prod]]" {
-		t.Errorf("sso login: %v %v", cmds, err)
-	}
-	h.ctx.HcloudProfile = "keys"
-	if _, err := h.LoginCommands(false); err == nil || !strings.Contains(err.Error(), "AKSK") {
-		t.Errorf("aksk login: %v", err)
-	}
-	h.ctx.HcloudProfile = "nope"
-	if _, err := h.LoginCommands(false); err == nil || !strings.Contains(err.Error(), "not found") {
-		t.Errorf("unknown profile: %v", err)
-	}
-}
-
 func TestAWSProvider(t *testing.T) {
 	home := t.TempDir()
 	cfg := &config.Config{Contexts: map[string]*config.Context{}}
@@ -181,7 +102,7 @@ func TestAWSProvider(t *testing.T) {
 	cfg.Contexts["uat"] = sso
 	a := &AWS{cfg: cfg, ctx: sso, dir: home}
 
-	if got := fmt.Sprint(must(a.LoginCommands(false))); got != "[[aws sso login --profile mek-uat]]" {
+	if got := fmt.Sprint(a.LoginCommands(false)); got != "[[aws sso login --profile mek-uat]]" {
 		t.Errorf("login: %s", got)
 	}
 	if got := strings.Join(a.WhoAmICommand(), " "); got != "aws sts get-caller-identity --output table" {
@@ -221,11 +142,11 @@ func TestGCPProvider(t *testing.T) {
 	if env, _ := g.Prepare(); env.Set["GOOGLE_APPLICATION_CREDENTIALS"] != adc {
 		t.Errorf("ADC not used: %+v", env.Set)
 	}
-	if got := fmt.Sprint(must(g.LoginCommands(true))); got != "[[gcloud auth login me@x.com] [gcloud auth application-default login]]" {
+	if got := fmt.Sprint(g.LoginCommands(true)); got != "[[gcloud auth login me@x.com] [gcloud auth application-default login]]" {
 		t.Errorf("login --adc: %s", got)
 	}
 	g.ctx.Account = ""
-	if got := fmt.Sprint(must(g.LoginCommands(false))); got != "[[gcloud auth login]]" {
+	if got := fmt.Sprint(g.LoginCommands(false)); got != "[[gcloud auth login]]" {
 		t.Errorf("login: %s", got)
 	}
 	if got := g.WhoAmICommand()[0]; got != "gcloud" {
@@ -238,63 +159,6 @@ func TestGCPProvider(t *testing.T) {
 	g.dir = filepath.Join(adc, "under-a-file")
 	if _, err := g.Prepare(); err == nil {
 		t.Error("expected MkdirAll error")
-	}
-}
-
-func TestAzureProviderErrors(t *testing.T) {
-	file := filepath.Join(t.TempDir(), "file")
-	os.WriteFile(file, nil, 0o600)
-	z := &Azure{ctx: &config.Context{Name: "z", Provider: config.ProviderAzure, TenantID: "t", SubscriptionID: "s"}, dir: file}
-	if _, err := z.Prepare(); err == nil {
-		t.Error("expected MkdirAll error")
-	}
-	if got := strings.Join(z.WhoAmICommand(), " "); got != "az account show --output table" {
-		t.Errorf("whoami: %s", got)
-	}
-	if got := z.Describe(); got != "azure s / -" {
-		t.Errorf("describe: %s", got)
-	}
-}
-
-func TestHuaweiConfigErrors(t *testing.T) {
-	h := &Huawei{ctx: &config.Context{Name: "hw", Provider: config.ProviderHuawei, HcloudProfile: "p"}}
-	if got := strings.Join(h.WhoAmICommand(), " "); got != "hcloud configure show --cli-profile=p" {
-		t.Errorf("whoami: %s", got)
-	}
-	if env, _ := h.Prepare(); env.Set["HW_REGION_NAME"] != "" {
-		t.Errorf("no region: %+v", env.Set)
-	}
-	dir := t.TempDir()
-	old := hcloudConfigPath
-	t.Cleanup(func() { hcloudConfigPath = old })
-
-	hcloudConfigPath = func() string { return dir } // a directory: read fails
-	if _, err := h.LoginCommands(false); err == nil || strings.Contains(err.Error(), "no KooCLI config") {
-		t.Errorf("read error: %v", err)
-	}
-	bad := filepath.Join(dir, "config.json")
-	os.WriteFile(bad, []byte("{not json"), 0o600)
-	hcloudConfigPath = func() string { return bad }
-	if _, err := h.LoginCommands(false); err == nil || !strings.Contains(err.Error(), "read") {
-		t.Errorf("bad json: %v", err)
-	}
-	// Default: the account's home from the user database, like KooCLI —
-	// not $HOME; $HOME only if the lookup fails.
-	oldLookup := lookupUser
-	t.Cleanup(func() { lookupUser = oldLookup })
-	t.Setenv("MEK_HCLOUD_CONFIG", "")
-	t.Setenv("HOME", "/env-home")
-	lookupUser = func() (*user.User, error) { return &user.User{HomeDir: "/passwd-home"}, nil }
-	if got := old(); got != filepath.Join("/passwd-home", ".hcloud", "config.json") {
-		t.Errorf("default path: %s", got)
-	}
-	lookupUser = func() (*user.User, error) { return nil, errors.New("no entry") }
-	if got := old(); got != filepath.Join("/env-home", ".hcloud", "config.json") {
-		t.Errorf("fallback path: %s", got)
-	}
-	t.Setenv("MEK_HCLOUD_CONFIG", "/custom/config.json")
-	if got := old(); got != "/custom/config.json" {
-		t.Errorf("MEK_HCLOUD_CONFIG: %s", got)
 	}
 }
 

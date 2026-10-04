@@ -61,7 +61,6 @@ func TestValidateTargets(t *testing.T) {
 		{aws + "      b: {instance: \"tag:Name\"}\n", "tag targets look like tag:Key=Value"},
 		{aws + "      b: {instance: i-0123456789abcdef0, zone: z}\n", "aws targets take only an instance"},
 		{gcp + "      b: {instance: Not_A_VM}\n", "is not a VM name"},
-		{"contexts:\n  a:\n    provider: huawei\n    hcloud_profile: p\n    targets:\n      b: {instance: x}\n", "targets are not supported on huawei"},
 	}
 	for _, c := range cases {
 		if err := parse(c.in); err == nil || !strings.Contains(err.Error(), c.want) {
@@ -114,7 +113,7 @@ func TestAWSShell(t *testing.T) {
 		want string
 	}{
 		{"web", TargetOptions{}, q, `unknown target "web" — use a name under targets:`},
-		{"i-1", TargetOptions{Zone: "z"}, q, "--zone, --user and --resource-group are for gcp and azure"},
+		{"i-1", TargetOptions{Zone: "z"}, q, "--zone and --user are for gcp"},
 		{"tag:Name", TargetOptions{}, q, "tag:Key=Value"},
 		{"tag:Name=x", TargetOptions{}, fakeQuery(`[]`, nil, &argv), "matches 0 running instances"},
 		{"tag:Name=x", TargetOptions{}, fakeQuery(`["i-1","i-2"]`, nil, &argv), "matches 2 running instances, want exactly 1 (i-1, i-2)"},
@@ -176,9 +175,6 @@ func TestGCPShell(t *testing.T) {
 		if _, err := g.ResolveTarget(c.spec, TargetOptions{}, c.q); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v, want %q", c.spec, err, c.want)
 		}
-	}
-	if _, err := g.ResolveTarget("vm-1", TargetOptions{ResourceGroup: "rg"}, q); err == nil || !strings.Contains(err.Error(), "--resource-group is for azure") {
-		t.Errorf("resource group on gcp: %v", err)
 	}
 
 	c, err := g.ShellCommand(Instance{ID: "web-1", Zone: "z", User: "ops"})

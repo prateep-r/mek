@@ -3,12 +3,12 @@
 // Emulator tests run mek with the real cloud CLIs against Floci, a free local
 // emulator of each cloud's APIs (floci.io): real API calls, no cloud account.
 // They prove what stub CLIs can't — a command the guard blocks never reaches
-// the API, a confirmed one really changes cloud state — on AWS, GCP and
-// Azure. Huawei Cloud has no emulator. Run with `make test-emulator`.
+// the API, a confirmed one really changes cloud state — on AWS and GCP.
+// Run with `make test-emulator`.
 //
 // Each test starts its own Floci container on a random 127.0.0.1 port and
 // removes it afterwards; it never touches an emulator already running on the
-// machine. Set MEK_FLOCI_{AWS,GCP,AZ}_URL to use a running one instead.
+// machine. Set MEK_FLOCI_{AWS,GCP}_URL to use a running one instead.
 // Without docker or a CLI the test is skipped, unless MEK_EMULATOR_REQUIRE=1
 // (CI) makes that a failure.
 package emulator
@@ -30,7 +30,6 @@ import (
 const (
 	flociAWS = "floci/floci:2.1.0"
 	flociGCP = "floci/floci-gcp:0.9.0"
-	flociAz  = "floci/floci-az:0.13.0"
 )
 
 var mek string
@@ -211,32 +210,5 @@ func TestGCP(t *testing.T) {
 	u.ok("-c", "dev", "gcloud", "storage", "buckets", "delete", "gs://mek-e2e")
 	if r := u.run("-c", "dev", "gcloud", "storage", "ls"); strings.Contains(r.Stdout, "gs://mek-e2e/") {
 		t.Errorf("bucket still listed after delete:\n%s", r.Stdout)
-	}
-}
-
-func TestAzure(t *testing.T) {
-	az := realCLI(t, "az")
-	url := emulator(t, flociAz, 4577, "MEK_FLOCI_AZ_URL")
-	const key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMh0=="
-	conn := "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=" + key + ";BlobEndpoint=" + url + "/devstoreaccount1;"
-	u := newUser(t, `contexts:
-  dev: {provider: azure, tenant_id: t, subscription_id: 00000000-1111-2222-3333-444444444444}
-  ro:  {provider: azure, tenant_id: t, subscription_id: 00000000-1111-2222-3333-444444444444, readonly: true}
-`, az, "AZURE_CORE_COLLECT_TELEMETRY=no")
-	list := func(ctx string) string {
-		return u.ok("-c", ctx, "az", "storage", "container", "list", "--connection-string", conn, "--query", "[].name", "-o", "tsv")
-	}
-
-	u.ok("-c", "dev", "az", "storage", "container", "create", "-n", "mek-e2e", "--connection-string", conn)
-	u.blocked("-c", "ro", "az", "storage", "container", "delete", "-n", "mek-e2e", "--connection-string", conn)
-	if !strings.Contains(list("ro"), "mek-e2e") {
-		t.Fatal("the blocked delete reached the API: container is gone")
-	}
-	u.ok("-c", "dev", "az", "storage", "container", "delete", "-n", "mek-e2e", "--connection-string", conn)
-	if strings.Contains(list("dev"), "mek-e2e") {
-		t.Error("container still listed after delete")
-	}
-	if strings.Contains(u.audit(), "Eby8vdM02x") {
-		t.Error("the storage account key leaked into the audit log")
 	}
 }

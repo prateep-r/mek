@@ -59,7 +59,7 @@ test-e2e: ## Install from release artifacts with install.sh, then user journeys 
 test-contract: ## Run mek with the real cloud CLIs, offline (a missing CLI is skipped)
 	go test -tags contract -count=1 ./test/contract/...
 
-test-emulator: ## Real CLIs against Floci cloud emulators in docker (AWS, GCP, Azure)
+test-emulator: ## Real CLIs against Floci cloud emulators in docker (AWS, GCP)
 	go test -tags emulator -count=1 ./test/emulator/...
 
 test-all: check test-integration test-e2e test-contract test-emulator ## Every test layer
@@ -104,8 +104,8 @@ COMPOSE := docker compose -f test/docker/compose.yaml
 docker-test: ## Every test layer in mek's container (real CLIs + Floci); TARGETS="..." to pick
 	$(COMPOSE) run --rm --build tests $(TARGETS); status=$$?; $(COMPOSE) down; exit $$status
 
-docker-up: ## Start mek's Floci emulators on 127.0.0.1:14566 (AWS) / 14588 (GCP) / 14577 (Azure)
-	$(COMPOSE) up -d --wait floci-aws floci-gcp floci-az
+docker-up: ## Start mek's Floci emulators on 127.0.0.1:14566 (AWS) / 14588 (GCP)
+	$(COMPOSE) up -d --wait floci-aws floci-gcp
 
 docker-down: ## Stop and remove mek's containers, network and cache volume
 	$(COMPOSE) --profile tests down --volumes --remove-orphans

@@ -2,7 +2,6 @@ package provider
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -20,9 +19,6 @@ var (
 )
 
 func (g *GCP) ResolveTarget(spec string, o TargetOptions, q Query) (Instance, error) {
-	if o.ResourceGroup != "" {
-		return Instance{}, errors.New("--resource-group is for azure; gcp VMs take --zone")
-	}
 	return chain(unresolved{"use a name under targets: or a VM name"},
 		configured(g.ctx.Targets), g.vmLookup(q),
 	).resolve(spec, o)
@@ -101,8 +97,6 @@ func (g *GCP) TunnelMethod(t config.Tunnel) (TunnelMethod, error) {
 	case t.CloudSQL != "":
 		return cloudSQL{conn: t.CloudSQL, privateIP: t.PrivateIP, ctx: g.ctx.Name,
 			adc: filepath.Join(g.configDir(), "application_default_credentials.json")}, nil
-	case t.Via == "":
-		return nil, errors.New("needs via: the VM to go through")
 	case t.Host != "":
 		return iapSSH{h, t.Host, g.sshBuilder}, nil
 	}

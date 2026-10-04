@@ -67,15 +67,9 @@ type Provider interface {
 	// Prepare writes any files the CLI needs and returns the environment for the context.
 	Prepare() (Env, error)
 	// LoginCommands returns the CLI invocations that log the user in.
-	LoginCommands(adc bool) ([][]string, error)
+	LoginCommands(adc bool) [][]string
 	// WhoAmICommand prints the active identity, used after login.
 	WhoAmICommand() []string
 	// Describe is a one-line human summary of the target.
 	Describe() string
-}
-
-// ArgsRewriter is implemented by providers whose CLI can't be pointed at a
-// context through the environment, so mek adds flags to each command instead.
-type ArgsRewriter interface {
-	RewriteArgs(args []string) []string
 }

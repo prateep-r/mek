@@ -17,7 +17,6 @@ func TestValidateTunnelsPerCloud(t *testing.T) {
 		{aws + "      db: {cloudsql: \"p:r:i\", local_port: 1}\n", "cloudsql tunnels are gcp only"},
 		{aws + "      db: {via: nope, port: 1}\n", "via is not a target name, and \"nope\" is not an instance id"},
 		{gcp + "      db: {via: Nope, port: 1}\n", `via "Nope" is not a target name or VM name`},
-		{"contexts:\n  a:\n    provider: huawei\n    hcloud_profile: p\n    tunnels:\n      db: {via: x, port: 1}\n", "tunnels are not supported on huawei"},
 	}
 	for _, c := range cases {
 		if err := parse(c.in); err == nil || !strings.Contains(err.Error(), c.want) {

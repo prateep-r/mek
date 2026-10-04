@@ -20,9 +20,6 @@ var gcpCloud = Cloud{
 		if c.Project == "" {
 			return errors.New("gcp context needs project")
 		}
-		if err := notAzure(c); err != nil {
-			return err
-		}
 		for alias, cl := range c.Clusters {
 			if cl.Region != "" {
 				return fmt.Errorf("clusters.%s: gcp clusters use location (zone or region), not region", alias)
@@ -89,7 +86,7 @@ func (g *GCP) Prepare() (Env, error) {
 	return env, nil
 }
 
-func (g *GCP) LoginCommands(adc bool) ([][]string, error) {
+func (g *GCP) LoginCommands(adc bool) [][]string {
 	login := []string{"gcloud", "auth", "login"}
 	if g.ctx.Account != "" {
 		login = append(login, g.ctx.Account)
@@ -98,7 +95,7 @@ func (g *GCP) LoginCommands(adc bool) ([][]string, error) {
 	if adc {
 		cmds = append(cmds, []string{"gcloud", "auth", "application-default", "login"})
 	}
-	return cmds, nil
+	return cmds
 }
 
 func (g *GCP) WhoAmICommand() []string {

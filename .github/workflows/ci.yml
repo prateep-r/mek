@@ -38,8 +38,8 @@ jobs:
       - run: make test-integration
       - run: make test-e2e
 
-  # mek with the real aws / gcloud / az / hcloud CLIs: offline contract
-  # checks, then real API calls against Floci emulators (AWS, GCP, Azure).
+  # mek with the real aws / gcloud / kubectl CLIs: offline contract
+  # checks, then real API calls against Floci emulators (AWS, GCP).
   real-clis:
     runs-on: ubuntu-latest
     steps:
@@ -51,7 +51,6 @@ jobs:
       - run: make test-contract
         env:
           MEK_CONTRACT_REQUIRE: "1" # a missing CLI fails instead of skipping
-          MEK_CONTRACT_HCLOUD: "1" # throwaway runner: KooCLI may write ~/.hcloud
       - run: make test-emulator
         env:
           MEK_EMULATOR_REQUIRE: "1" # missing docker or CLI fails instead of skipping

@@ -146,10 +146,8 @@ func TestUserJourney(t *testing.T) {
 	installed := installRelease(t)
 
 	mekHome, home := t.TempDir(), t.TempDir()
-	stubs, log := testkit.Stubs(t, "aws", "gcloud", "az", "hcloud")
-	hcloudConfig := filepath.Join(home, ".hcloud", "config.json")
-	vars := []string{"MEK_HOME=" + mekHome, "HOME=" + home, "PATH=" + stubs + ":/usr/bin:/bin", "STUB_LOG=" + log, "STUB_OUT=stub 1.0",
-		"MEK_HCLOUD_CONFIG=" + hcloudConfig}
+	stubs, log := testkit.Stubs(t, "aws", "gcloud")
+	vars := []string{"MEK_HOME=" + mekHome, "HOME=" + home, "PATH=" + stubs + ":/usr/bin:/bin", "STUB_LOG=" + log, "STUB_OUT=stub 1.0"}
 	step := func(wantCode int, args ...string) testkit.Result {
 		t.Helper()
 		r := testkit.Run(t, installed, vars, args...)
@@ -160,7 +158,7 @@ func TestUserJourney(t *testing.T) {
 	}
 
 	// 1. First contact: help, version, doctor tells them to init.
-	if r := step(0, "--help"); !strings.Contains(r.Stdout, "az") || !strings.Contains(r.Stdout, "hcloud") {
+	if r := step(0, "--help"); !strings.Contains(r.Stdout, "aws") || !strings.Contains(r.Stdout, "gcloud") {
 		t.Errorf("help should list every cloud CLI:\n%s", r.Stdout)
 	}
 	if r := step(0, "version"); !strings.Contains(r.Stdout, releaseVersion) {
@@ -173,22 +171,17 @@ func TestUserJourney(t *testing.T) {
 	// 2. Configure: init writes the example, the user replaces it with theirs.
 	step(0, "init")
 	cfg := `contexts:
-  dev:    {provider: aws, sso_start_url: "https://acme.awsapps.com/start", sso_region: ap-southeast-1, account_id: "111122223333", role: Dev}
-  prod:   {provider: aws, sso_start_url: "https://acme.awsapps.com/start", sso_region: ap-southeast-1, account_id: "444455556666", role: Admin, protected: true}
-  gcp:    {provider: gcp, project: acme-dev, region: asia-southeast1}
-  az-dev: {provider: azure, tenant_id: acme.onmicrosoft.com, subscription_id: 00000000-1111-2222-3333-444444444444}
-  hw:     {provider: huawei, hcloud_profile: acme-sso, region: ap-southeast-2}
+  dev:  {provider: aws, sso_start_url: "https://acme.awsapps.com/start", sso_region: ap-southeast-1, account_id: "111122223333", role: Dev}
+  prod: {provider: aws, sso_start_url: "https://acme.awsapps.com/start", sso_region: ap-southeast-1, account_id: "444455556666", role: Admin, protected: true}
+  gcp:  {provider: gcp, project: acme-dev, region: asia-southeast1}
 `
 	os.WriteFile(filepath.Join(mekHome, "config.yaml"), []byte(cfg), 0o600)
-	// The Huawei user created their KooCLI SSO profile beforehand.
-	os.MkdirAll(filepath.Dir(hcloudConfig), 0o700)
-	os.WriteFile(hcloudConfig, []byte(`{"profiles":[{"name":"acme-sso","mode":"SSO"}]}`), 0o600)
 	if r := step(0, "doctor"); !strings.Contains(r.Stdout, "all good") {
 		t.Errorf("doctor with CLIs present:\n%s", r.Stdout)
 	}
 
 	// 3. Log in to each cloud, switch, work.
-	for _, ctx := range []string{"dev", "gcp", "az-dev", "hw"} {
+	for _, ctx := range []string{"dev", "gcp"} {
 		step(0, "login", ctx)
 	}
 	step(0, "use", "dev")
@@ -197,8 +190,6 @@ func TestUserJourney(t *testing.T) {
 	}
 	step(0, "aws", "s3", "ls")
 	step(0, "-c", "gcp", "gcloud", "compute", "instances", "list")
-	step(0, "-c", "az-dev", "az", "group", "list")
-	step(0, "-c", "hw", "hcloud", "ECS", "ListServersDetails")
 
 	// 4. Prod guard: blocked without confirmation, runs with it.
 	if r := step(1, "-c", "prod", "aws", "ec2", "terminate-instances", "--instance-ids", "i-1"); !strings.Contains(r.Stderr, "--confirm prod") {
@@ -218,8 +209,7 @@ func TestUserJourney(t *testing.T) {
 		got = append(got, line+" @"+c.Env["MEK_CONTEXT"])
 	}
 	slices.Sort(probes)
-	wantProbes := []string{"aws --version", "aws --version", "az version --output tsv --query \"azure-cli\"", "az version --output tsv --query \"azure-cli\"",
-		"gcloud --version", "gcloud --version", "hcloud version", "hcloud version"}
+	wantProbes := []string{"aws --version", "aws --version", "gcloud --version", "gcloud --version"}
 	if !slices.Equal(probes, wantProbes) {
 		t.Errorf("doctor probes: %q", probes)
 	}
@@ -228,15 +218,8 @@ func TestUserJourney(t *testing.T) {
 		"aws sts get-caller-identity --output table @dev",
 		"gcloud auth login @gcp",
 		"gcloud auth list --filter=status:ACTIVE --format=value(account) @gcp",
-		"az login --tenant acme.onmicrosoft.com @az-dev",
-		"az account set --subscription 00000000-1111-2222-3333-444444444444 @az-dev",
-		"az account show --output table @az-dev",
-		"hcloud configure sso --cli-profile=acme-sso @hw",
-		"hcloud configure show --cli-profile=acme-sso @hw",
 		"aws s3 ls @dev",
 		"gcloud compute instances list @gcp",
-		"az group list @az-dev",
-		"hcloud ECS ListServersDetails --cli-profile=acme-sso --cli-region=ap-southeast-2 @hw",
 		"aws ec2 terminate-instances --instance-ids i-1 @prod",
 	}
 	if !slices.Equal(got, want) {
@@ -245,10 +228,10 @@ func TestUserJourney(t *testing.T) {
 
 	// 6. The audit log kept the guarded commands, blocked ones included.
 	audit, _ := os.ReadFile(filepath.Join(mekHome, "audit.jsonl"))
-	if n := strings.Count(string(audit), "\n"); n != 6 {
-		t.Errorf("audit entries = %d, want 6 (four clouds + blocked and confirmed terminate):\n%s", n, audit)
+	if n := strings.Count(string(audit), "\n"); n != 4 {
+		t.Errorf("audit entries = %d, want 4 (both clouds + blocked and confirmed terminate):\n%s", n, audit)
 	}
-	for _, want := range []string{`"provider":"gcp"`, `"provider":"azure"`, `"provider":"huawei"`, `"decision":"blocked"`, `"decision":"confirmed"`} {
+	for _, want := range []string{`"provider":"gcp"`, `"decision":"blocked"`, `"decision":"confirmed"`} {
 		if !strings.Contains(string(audit), want) {
 			t.Errorf("audit missing %s", want)
 		}

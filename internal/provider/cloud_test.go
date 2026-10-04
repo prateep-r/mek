@@ -33,9 +33,6 @@ func TestValidate(t *testing.T) {
 		{"contexts:\n  a:\n    provider: gcp\n", "project"},
 		{"contexts:\n  a:\n    provider: oracle\n", "unknown provider"},
 		{"contexts:\n  a:\n    region: x\n", "provider is required"},
-		{"contexts:\n  a:\n    provider: azure\n    tenant_id: t\n", "tenant_id and subscription_id"},
-		{"contexts:\n  a:\n    provider: azure\n    tenant_id: t\n    subscription_id: sub-1\n", "GUID"},
-		{"contexts:\n  a:\n    provider: huawei\n", "hcloud_profile"},
 		{sso("a", "123", "ap-southeast-1"), "12 digits"},
 		{sso("a", "111122223333", ""), "sso_region"},
 		{two(sso("a", "111122223333", "us-east-1"), sso("b", "444455556666", "eu-west-1")), "different sso_region"},
@@ -48,8 +45,6 @@ func TestValidate(t *testing.T) {
 	for _, ok := range []string{
 		"contexts:\n  a:\n    provider: aws\n    aws_profile: p\n",
 		two(sso("team.prod_1", "111122223333", "ap-southeast-1"), sso("b", "444455556666", "ap-southeast-1")),
-		"contexts:\n  a:\n    provider: azure\n    tenant_id: contoso.onmicrosoft.com\n    subscription_id: 00000000-1111-2222-3333-444444444444\n",
-		"contexts:\n  a:\n    provider: huawei\n    hcloud_profile: my-sso\n",
 	} {
 		if err := parse(ok); err != nil {
 			t.Errorf("parse(%q) should be valid: %v", ok, err)
@@ -83,8 +78,7 @@ func TestRegistry(t *testing.T) {
 		}
 	}
 	// Each cloud's Strategy is the right classifier.
-	destructive := map[string]string{"aws": "ec2 terminate-instances", "gcloud": "compute instances delete vm",
-		"az": "vm delete -n vm", "hcloud": "ECS DeleteServers"}
+	destructive := map[string]string{"aws": "ec2 terminate-instances", "gcloud": "compute instances delete vm"}
 	for _, c := range Clouds() {
 		args, ok := destructive[c.CLI]
 		if !ok {
@@ -130,5 +124,34 @@ func TestHelpers(t *testing.T) {
 	}
 	if orDash("") != "-" || orDash("x") != "x" {
 		t.Error("orDash")
+	}
+}
+
+// bareProvider has none of the optional capabilities (kube, shell, tunnel).
+type bareProvider struct{}
+
+func (bareProvider) Prepare() (Env, error)         { return Env{}, nil }
+func (bareProvider) LoginCommands(bool) [][]string { return nil }
+func (bareProvider) WhoAmICommand() []string       { return nil }
+func (bareProvider) Describe() string              { return "bare" }
+
+// A cloud may implement only some capabilities: config that needs the
+// others is refused for it, naming what is missing.
+func TestCapabilitiesAreOptional(t *testing.T) {
+	t.Cleanup(Register(Cloud{Name: "bare", CLI: "bare", Title: "Bare", Classify: guard.ClassifyAWS,
+		Validate: func(*config.Context) error { return nil },
+		New:      func(*config.Config, *config.Context, string) Provider { return bareProvider{} }}))
+	bare := "contexts:\n  a:\n    provider: bare\n"
+	for in, want := range map[string]string{
+		bare + "    clusters: {m: {name: x}}\n":         "clusters are not supported on bare yet",
+		bare + "    targets: {b: {instance: x}}\n":      "targets are not supported on bare yet",
+		bare + "    tunnels: {db: {via: x, port: 1}}\n": "tunnels are not supported on bare yet",
+	} {
+		if err := parse(in); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("parse(%q) err=%v, want containing %q", in, err, want)
+		}
+	}
+	if err := parse(bare); err != nil {
+		t.Errorf("a bare context is fine: %v", err)
 	}
 }

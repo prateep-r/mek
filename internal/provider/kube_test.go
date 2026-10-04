@@ -24,7 +24,6 @@ func TestValidateClusters(t *testing.T) {
 		{aws + "    region: r\n    clusters:\n      m: {name: x, location: z}\n", "use region, not location"},
 		{gcp + "    clusters:\n      m: {name: x}\n", "needs a location"},
 		{gcp + "    clusters:\n      m: {name: x, location: z, region: r}\n", "not region"},
-		{"contexts:\n  a:\n    provider: huawei\n    hcloud_profile: p\n    clusters:\n      m: {name: x}\n", "not supported on huawei"},
 	}
 	for _, c := range cases {
 		if err := parse(c.in); err == nil || !strings.Contains(err.Error(), c.want) {
