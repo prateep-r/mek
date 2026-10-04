@@ -21,8 +21,8 @@ and audited.
   `mek tunnel` (local port → private host), `mek shell` (interactive session on a host),
   `mek kube` (kubeconfig for a cluster, usable by kubectl / K9s / FreeLens).
 - Credentials always come from the context (generated AWS profile, isolated gcloud dirs).
-- Nothing written to the user's `~/.kube/config`, `~/.ssh`, `~/.aws` or `~/.azure` unless
-  they opt in (`mek kube --merge`).
+- Nothing written to the user's `~/.kube/config`, `~/.ssh` or `~/.aws` unless they opt in
+  (`mek kube --merge`).
 - Protected/readonly contexts behave predictably; every session is in the audit log.
 
 ## Non-goals
@@ -132,7 +132,7 @@ resolved with a read-only describe call and must match exactly one running insta
 
 | Pattern | Where |
 |---|---|
-| Abstract Factory (extended) | `provider.Cloud` gains capability interfaces (`KubeProvider`, later `Sessioner`/`Tunneler`) and `Plugins` |
+| Abstract Factory (extended) | `provider.Cloud` gains optional capability interfaces (`KubeProvider`, `Sessioner`, `Tunneler`) and `Plugins`; `provider.Register` adds a cloud; the CLI asks for a capability with `capability[T]` |
 | Template Method | `kube.Describe`/`Render`/`Write`: fixed kubeconfig skeleton, cloud steps from `KubeProvider` |
 | Strategy | `guard.ClassifyKubectl`; `provider.TunnelMethod`: `ssmPort`, `ssmRemoteHost`, `iapPort`, `iapSSH` (a shell), `cloudSQL` |
 | Factory Method | `Tunneler.TunnelMethod(config.Tunnel)`: the kind follows from the fields set; config validation calls it too, so each cloud's rules live in one place |
@@ -171,11 +171,23 @@ resolved with a read-only describe call and must match exactly one running insta
   `aws eks get-token`, and a fake GKE API with real gcloud and gke-gcloud-auth-plugin; merge and
   unmerge with real kubectl keeping the user's entries.
 - E2E: the installed binary writes a kubeconfig that runs itself.
-- Sessions (v0.7.0): SSM/IAP data channels can't be emulated, so `shell`/`tunnel` stop at
-  integration (stub CLIs) and contract (request bodies).
+- Sessions: SSM/IAP data channels can't be emulated, so shells and tunnels are tested up to
+  the hand-off. Integration: argv and env per cloud and per tunnel kind, guard per class,
+  audit start/end with one session id, busy local ports. Contract: the real `aws` sends the
+  exact StartSession mek built to a fake SSM endpoint and hands the session to (a recorder
+  for) session-manager-plugin; the real `gcloud compute ssh` against a fake Compute API
+  keeps the key and known hosts in mek's directory, with `-N -L` for tunnels. E2E: the
+  shell and tunnel prompts on a real pseudo-terminal.
+- Background tunnels: unit tests run the supervisor in-process and as a helper process with
+  real locks and ports (State transitions, forced stops, grace kills); integration runs the
+  real binary with `listenstub` (a fake tunnel CLI that really listens): start → ls → logs →
+  stop, a `kill -9`ed supervisor shown as dead, a never-ready port, an early exit, ten
+  simultaneous starts with one winner, a foreground tunnel stopped from another terminal;
+  e2e: a tunnel started after answering the prompt outlives its terminal.
 
 ## Open questions
 
-1. Huawei CCE: a static client certificate is a long-lived credential — accept it with a
-   short duration, or leave Huawei out of `mek kube`?
-2. GKE private/DNS-based endpoints.
+1. GKE private/DNS-based endpoints in `mek kube`.
+2. Restarting a background tunnel when the cloud closes its session (SSM's idle timeout).
+3. When Azure and Huawei Cloud return (`keep/azure-huawei`): Huawei CCE only offers static
+   client certificates — a long-lived credential — for kubeconfigs.

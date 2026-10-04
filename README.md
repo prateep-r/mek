@@ -48,7 +48,7 @@ go install github.com/prateep-r/mek/cmd/mek@latest
 Then:
 
 ```bash
-mek doctor   # checks aws / gcloud / session-manager-plugin / kubectl / k9s
+mek doctor   # checks aws, gcloud and the plugins your config needs (kubectl, gke-gcloud-auth-plugin, session-manager-plugin, cloud-sql-proxy)
 mek init     # creates ~/.config/mek/config.yaml from a commented example
 ```
 
@@ -106,7 +106,9 @@ Cluster names (`clusters:`) follow the context-name
 rules; EKS clusters take `region`, GKE clusters `location`. Targets (`targets:`) are an AWS
 instance id or `tag:Key=Value`, or a GCP VM name (with optional `zone` and `user`).
 Tunnels (`tunnels:`) need `via` (a target) and `port`, plus `host` to reach another
-host, or `cloudsql` and `local_port` (GCP).
+host, or `cloudsql` and `local_port` (GCP). `mek init` writes an example with all of
+these; [Shell](#shell-on-an-instance), [Tunnels](#tunnels) and [Kubernetes](#kubernetes-eks-gke)
+below show them in use.
 
 > Never commit real account IDs or SSO URLs to a public repository. Share team configs from a private repo.
 
@@ -258,9 +260,9 @@ Commands are classified from their operation name:
 
 | Class | Examples | `protected` | `readonly` |
 |---|---|---|---|
-| read | `describe-*`, `list-*`, `get-*`, `show`, `s3 ls`, `--dry-run` | run | run |
-| write | `create-*`, `update-*`, `Create*`/`Update*`, `s3 cp`, unknown verbs | confirm y/N | blocked |
-| destructive | `delete-*`, `terminate-*`, `stop-*`, `deallocate`, `Delete*`/`BatchStop*`, `s3 rm`, `sync --delete` | type context name | blocked |
+| read | `describe-*`, `list-*`, `get-*` (aws), `list` / `describe` (gcloud), `s3 ls`, `kubectl get`/`logs`, `--dry-run` | run | run |
+| write | `create-*`, `update-*`, `create` / `deploy`, `s3 cp`, `kubectl apply`/`scale`, unknown verbs | confirm y/N | blocked |
+| destructive | `delete-*`, `terminate-*`, `stop-*`, `delete` / `stop` (gcloud), `s3 rm`, `sync --delete`, `kubectl delete`/`drain` | type context name | blocked |
 | unknown | anything via `mek exec` | confirm y/N | blocked |
 | shell | `mek shell`, `aws ssm start-session`, `gcloud compute ssh`, `kubectl exec`/`attach`/`debug` | confirm y/N | blocked |
 | tunnel | `mek tunnel`, SSM port forwarding, `gcloud compute start-iap-tunnel`, `kubectl port-forward`/`proxy` | confirm y/N | run |
@@ -292,15 +294,26 @@ enforcement belongs in IAM roles, SCPs and org policies.
 
 ## Development
 
-How the code fits together:
+How the code fits together (the GoF patterns are named where they shape it):
 
-- **One file per cloud** (`internal/provider/<cloud>.go`). Each defines a `Cloud`: an
-  Abstract Factory for that cloud's Provider (an Adapter from a mek context to the
-  official CLI), its command classifier (a Strategy from `internal/guard`) and its
-  config rules. Adding a cloud = one new file plus an entry in `clouds` (`cloud.go`).
+- **One file per cloud** (`internal/provider/aws.go`, `gcp.go`). Each defines a `Cloud`:
+  an Abstract Factory for that cloud's Provider (an Adapter from a mek context to the
+  official CLI), its command classifier (a Strategy from `internal/guard`), its config
+  rules and the plugins it may need. Access features are optional capabilities a
+  Provider implements: `KubeProvider` (`mek kube`), `Sessioner` (`mek shell`) and
+  `Tunneler` (`mek tunnel`; its `TunnelMethod` is a Factory Method for one Strategy per
+  kind of tunnel). Adding a cloud = one file plus an entry in `clouds` (`cloud.go`), or
+  `provider.Register`.
 - **Every guarded command is a `runner.Invocation`** (a Command) passed through
-  Decorators: `audit → guard → exec`, so blocked commands are audited too, and
-  tests swap `exec` for a fake.
+  Decorators: `audit → guard → sessionStart → terminal`, so blocked commands are
+  audited too and sessions get start and end entries. The terminal is `exec`, a
+  foreground tunnel's registration around it, or a background tunnel's supervisor;
+  tests swap it for a fake.
+- **`internal/kube`** renders kubeconfigs (a Template Method; the cloud's describe call
+  fills the steps). **`internal/tunnel`** is a Facade over tunnel records, flock-based
+  liveness, port claims and the supervisor, with a State per tunnel and Observers of
+  its lifecycle. Target lookups (`provider/resolve.go`) are a Chain of Responsibility.
+  Design notes: [docs/design/0001-tunnel-shell-kube.md](docs/design/0001-tunnel-shell-kube.md).
 
 ```bash
 make             # list all targets
@@ -318,8 +331,8 @@ Tests come in five layers, all run by CI (integration and e2e on Linux and macOS
 | Layer | Where | What it covers |
 |---|---|---|
 | Unit | `*_test.go` next to the code | every package, with fakes for processes, prompts, HTTP and the filesystem |
-| Integration (`-tags integration`) | `test/integration` | the real binary against recording stub CLIs: env per cloud, leaked credentials removed, guard + audit, exit codes, signal forwarding, concurrent runs, login flows |
-| E2E (`-tags e2e`) | `test/e2e` | release archives served over HTTP, installed by the real `install.sh` (including tampered / unlisted archives being refused), a new user's first session on both clouds, and the confirmation prompts answered on a real pseudo-terminal |
+| Integration (`-tags integration`) | `test/integration` | the real binary against recording stub CLIs: env per cloud, leaked credentials removed, guard + audit, exit codes, signal forwarding, concurrent runs, login flows, kube/shell/tunnel commands, and background tunnels with a stub that really listens (start → ls → stop, a `kill -9`ed supervisor, ten simultaneous starts) |
+| E2E (`-tags e2e`) | `test/e2e` | release archives served over HTTP, installed by the real `install.sh` (including tampered / unlisted archives being refused), a new user's first session on both clouds, the confirmation prompts (including shells and tunnels) answered on a real pseudo-terminal, and a background tunnel outliving the terminal that started it |
 | Contract (`-tags contract`) | `test/contract` | mek with the **real** `aws`, `gcloud`, `gke-gcloud-auth-plugin` and `kubectl`, offline: each CLI reads the config, directories, kubeconfigs and session commands mek hands it, against local fake APIs where one is needed. A missing CLI is skipped; `MEK_CONTRACT_REQUIRE=1` makes it fail. `sh test/contract/install-clis.sh` installs the CLIs on Debian/Ubuntu |
 | Emulator (`-tags emulator`) | `test/emulator` | the real CLIs making **real API calls** against [Floci](https://floci.io) emulators in docker — AWS and GCP (Cloud Storage): a command the guard blocks never reaches the API, a confirmed one really changes state, API errors come back with the CLI's exit code. Each test starts its own container on a random local port (never an emulator you already run). AWS also runs the **full IAM Identity Center login** — `mek login` → `aws sso login` (device code) → approval → role credentials through the profile mek generates — with a small test proxy adding the `x-amzn-ErrorType` header Floci 2.1.0 leaves out of pending-token responses |
 
@@ -338,7 +351,7 @@ make docker-test                          # every layer + coverage, nothing skip
 make docker-test TARGETS="test-contract"  # just some make targets
 make docker-up                            # only the emulators, for local runs
 make docker-down                          # remove mek's containers, network, cache volume
-make docker-clean                         # ...and the mek-test image (~3.5 GB)
+make docker-clean                         # ...and the mek-test image (a few GB)
 ```
 
 It is isolated from other projects on the same machine: compose project
