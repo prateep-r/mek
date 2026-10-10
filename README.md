@@ -75,6 +75,7 @@ Check it works:
 ```bash
 mek version
 mek doctor            # config + the CLIs and plugins your contexts need, with install hints
+mek help              # every command; mek help <command> for one in full
 ```
 
 **Shell completion** (contexts, clusters, targets and tunnels complete too):
@@ -710,6 +711,23 @@ Two tunnels can't use the same local port.
 
 ## 8. Command reference
 
+### Getting help
+
+Every command explains itself, with examples:
+
+```bash
+mek help                    # every command, with a one-line summary
+mek help tunnel             # one command in full: what it does, examples, flags
+mek help tunnel stop        # a subcommand
+mek tunnel --help           # the same, as a flag (or -h)
+```
+
+After `aws`, `gcloud` or `kubectl`, help belongs to that CLI — `mek aws s3 help`,
+`mek gcloud compute --help` and `mek kubectl get --help` show the real CLI's help (in the
+current context). For mek's own description of those commands, use `mek help aws`.
+
+### Commands
+
 | Command | What it does |
 |---|---|
 | `mek init [--force]` | create the config file from a commented example |
@@ -728,9 +746,12 @@ Two tunnels can't use the same local port.
 | `mek exec -- <cmd> [args…]` | any command with the context's credentials |
 | `eval "$(mek env [ctx])"` | export a context into this shell (bypasses the guard and audit); fish: `mek env --syntax fish \| source` |
 | `mek doctor` | check the config and tools, with install hints |
+| `mek help [command]` / `mek <command> --help` | how a command works, with examples (`-h` for short) |
 | `mek version` | print the version |
 | `mek self-update [--check]` | update a script-installed binary |
 | `mek completion zsh\|bash\|fish` | shell completion |
+
+### Global flags
 
 Global flags go **before** the CLI name: `mek -c prod --yes aws ecs update-service …`
 
