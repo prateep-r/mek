@@ -411,3 +411,32 @@ func TestShellInit(t *testing.T) {
 	_, err := h.run("shell-init", "tcsh")
 	wantErr(t, err, "want zsh, bash or fish")
 }
+
+// `mek help` lists every command once, under its group.
+func TestHelpGroups(t *testing.T) {
+	h := newHarness(t, "")
+	out := h.mustRun("help")
+	groups := map[string][]string{
+		"Contexts:":                             {"ctx", "init", "login", "use"},
+		"Run commands:":                         {"aws", "env", "exec", "gcloud", "kubectl"},
+		"Access (shells, tunnels, Kubernetes):": {"kube", "shell", "tunnel"},
+		"Setup:":                                {"completion", "doctor", "help", "self-update", "shell-init", "version"},
+	}
+	for title, cmds := range groups {
+		_, rest, ok := strings.Cut(out, "\n"+title+"\n")
+		if !ok {
+			t.Fatalf("no group %q:\n%s", title, out)
+		}
+		section, _, _ := strings.Cut(rest, "\n\n")
+		var got []string
+		for _, line := range strings.Split(section, "\n") {
+			got = append(got, strings.Fields(line)[0])
+		}
+		if strings.Join(got, " ") != strings.Join(cmds, " ") {
+			t.Errorf("%s %v, want %v", title, got, cmds)
+		}
+	}
+	if strings.Contains(out, "Available Commands:") || strings.Contains(out, "Additional Commands:") {
+		t.Errorf("ungrouped commands:\n%s", out)
+	}
+}

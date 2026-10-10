@@ -734,7 +734,7 @@ Two tunnels can't use the same local port.
 Every command explains itself, with examples:
 
 ```bash
-mek help                    # every command, with a one-line summary
+mek help                    # every command, grouped, with a one-line summary
 mek help tunnel             # one command in full: what it does, examples, flags
 mek help tunnel stop        # a subcommand
 mek tunnel --help           # the same, as a flag (or -h)
@@ -748,21 +748,25 @@ current context). For mek's own description of those commands, use `mek help aws
 
 | Command | What it does |
 |---|---|
+| **Contexts** | |
 | `mek init [--force]` | create the config file from a commented example |
 | `mek ctx ls` | list contexts (`*` = current) |
 | `mek ctx [--short]` | show the current context (`--short`: just the name, for prompts) |
 | `mek use <ctx>` | switch the saved context (every terminal without its own) |
 | `mek use -s <ctx>` | switch only this terminal (and `KUBECONFIG`, when the context has clusters); needs `mek shell-init`, else `eval "$(mek use -s <ctx>)"` |
-| `mek shell-init zsh\|bash\|fish` | print the shell integration that makes `mek use -s` work by itself |
 | `mek login [ctx] [--adc] [-- <flags>]` | `aws sso login` / `gcloud auth login` (+ application-default with `--adc`) |
+| **Run commands** | |
 | `mek aws …` / `mek gcloud …` | the real CLI in the context, through the guard and audit log |
 | `mek kubectl …` | kubectl on the context's clusters, through the guard and audit log |
-| `mek kube [cluster] [--name N --region R \| --location L]` | write the context's kubeconfig |
+| `mek exec -- <cmd> [args…]` | any command with the context's credentials |
+| `eval "$(mek env [ctx])"` | export a context into this shell (bypasses the guard and audit); fish: `mek env --syntax fish \| source` |
+| **Access (shells, tunnels, Kubernetes)** | |
 | `mek shell <target> [--zone Z] [--user U]` | a shell on an instance (SSM / IAP) |
 | `mek tunnel [name] [--via T] [--to host:port] [--cloudsql C] [--private-ip] [--local N] [-b] [--wait D]` | forward a local port |
 | `mek tunnel ls` / `stop <name\|id>… \| --all` / `logs <name\|id> [-f]` | list, stop or read tunnels |
-| `mek exec -- <cmd> [args…]` | any command with the context's credentials |
-| `eval "$(mek env [ctx])"` | export a context into this shell (bypasses the guard and audit); fish: `mek env --syntax fish \| source` |
+| `mek kube [cluster] [--name N --region R \| --location L]` | write the context's kubeconfig |
+| **Setup** | |
+| `mek shell-init zsh\|bash\|fish` | print the shell integration that makes `mek use -s` work by itself |
 | `mek doctor` | check the config and tools, with install hints |
 | `mek help [command]` / `mek <command> --help` | how a command works, with examples (`-h` for short) |
 | `mek version` | print the version |

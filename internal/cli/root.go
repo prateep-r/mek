@@ -48,27 +48,28 @@ credentials, plus a safety guard and audit log for protected contexts.`,
 	pf.StringVar(&a.opts.confirm, "confirm", "", "confirm destructive commands non-interactively by passing the context name")
 	_ = root.RegisterFlagCompletionFunc("context", completeContexts)
 
-	root.AddCommand(
-		newInitCmd(),
-		newUseCmd(),
-		newShellInitCmd(),
-		a.newCtxCmd(),
-		a.newLoginCmd(),
+	// Groups for `mek help`; cobra lists each group's commands alphabetically.
+	root.AddGroup(
+		&cobra.Group{ID: "contexts", Title: "Contexts:"},
+		&cobra.Group{ID: "run", Title: "Run commands:"},
+		&cobra.Group{ID: "access", Title: "Access (shells, tunnels, Kubernetes):"},
+		&cobra.Group{ID: "setup", Title: "Setup:"},
 	)
-	for _, c := range provider.Clouds() {
-		root.AddCommand(a.newPassthroughCmd(c))
+	add := func(group string, cmds ...*cobra.Command) {
+		for _, c := range cmds {
+			c.GroupID = group
+			root.AddCommand(c)
+		}
 	}
-	root.AddCommand(
-		a.newShellCmd(),
-		a.newTunnelCmd(),
-		a.newKubectlCmd(),
-		a.newKubeCmd(),
-		a.newExecCmd(),
-		a.newEnvCmd(),
-		newDoctorCmd(),
-		newVersionCmd(),
-		newSelfUpdateCmd(),
-	)
+	add("contexts", newInitCmd(), newUseCmd(), a.newCtxCmd(), a.newLoginCmd())
+	for _, c := range provider.Clouds() {
+		add("run", a.newPassthroughCmd(c))
+	}
+	add("run", a.newKubectlCmd(), a.newExecCmd(), a.newEnvCmd())
+	add("access", a.newShellCmd(), a.newTunnelCmd(), a.newKubeCmd())
+	add("setup", newShellInitCmd(), newDoctorCmd(), newVersionCmd(), newSelfUpdateCmd())
+	root.SetHelpCommandGroupID("setup")
+	root.SetCompletionCommandGroupID("setup")
 	return root
 }
 
