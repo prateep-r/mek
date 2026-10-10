@@ -72,7 +72,10 @@ func Start(s Spec, wait time.Duration) (Record, error) {
 		return Record{}, err
 	}
 	spec, _ := json.Marshal(s) // a Spec always marshals
-	cmd.Env, cmd.Stdin, cmd.Stdout, cmd.Stderr = s.Env, bytes.NewReader(spec), log, log
+	// The supervisor runs with mek's own environment (MEK_HOME, HOME, USER for
+	// its record and audit entry); the tunnel's environment — which may move
+	// HOME, as gcloud ssh tunnels do — reaches only the tunnel, through spec.
+	cmd.Env, cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Environ(), bytes.NewReader(spec), log, log
 	cmd.ExtraFiles = []*os.File{life, port, log}         // fds 3, 4, 5: the supervisor keeps the locks
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // outlives this terminal
 	if err := cmd.Start(); err != nil {
@@ -234,7 +237,12 @@ func Stop(sels []string, all bool, ctx string) ([]Info, error) {
 		}
 		targets = append(targets, i)
 	}
+	seen := map[string]bool{} // `stop db --all` names db twice
 	for _, i := range targets {
+		if seen[i.ID] {
+			continue
+		}
+		seen[i.ID] = true
 		if err := i.State.Stop(i.Record); err != nil {
 			errs = append(errs, err)
 		}
@@ -245,6 +253,9 @@ func Stop(sels []string, all bool, ctx string) ([]Info, error) {
 // Logs writes a tunnel's log to w; with follow, it keeps writing new lines
 // while the tunnel runs.
 func Logs(i Info, w io.Writer, follow bool) error {
+	if !i.Background {
+		return fmt.Errorf("tunnel %s runs in the foreground: its output is in the terminal that started it", i.Label())
+	}
 	f, err := os.Open(LogPath(i.ID))
 	if err != nil {
 		return err

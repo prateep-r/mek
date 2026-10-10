@@ -1,6 +1,9 @@
 package guard
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // kubectl flags that take a value, so the value isn't mistaken for a verb.
 var kubectlValueFlags = map[string]bool{
@@ -55,15 +58,21 @@ func ClassifyKubectl(args []string) Class {
 	return Write // apply, create, patch, edit, scale, label, rollout restart, unknown verbs...
 }
 
-// kubectlDryRun reports --dry-run=client|server (but not --dry-run=none).
+// kubectlDryRun reports whether kubectl will only pretend: like kubectl, the
+// last --dry-run wins, and client, server, a true boolean or the bare flag
+// mean dry run — while none, a false boolean (--dry-run=false still means
+// "really do it") or anything else does not.
 func kubectlDryRun(args []string) bool {
+	dry := false
 	for _, a := range args {
-		if v, ok := strings.CutPrefix(a, "--dry-run="); ok {
-			return v != "none"
-		}
 		if a == "--dry-run" {
-			return true // old boolean form means client
+			dry = true
+			continue
+		}
+		if v, ok := strings.CutPrefix(a, "--dry-run="); ok {
+			b, err := strconv.ParseBool(v)
+			dry = v == "client" || v == "server" || err == nil && b
 		}
 	}
-	return false
+	return dry
 }

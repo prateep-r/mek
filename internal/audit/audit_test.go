@@ -130,8 +130,10 @@ func TestUsername(t *testing.T) {
 
 func TestMaskDashValues(t *testing.T) {
 	cases := map[string]string{
-		"aws rds create-db-instance --master-user-password -h4x0r":   "aws rds create-db-instance --master-user-password ****",
-		"az keyvault secret set --value x --secret-string --vault v": "az keyvault secret set --value x --secret-string --vault v", // next is a long flag
+		"aws rds create-db-instance --master-user-password -h4x0r":             "aws rds create-db-instance --master-user-password ****",
+		"az keyvault secret set --value x --secret-string --vault v":           "az keyvault secret set --value **** --secret-string --vault v", // the next is a long flag: not a value
+		"aws ssm put-parameter --name db --type SecureString --value hunter2":  "aws ssm put-parameter --name db --type SecureString --value ****",
+		"aws secretsmanager put-secret-value --secret-id x --secret-string s3": "aws secretsmanager put-secret-value --secret-id **** --secret-string ****", // over-masking the id is the safe mistake
 	}
 	for in, want := range cases {
 		if got := strings.Join(Mask(strings.Fields(in)), " "); got != want {

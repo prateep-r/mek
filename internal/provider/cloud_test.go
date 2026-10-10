@@ -36,6 +36,8 @@ func TestValidate(t *testing.T) {
 		{sso("a", "123", "ap-southeast-1"), "12 digits"},
 		{sso("a", "111122223333", ""), "sso_region"},
 		{two(sso("a", "111122223333", "us-east-1"), sso("b", "444455556666", "eu-west-1")), "different sso_region"},
+		{two(sso("a", "111122223333", "us-east-1"), strings.Replace(sso("b", "444455556666", "us-east-1"), "https://x.awsapps.com/start", "https://x.awsapps.com/start/", 1)),
+			"both become [sso-session mek-x]"},
 	}
 	for _, c := range cases {
 		if err := parse(c.in); err == nil || !strings.Contains(err.Error(), c.want) {

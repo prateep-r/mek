@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -98,11 +99,17 @@ func validateAWS(c *config.Context) error {
 // has one region.
 func validateSSOSessions(cfg *config.Config) error {
 	first := map[string]*config.Context{} // sso_start_url -> first context using it
+	urls := map[string]string{}           // [sso-session] name -> the URL that got it
 	for _, name := range cfg.Names() {
 		c := cfg.Contexts[name]
 		if !isSSO(c) {
 			continue
 		}
+		if u, ok := urls[sessionName(c.SSOStartURL)]; ok && u != c.SSOStartURL {
+			return fmt.Errorf("sso_start_url %s and %s both become [sso-session %s] — write the portal the same way in every context",
+				u, c.SSOStartURL, sessionName(c.SSOStartURL))
+		}
+		urls[sessionName(c.SSOStartURL)] = c.SSOStartURL
 		if f, ok := first[c.SSOStartURL]; !ok {
 			first[c.SSOStartURL] = c
 		} else if ssoRegion(f) != ssoRegion(c) {
@@ -143,12 +150,17 @@ func (a *AWS) profile() string {
 }
 
 func (a *AWS) Prepare() (Env, error) {
-	env := Env{Set: map[string]string{"AWS_PROFILE": a.profile()}, Unset: awsUnset}
+	env := Env{Set: map[string]string{"AWS_PROFILE": a.profile()}, Unset: slices.Clone(awsUnset)}
 	if a.ctx.Region != "" {
 		env.Set["AWS_REGION"] = a.ctx.Region
 		env.Set["AWS_DEFAULT_REGION"] = a.ctx.Region
+	} else { // the profile's region, not one left by another context's `mek env`
+		env.Unset = append(env.Unset, "AWS_REGION", "AWS_DEFAULT_REGION")
 	}
 	if a.ctx.AWSProfile != "" {
+		if os.Getenv("AWS_CONFIG_FILE") == a.configPath() { // left by an SSO context's `mek env`
+			env.Unset = append(env.Unset, "AWS_CONFIG_FILE")
+		}
 		return env, nil // use the user's own ~/.aws/config untouched
 	}
 	if err := writeAWSConfig(a.configPath(), a.cfg); err != nil {

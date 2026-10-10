@@ -20,18 +20,18 @@ func TestRunExitCodes(t *testing.T) {
 		{[]string{"sh", "-c", `test "$MEK_TEST" = yes`}, 0},
 	}
 	for _, c := range cases {
-		code, err := Run(c.argv, append(os.Environ(), "MEK_TEST=yes"))
+		code, err := RunIO(c.argv, append(os.Environ(), "MEK_TEST=yes"), os.Stdout)
 		if err != nil || code != c.want {
-			t.Errorf("Run(%q) = %d, %v; want %d", c.argv, code, err, c.want)
+			t.Errorf("RunIO(%q) = %d, %v; want %d", c.argv, code, err, c.want)
 		}
 	}
-	if code, err := Run([]string{"mek-no-such-command"}, nil); err == nil || code != 127 {
+	if code, err := RunIO([]string{"mek-no-such-command"}, nil, os.Stdout); err == nil || code != 127 {
 		t.Errorf("missing command: code=%d err=%v, want 127 and an error", code, err)
 	}
 }
 
 func TestRunErrors(t *testing.T) {
-	if code, err := Run(nil, nil); err == nil || code != 1 {
+	if code, err := RunIO(nil, nil, os.Stdout); err == nil || code != 1 {
 		t.Errorf("empty argv: %d %v", code, err)
 	}
 	// Found and executable, but not a program: the kernel refuses to start it.
@@ -39,7 +39,7 @@ func TestRunErrors(t *testing.T) {
 	if err := os.WriteFile(bad, []byte("garbage\x00\x01"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if code, err := Run([]string{bad}, nil); err == nil || code != 1 {
+	if code, err := RunIO([]string{bad}, nil, os.Stdout); err == nil || code != 1 {
 		t.Errorf("start failure: %d %v", code, err)
 	}
 }
@@ -66,7 +66,7 @@ func TestSignals(t *testing.T) {
 	}
 	done := make(chan res, 1)
 	go func() {
-		code, err := Run([]string{"sh", "-c", `trap "exit 7" TERM; while :; do sleep 0.05; done`}, os.Environ())
+		code, err := RunIO([]string{"sh", "-c", `trap "exit 7" TERM; while :; do sleep 0.05; done`}, os.Environ(), os.Stdout)
 		done <- res{code, err}
 	}()
 	time.Sleep(300 * time.Millisecond) // let Run subscribe and start the child
@@ -86,5 +86,32 @@ func TestSignals(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("SIGTERM was not forwarded to the child")
+	}
+}
+
+// Closing the terminal (SIGHUP) must not kill mek before the child is done,
+// or the audit entry of a command that ran is lost.
+func TestSIGHUPReachesTheChildNotMek(t *testing.T) {
+	done := make(chan int, 1)
+	go func() {
+		code, _ := RunIO([]string{"sh", "-c", `trap "exit 9" HUP; while :; do sleep 0.05; done`}, os.Environ(), os.Stdout)
+		done <- code
+	}()
+	time.Sleep(300 * time.Millisecond)
+	self, _ := os.FindProcess(os.Getpid())
+	_ = self.Signal(syscall.SIGHUP) // mek survives; the child's trap exits 9
+	select {
+	case code := <-done:
+		if code != 9 {
+			t.Errorf("after SIGHUP: code %d, want 9", code)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("SIGHUP was not forwarded to the child")
+	}
+}
+
+func TestExitCode(t *testing.T) {
+	if ExitCode(nil) != 0 || ExitCode(errors.New("never started")) != 1 {
+		t.Error("ExitCode")
 	}
 }

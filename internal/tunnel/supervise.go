@@ -15,7 +15,7 @@ import (
 )
 
 // Spec is everything a supervisor needs: the record, the resolved program
-// and the process's environment (which never touches disk).
+// and the tunnel process's environment (which never touches disk).
 type Spec struct {
 	Record
 	Path string   `json:"path"`

@@ -72,11 +72,17 @@ func (g *GCP) Prepare() (Env, error) {
 		"CLOUDSDK_CORE_PROJECT": g.ctx.Project,
 		"GOOGLE_CLOUD_PROJECT":  g.ctx.Project,
 	}, Unset: []string{"GOOGLE_APPLICATION_CREDENTIALS", "CLOUDSDK_ACTIVE_CONFIG_NAME"}}
+	// Unset what this context doesn't set, so another context's `mek env`
+	// can't leak its account or region in.
 	if g.ctx.Account != "" {
 		env.Set["CLOUDSDK_CORE_ACCOUNT"] = g.ctx.Account
+	} else {
+		env.Unset = append(env.Unset, "CLOUDSDK_CORE_ACCOUNT")
 	}
 	if g.ctx.Region != "" {
 		env.Set["CLOUDSDK_COMPUTE_REGION"] = g.ctx.Region
+	} else {
+		env.Unset = append(env.Unset, "CLOUDSDK_COMPUTE_REGION")
 	}
 	// Client libraries / terraform pick up ADC from here once `mek login --adc` has run.
 	adc := filepath.Join(dir, "application_default_credentials.json")

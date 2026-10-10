@@ -56,6 +56,9 @@ func (running) Alive() bool  { return true } // starting embeds it
 // lock. While the lock is held the pids are surely still ours, so a
 // forced kill is safe.
 func (running) Stop(r Record) error {
+	if r.Owner <= 1 { // still starting: its supervisor hasn't written its pid yet
+		return fmt.Errorf("tunnel %s is still starting — try again in a moment", r.ShortID())
+	}
 	lock := file(r.ID, ".lock")
 	sendSignal(r.Owner, syscall.SIGTERM)
 	deadline := time.Now().Add(stopTimeout)
@@ -63,6 +66,9 @@ func (running) Stop(r Record) error {
 		if time.Now().After(deadline) {
 			sendSignal(-r.Child, syscall.SIGKILL)
 			sendSignal(r.Owner, syscall.SIGKILL)
+			if !r.Background { // a foreground mek leads its job's process group: its tunnel too
+				sendSignal(-r.Owner, syscall.SIGKILL)
+			}
 			remove(r.ID)
 			return fmt.Errorf("tunnel %s did not stop within %s — killed", r.ID, stopTimeout)
 		}

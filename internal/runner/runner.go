@@ -17,11 +17,9 @@ type ExitError struct{ Code int }
 
 func (e *ExitError) Error() string { return fmt.Sprintf("exit status %d", e.Code) }
 
-// Run starts argv with env and the current stdio, waits, and returns the exit code.
-// Ctrl-C goes to the child (same process group); mek itself ignores it while waiting.
-func Run(argv []string, env []string) (int, error) { return RunIO(argv, env, os.Stdout) }
-
-// RunIO is Run with the child's stdout sent to stdout (e.g. to capture it).
+// RunIO starts argv with env, stdin/stderr of mek and stdout sent to stdout,
+// waits, and returns the exit code. Ctrl-C goes to the child (same process
+// group); mek itself ignores it while waiting.
 func RunIO(argv []string, env []string, stdout io.Writer) (int, error) {
 	if len(argv) == 0 {
 		return 1, errors.New("no command given")
@@ -37,7 +35,7 @@ func RunIO(argv []string, env []string, stdout io.Writer) (int, error) {
 
 	// Subscribe before starting so a signal can't slip through in between.
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer signal.Stop(sig)
 
 	if err := cmd.Start(); err != nil {
@@ -49,8 +47,10 @@ func RunIO(argv []string, env []string, stdout io.Writer) (int, error) {
 		for {
 			select {
 			case s := <-sig:
-				// SIGINT already reached the child via the terminal; just don't die first.
-				if s == syscall.SIGTERM {
+				// SIGINT already reached the child via the terminal: just don't die
+				// first. SIGTERM (`timeout`, k8s) and SIGHUP (the terminal closing)
+				// go to the child too, and mek outlives it to write the audit entry.
+				if s != os.Interrupt {
 					_ = cmd.Process.Signal(s)
 				}
 			case <-done:

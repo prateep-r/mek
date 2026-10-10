@@ -119,10 +119,10 @@ func tryLock(path string) (*os.File, error) {
 // held reports whether someone holds a lock: the liveness test for a
 // tunnel's owner. Unlike a pid, it can't be fooled by pid reuse or a reboot.
 func held(path string) bool {
-	f, err := tryLock(path)
+	f, err := os.OpenFile(path, os.O_RDWR, 0) // never creates: no lock file, no owner
 	if err != nil {
-		return errors.Is(err, errLocked)
+		return false
 	}
-	f.Close()
-	return false
+	defer f.Close()
+	return errors.Is(flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB), syscall.EWOULDBLOCK)
 }

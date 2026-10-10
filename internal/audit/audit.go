@@ -162,7 +162,7 @@ func rotate() error {
 	return os.Rename(Path(), Path()+".1")
 }
 
-var secretFlag = regexp.MustCompile(`(?i)(password|passwd|secret|token|private-key|key-material|credential|plaintext|auth-key|api-key|account-key|connection-string|from-literal|cli-input-json|cli-input-yaml)`)
+var secretFlag = regexp.MustCompile(`(?i)(password|passwd|secret|token|private-key|key-material|credential|plaintext|auth-key|api-key|account-key|connection-string|from-literal|value|cli-input-json|cli-input-yaml)`)
 
 // Mask hides values of secret-looking flags in both `--flag value` and
 // `--flag=value` forms. args[0] is the program name.

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -167,4 +168,32 @@ func must[T any](v T, err error) T {
 		panic(err)
 	}
 	return v
+}
+
+// What another context's `eval "$(mek env …)"` left in the shell must not
+// leak into a context that doesn't set it.
+func TestEnvDoesNotLeakBetweenContexts(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{Contexts: map[string]*config.Context{}}
+	legacy := &AWS{cfg: cfg, dir: dir, ctx: &config.Context{Name: "legacy", Provider: config.ProviderAWS, AWSProfile: "mine"}}
+
+	t.Setenv("AWS_CONFIG_FILE", legacy.configPath()) // from an SSO context's mek env
+	env, _ := legacy.Prepare()
+	got := strings.Join(env.Apply([]string{"AWS_REGION=us-east-1", "AWS_DEFAULT_REGION=us-east-1", "AWS_CONFIG_FILE=" + legacy.configPath()}), " ")
+	if strings.Contains(got, "AWS_REGION") || strings.Contains(got, "AWS_CONFIG_FILE") {
+		t.Errorf("leaked into an aws_profile context without region: %s", got)
+	}
+	t.Setenv("AWS_CONFIG_FILE", "/home/you/my-aws-config") // the user's own: kept
+	if env, _ := legacy.Prepare(); slices.Contains(env.Unset, "AWS_CONFIG_FILE") {
+		t.Error("the user's own AWS_CONFIG_FILE was removed")
+	}
+	if !slices.Equal(awsUnset, []string{"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_SECURITY_TOKEN", "AWS_DEFAULT_PROFILE"}) {
+		t.Errorf("Prepare changed the shared awsUnset: %v", awsUnset)
+	}
+
+	g := &GCP{dir: dir, ctx: &config.Context{Name: "g", Provider: config.ProviderGCP, Project: "p"}}
+	genv, _ := g.Prepare()
+	if !slices.Contains(genv.Unset, "CLOUDSDK_CORE_ACCOUNT") || !slices.Contains(genv.Unset, "CLOUDSDK_COMPUTE_REGION") {
+		t.Errorf("gcp: %v", genv.Unset)
+	}
 }

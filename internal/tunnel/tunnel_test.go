@@ -280,7 +280,7 @@ func TestStates(t *testing.T) {
 	r, _ := load("st")
 	err := stateOf(r).Stop(r)
 	if err == nil || !strings.Contains(err.Error(), "did not stop within 200ms — killed") ||
-		strings.Join(signals, ",") != "4242:15,-4343:9,4242:9" {
+		strings.Join(signals, ",") != "4242:15,-4343:9,4242:9,-4242:9" { // foreground: mek's process group too
 		t.Errorf("forced stop: %v %v", err, signals)
 	}
 	lock.Close()
@@ -343,7 +343,7 @@ func (failWriter) Write([]byte) (int, error) { return 0, errors.New("closed") }
 
 func TestLogs(t *testing.T) {
 	setup(t)
-	save(Record{ID: "lg"})
+	save(Record{ID: "lg", Background: true})
 	os.WriteFile(LogPath("lg"), []byte("one\n"), 0o600)
 	lock, _ := tryLock(file("lg", ".lock"))
 	go func() {
@@ -355,13 +355,16 @@ func TestLogs(t *testing.T) {
 		lock.Close() // the tunnel ends: follow returns
 	}()
 	var out bytes.Buffer
-	if err := Logs(Info{Record: Record{ID: "lg"}}, &out, true); err != nil || out.String() != "one\ntwo\n" {
+	if err := Logs(Info{Record: Record{ID: "lg", Background: true}}, &out, true); err != nil || out.String() != "one\ntwo\n" {
 		t.Errorf("follow: %q %v", out.String(), err)
 	}
-	if err := Logs(Info{Record: Record{ID: "nolog"}}, io.Discard, false); err == nil {
+	if err := Logs(Info{Record: Record{ID: "fg", Name: "db"}}, io.Discard, false); err == nil || !strings.Contains(err.Error(), "tunnel db runs in the foreground") {
+		t.Errorf("foreground logs: %v", err)
+	}
+	if err := Logs(Info{Record: Record{ID: "nolog", Background: true}}, io.Discard, false); err == nil {
 		t.Error("missing log")
 	}
-	if err := Logs(Info{Record: Record{ID: "lg"}}, failWriter{}, false); err == nil {
+	if err := Logs(Info{Record: Record{ID: "lg", Background: true}}, failWriter{}, false); err == nil {
 		t.Error("write error")
 	}
 	if got := logTail("lg"); got != "  one\n  two" {
@@ -523,5 +526,63 @@ func TestPortFreeIgnoresEndedTunnels(t *testing.T) {
 	save(Record{ID: "dd", Local: 6000, Phase: phaseRunning}) // no owner holds its lock
 	if err := PortFree(6000); err != nil {
 		t.Errorf("ended tunnels block the port: %v", err)
+	}
+}
+
+// The tunnel's environment is the tunnel's only: one that moves HOME or
+// MEK_HOME (gcloud ssh tunnels set HOME) must not move the supervisor's
+// record and audit entry with it.
+func TestSupervisorKeepsMeksEnvironment(t *testing.T) {
+	home := setup(t)
+	port := freePort(t)
+	s := spec("envenvenvenvenv1", "db", port, "helper-listen", strconv.Itoa(port))
+	s.Env = append(os.Environ(), "MEK_HOME="+filepath.Join(home, "elsewhere"), "HOME="+filepath.Join(home, "ssh-home"))
+	r, err := Start(s, 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Phase != phaseRunning || r.Owner == 0 {
+		t.Fatalf("the supervisor wrote its record elsewhere: %+v", r)
+	}
+	if _, err := Stop([]string{"db"}, false, ""); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	if es := auditEntries(t); len(es) != 1 || es[0].Event != "end" {
+		t.Errorf("the end entry went elsewhere: %+v", es)
+	}
+}
+
+// Checking liveness never creates lock files, and a tunnel named twice is
+// stopped once.
+func TestHeldAndStopDedupe(t *testing.T) {
+	setup(t)
+	if held(file("ghost", ".lock")) {
+		t.Error("a missing lock is not held")
+	}
+	if _, err := os.Stat(file("ghost", ".lock")); !os.IsNotExist(err) {
+		t.Error("held created a lock file")
+	}
+	old := flock
+	flock = func(int, int) error { return syscall.EINVAL }
+	f, _ := os.Create(file("odd", ".lock"))
+	f.Close()
+	if held(file("odd", ".lock")) {
+		t.Error("a flock error is not a held lock")
+	}
+	flock = old
+
+	var stops []int
+	kill = func(pid int, sig syscall.Signal) error {
+		if sig == syscall.SIGTERM {
+			stops = append(stops, pid)
+		}
+		return nil
+	}
+	t.Cleanup(func() { kill = syscall.Kill })
+	lock, _ := tryLock(file("twice000twice000", ".lock"))
+	save(Record{ID: "twice000twice000", Name: "db", Phase: phaseRunning, Owner: 4242, Background: true})
+	go func() { time.Sleep(50 * time.Millisecond); lock.Close() }()
+	if _, err := Stop([]string{"db"}, true, ""); err != nil || len(stops) != 1 {
+		t.Errorf("stop db --all: %v, SIGTERMs %v", err, stops)
 	}
 }
