@@ -496,6 +496,101 @@ For the guard, `kubectl get/describe/logs` are reads, `apply/scale/…` writes,
 `delete/drain` destructive, `exec/attach/debug` a **shell** and `port-forward/proxy` a
 **tunnel**; `--dry-run` is a read.
 
+### Example: reach an nginx pod in EKS
+
+Say `prod` (a protected AWS context) runs nginx in an EKS cluster, namespace `web`, with a
+`nginx` Deployment and Service and no public load balancer. Give the context the cluster:
+
+```yaml
+contexts:
+  prod:
+    provider: aws
+    # …sso_start_url, account_id, role, region…
+    protected: true
+    clusters:
+      main: {name: prod-eks, namespace: web}   # web becomes the default namespace
+```
+
+```bash
+mek login prod          # if the SSO session expired
+mek -c prod kube        # writes ~/.config/mek/kube/prod.yaml (again after changing clusters:)
+```
+
+**1. Find the pods** — reads, so no question even on a protected context:
+
+```console
+$ mek -c prod kubectl get pods -l app=nginx
+NAME                     READY   STATUS    RESTARTS   AGE
+nginx-7c5ddbdf54-abcde   1/1     Running   0          3d
+nginx-7c5ddbdf54-fghij   1/1     Running   0          3d
+
+$ mek -c prod kubectl describe pod nginx-7c5ddbdf54-abcde
+$ mek -c prod kubectl get svc nginx
+```
+
+**2. Read its logs:**
+
+```bash
+mek -c prod kubectl logs deploy/nginx --tail 50 -f        # one pod of the Deployment, following
+mek -c prod kubectl logs -l app=nginx --prefix --tail 20  # every pod, labelled
+```
+
+**3. Open a shell inside the pod** — `exec` counts as a shell, so a protected context asks:
+
+```console
+$ mek -c prod kubectl exec -it deploy/nginx -- sh
+● prod [protected] aws 444455556666 / Admin / ap-southeast-1
+⚠ shell command on prod:
+  kubectl exec -it deploy/nginx -- sh
+Continue? [y/N]: y
+/ # nginx -T | head -20          # the effective config
+/ # wget -qO- localhost          # or curl, if the image has it
+/ # exit
+```
+
+**4. Open nginx from your machine** — `port-forward` counts as a tunnel (asks on protected,
+allowed on readonly). It goes through the cluster's API server, so the pod needs no public
+address:
+
+```console
+$ mek -c prod kubectl port-forward svc/nginx 8080:80
+● prod [protected] aws 444455556666 / Admin / ap-southeast-1
+⚠ tunnel command on prod:
+  kubectl port-forward svc/nginx 8080:80
+Continue? [y/N]: y
+Forwarding from 127.0.0.1:8080 -> 80
+```
+
+Then, in another terminal, `curl http://localhost:8080` or open it in a browser; Ctrl-C closes
+the forward. The audit log gets its start and end. (It runs in the foreground; `mek tunnel`
+is for hosts in a VPC, not pods.)
+
+**5. Change things** — writes ask, destructive commands want the context's name:
+
+```console
+$ mek -c prod kubectl rollout restart deploy/nginx      # write: Continue? [y/N]
+$ mek -c prod kubectl scale deploy/nginx --replicas 3   # write
+$ mek -c prod kubectl delete pod nginx-7c5ddbdf54-abcde # destructive: Type prod to continue
+```
+
+In a script there is no terminal to ask: pass `--yes` for writes, shells and port-forwards,
+and `--confirm prod` for destructive commands —
+`mek -c prod --yes kubectl rollout restart deploy/nginx`. On a `readonly` context, steps 1, 2
+and 4 work and 3 and 5 are blocked.
+
+**Without the `mek` prefix** — export the context into the shell, then use kubectl or K9s as
+usual (these skip mek's guard and audit log):
+
+```bash
+eval "$(mek use --shell prod)"
+kubectl get pods -l app=nginx
+kubectl port-forward svc/nginx 8080:80
+k9s -n web
+```
+
+If the cluster's API endpoint is private-only, your machine needs a network path to it (VPN,
+or a tunnel through a host in the VPC) — kubectl talks to the API server directly.
+
 ## 6. Shell on an instance
 
 ```bash
