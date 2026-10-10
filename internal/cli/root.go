@@ -51,6 +51,7 @@ credentials, plus a safety guard and audit log for protected contexts.`,
 	root.AddCommand(
 		newInitCmd(),
 		newUseCmd(),
+		newShellInitCmd(),
 		a.newCtxCmd(),
 		a.newLoginCmd(),
 	)

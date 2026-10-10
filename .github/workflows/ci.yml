@@ -35,6 +35,9 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: stable
+      - name: Install fish (for the shell-init test; bash and zsh are tested where present)
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then brew install fish; else sudo apt-get update -qq && sudo apt-get install -y -qq fish zsh; fi
       - run: make test-integration
       - run: make test-e2e
 

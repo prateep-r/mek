@@ -197,3 +197,10 @@ func TestEnvDoesNotLeakBetweenContexts(t *testing.T) {
 		t.Errorf("gcp: %v", genv.Unset)
 	}
 }
+
+func TestEnvFish(t *testing.T) {
+	e := Env{Set: map[string]string{"A": `it's a \ path`, "B": "x"}, Unset: []string{"C"}}
+	if got := e.Fish(); got != "set -e C\nset -gx A 'it\\'s a \\\\ path'\nset -gx B 'x'\n" {
+		t.Errorf("fish: %q", got)
+	}
+}

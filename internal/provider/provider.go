@@ -54,6 +54,24 @@ func (e Env) Shell() string {
 
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
+// Fish renders the env as fish statements, for `mek env --syntax fish | source`
+// and fish's `mek use -s` (see `mek shell-init fish`).
+func (e Env) Fish() string {
+	var b strings.Builder
+	for _, k := range e.Unset {
+		fmt.Fprintf(&b, "set -e %s\n", k)
+	}
+	for _, k := range slices.Sorted(maps.Keys(e.Set)) {
+		fmt.Fprintf(&b, "set -gx %s %s\n", k, fishQuote(e.Set[k]))
+	}
+	return b.String()
+}
+
+// fishQuote single-quotes for fish, where only \ and ' are special inside.
+func fishQuote(s string) string {
+	return "'" + strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(s) + "'"
+}
+
 // orDash shows an unset value as "-" in one-line summaries.
 func orDash(s string) string {
 	if s == "" {

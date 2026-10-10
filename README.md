@@ -88,6 +88,16 @@ mek completion bash > ~/.local/share/bash-completion/completions/mek
 mek completion fish > ~/.config/fish/completions/mek.fish
 ```
 
+**Shell integration** — one line in your shell's startup file lets `mek use -s <context>`
+switch just that terminal (otherwise it needs `eval "$(…)"`, since a program can't change its
+shell's variables):
+
+```bash
+eval "$(mek shell-init zsh)"      # ~/.zshrc
+eval "$(mek shell-init bash)"     # ~/.bashrc
+mek shell-init fish | source      # ~/.config/fish/config.fish
+```
+
 **Update**: `brew upgrade mek` (Homebrew), or `mek self-update` (script / manual installs;
 `mek self-update --check` only looks). mek tells Homebrew users to use brew.
 
@@ -206,7 +216,7 @@ dev  aws 111122223333 / Developer / ap-southeast-1
 | How | Scope |
 |---|---|
 | `mek use dev` | saved: every terminal that hasn't picked its own |
-| `eval "$(mek use --shell prod)"` | this terminal only (sets `$MEK_CONTEXT`) |
+| `mek use -s prod` | this terminal only (sets `$MEK_CONTEXT`) — with [shell integration](#1-install); without it, `eval "$(mek use -s prod)"` |
 | `mek -c audit …` | this one command |
 
 The most specific wins: `-c` over `$MEK_CONTEXT` over the saved context.
@@ -353,7 +363,7 @@ contexts:
 | Variable | Effect |
 |---|---|
 | `MEK_HOME` | where mek keeps everything (default `~/.config/mek`) |
-| `MEK_CONTEXT` | this shell's context, over the saved one (set by `mek use --shell`) |
+| `MEK_CONTEXT` | this shell's context, over the saved one (set by `mek use -s`) |
 | `NO_COLOR` | plain output |
 
 What mek gives the commands it runs: AWS gets `AWS_PROFILE`, `AWS_CONFIG_FILE` (SSO) and
@@ -370,8 +380,8 @@ Runs on different contexts never mix credentials, so use as many at once as you 
 
 ```bash
 # one terminal per account
-eval "$(mek use --shell prod)"      # terminal 1
-eval "$(mek use --shell dev)"       # terminal 2
+mek use -s prod      # terminal 1
+mek use -s dev       # terminal 2
 
 # one terminal, any account per command
 mek -c prod aws s3 ls
@@ -449,7 +459,7 @@ mek doesn't replace `aws` or `gcloud`; it runs them with the context's settings.
   `mek -c gcp-dev gcloud config set compute/zone asia-southeast1-b`. The project, account and
   region come from `config.yaml` and win over gcloud's own settings.
 - To type plain `aws …` / `gcloud …` / `kubectl …` in a context, export it into the shell:
-  `eval "$(mek use --shell prod)"` or `eval "$(mek env prod)"`. Commands typed that way skip
+  `mek use -s prod` or `eval "$(mek env prod)"`. Commands typed that way skip
   mek's guard and audit log.
 
 ### Terraform, SDKs and other tools
@@ -505,7 +515,7 @@ Use it in whichever way suits you:
 mek -c prod kubectl get pods                 # kubectl through the guard and audit log
 mek -c prod kubectl -n app logs deploy/api
 
-eval "$(mek use --shell prod)"               # this shell: plain kubectl / k9s see prod
+mek use -s prod                              # this shell: plain kubectl / k9s see prod
 kubectl get pods
 k9s
 
@@ -625,7 +635,7 @@ and 4 work and 3 and 5 are blocked.
 usual (these skip mek's guard and audit log):
 
 ```bash
-eval "$(mek use --shell prod)"
+mek use -s prod
 kubectl get pods -l app=nginx
 kubectl port-forward svc/nginx 8080:80
 k9s -n web
@@ -706,7 +716,8 @@ Two tunnels can't use the same local port.
 | `mek ctx ls` | list contexts (`*` = current) |
 | `mek ctx [--short]` | show the current context (`--short`: just the name, for prompts) |
 | `mek use <ctx>` | switch the saved context (every terminal without its own) |
-| `eval "$(mek use --shell <ctx>)"` | switch only this terminal (and `KUBECONFIG`, when the context has clusters) |
+| `mek use -s <ctx>` | switch only this terminal (and `KUBECONFIG`, when the context has clusters); needs `mek shell-init`, else `eval "$(mek use -s <ctx>)"` |
+| `mek shell-init zsh\|bash\|fish` | print the shell integration that makes `mek use -s` work by itself |
 | `mek login [ctx] [--adc] [-- <flags>]` | `aws sso login` / `gcloud auth login` (+ application-default with `--adc`) |
 | `mek aws …` / `mek gcloud …` | the real CLI in the context, through the guard and audit log |
 | `mek kubectl …` | kubectl on the context's clusters, through the guard and audit log |
@@ -715,7 +726,7 @@ Two tunnels can't use the same local port.
 | `mek tunnel [name] [--via T] [--to host:port] [--cloudsql C] [--private-ip] [--local N] [-b] [--wait D]` | forward a local port |
 | `mek tunnel ls` / `stop <name\|id>… \| --all` / `logs <name\|id> [-f]` | list, stop or read tunnels |
 | `mek exec -- <cmd> [args…]` | any command with the context's credentials |
-| `eval "$(mek env [ctx])"` | export a context into this shell (bypasses the guard and audit) |
+| `eval "$(mek env [ctx])"` | export a context into this shell (bypasses the guard and audit); fish: `mek env --syntax fish \| source` |
 | `mek doctor` | check the config and tools, with install hints |
 | `mek version` | print the version |
 | `mek self-update [--check]` | update a script-installed binary |

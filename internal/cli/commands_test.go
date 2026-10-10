@@ -354,7 +354,7 @@ func TestUseShell(t *testing.T) {
 	h := newHarness(t, testConfig)
 	h.mustRun("use", "uat")
 	out := h.mustRun("use", "--shell", "prod")
-	if out != "export MEK_CONTEXT=prod\n" {
+	if out != "export MEK_CONTEXT='prod'\n" {
 		t.Errorf("use --shell printed %q", out)
 	}
 	if config.Current() != "uat" {
@@ -381,4 +381,32 @@ func TestLoginPassesFlagsToTheCLI(t *testing.T) {
 
 	_, err := h.run("login", "uat", "gcp")
 	wantErr(t, err, "at most 1 context")
+}
+
+func TestUseShellShortFlagAndFish(t *testing.T) {
+	h := newHarness(t, testConfig)
+	if out := h.mustRun("use", "-s", "prod"); out != "export MEK_CONTEXT='prod'\n" {
+		t.Errorf("use -s: %q", out)
+	}
+	if out := h.mustRun("use", "-s", "prod", "--syntax", "fish"); out != "set -gx MEK_CONTEXT 'prod'\n" {
+		t.Errorf("use -s --syntax fish: %q", out)
+	}
+	if out := h.mustRun("env", "ro", "--syntax", "fish"); !strings.Contains(out, "set -e GOOGLE_APPLICATION_CREDENTIALS\n") || !strings.Contains(out, "set -gx CLOUDSDK_CORE_PROJECT 'p'\n") {
+		t.Errorf("env --syntax fish: %q", out)
+	}
+	_, err := h.run("use", "-s", "prod", "--syntax", "tcsh")
+	wantErr(t, err, `--syntax "tcsh": want posix or fish`)
+	_, err = h.run("env", "ro", "--syntax", "tcsh")
+	wantErr(t, err, "want posix or fish")
+}
+
+func TestShellInit(t *testing.T) {
+	h := newHarness(t, "")
+	for shell, want := range map[string]string{"zsh": "command mek \"$@\"", "bash": "eval \"$__mek_out\"", "fish": "--syntax fish"} {
+		if out := h.mustRun("shell-init", shell); !strings.Contains(out, want) {
+			t.Errorf("shell-init %s:\n%s", shell, out)
+		}
+	}
+	_, err := h.run("shell-init", "tcsh")
+	wantErr(t, err, "want zsh, bash or fish")
 }

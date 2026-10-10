@@ -76,13 +76,15 @@ protected context it always asks first, and on a readonly context it refuses.`,
 }
 
 func (a *app) newEnvCmd() *cobra.Command {
-	return &cobra.Command{
+	var syntax string
+	cmd := &cobra.Command{
 		Use:   "env [context]",
 		Short: `Print shell exports for a context: eval "$(mek env)"`,
 		Long: `Print environment variables for a context so any tool in your shell uses it:
 
   eval "$(mek env)"            # current context
   eval "$(mek env baas-uat)"
+  mek env baas-uat --syntax fish | source   # fish
 
 Note: commands run this way bypass mek's guard and audit log.`,
 		Args:              cobra.MaximumNArgs(1),
@@ -96,10 +98,28 @@ Note: commands run this way bypass mek's guard and audit log.`,
 			if err != nil {
 				return err
 			}
-			fmt.Fprint(cmd.OutOrStdout(), l.env.Shell())
-			return nil
+			return printEnv(cmd.OutOrStdout(), l.env, syntax)
 		},
 	}
+	syntaxFlag(cmd, &syntax)
+	return cmd
+}
+
+func syntaxFlag(cmd *cobra.Command, syntax *string) {
+	cmd.Flags().StringVar(syntax, "syntax", "posix", "shell syntax of the output: posix (sh, bash, zsh) or fish")
+}
+
+// printEnv writes env as statements the shell runs.
+func printEnv(w io.Writer, env provider.Env, syntax string) error {
+	switch syntax {
+	case "posix":
+		fmt.Fprint(w, env.Shell())
+	case "fish":
+		fmt.Fprint(w, env.Fish())
+	default:
+		return fmt.Errorf("--syntax %q: want posix or fish", syntax)
+	}
+	return nil
 }
 
 // pipeline is audit → guard → exec, so a blocked or declined command is

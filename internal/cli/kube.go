@@ -31,7 +31,7 @@ Its credentials come from mek on every request, so it never holds a key.
   mek -c prod kube main                 # ...with main as the current one
   mek -c prod kube --name my-eks        # a cluster not in the config
   mek -c prod kubectl get pods          # kubectl, guarded and audited
-  eval "$(mek use --shell prod)"        # KUBECONFIG for kubectl/k9s in this shell
+  mek use -s prod                       # KUBECONFIG for kubectl/k9s in this shell
 
 ~/.kube/config is left alone; to see these clusters from it too, list both:
   export KUBECONFIG=~/.kube/config:<MEK_HOME>/kube/prod.yaml`,
@@ -87,7 +87,7 @@ func (a *app) kube(out io.Writer, current string, o kubeOpts) error {
 		aliases[i] = e.Alias
 	}
 	ui.Info("%s kubeconfig for %s: %s", ui.Green("✓"), ui.Bold(l.ctx.Name), strings.Join(aliases, ", "))
-	ui.Info("  mek -c %s kubectl get pods\n  eval \"$(mek use --shell %s)\"   # then kubectl, k9s, ...", l.ctx.Name, l.ctx.Name)
+	ui.Info("  mek -c %s kubectl get pods\n  mek use -s %s   # then kubectl, k9s, ... in this shell", l.ctx.Name, l.ctx.Name)
 	return nil
 }
 

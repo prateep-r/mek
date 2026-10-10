@@ -190,12 +190,12 @@ func TestKubeconfigEnv(t *testing.T) {
 	h := newKubeHarness(t)
 	mine := kube.Path("prod")
 	out := h.mustRun("use", "--shell", "prod")
-	if out != "export MEK_CONTEXT=prod\nexport KUBECONFIG='"+mine+"'\n" {
+	if out != "export KUBECONFIG='"+mine+"'\nexport MEK_CONTEXT='prod'\n" {
 		t.Errorf("use --shell prod: %q", out)
 	}
 	// Switching to a context without clusters drops mek's KUBECONFIG...
 	t.Setenv("KUBECONFIG", mine)
-	if out := h.mustRun("use", "--shell", "bare"); out != "export MEK_CONTEXT=bare\nunset KUBECONFIG\n" {
+	if out := h.mustRun("use", "--shell", "bare"); out != "unset KUBECONFIG\nexport MEK_CONTEXT='bare'\n" {
 		t.Errorf("use --shell bare: %q", out)
 	}
 	if out := h.mustRun("env", "bare"); !strings.Contains(out, "unset KUBECONFIG") {
@@ -203,7 +203,7 @@ func TestKubeconfigEnv(t *testing.T) {
 	}
 	// ...but never one the user set.
 	t.Setenv("KUBECONFIG", "/u/.kube/config")
-	if out := h.mustRun("use", "--shell", "bare"); out != "export MEK_CONTEXT=bare\n" {
+	if out := h.mustRun("use", "--shell", "bare"); out != "export MEK_CONTEXT='bare'\n" {
 		t.Errorf("user KUBECONFIG touched: %q", out)
 	}
 }
