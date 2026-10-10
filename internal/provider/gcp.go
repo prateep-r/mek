@@ -42,6 +42,12 @@ var gcpCloud = Cloud{
 	},
 	Tool: Tool{VersionArgs: []string{"--version"}, URL: "https://cloud.google.com/sdk/docs/install"},
 	Plugins: []Plugin{{
+		Bin: "ssh", Purpose: "GCP shells and tunnels to another host (gcloud compute ssh)", Needed: usesSSH,
+		Tool: Tool{VersionArgs: []string{"-V"}, URL: "https://www.openssh.com (Debian/Ubuntu: apt install openssh-client)"},
+	}, {
+		Bin: "ssh-keygen", Purpose: "the SSH key gcloud compute ssh creates", Needed: usesSSH,
+		Tool: Tool{URL: "https://www.openssh.com (Debian/Ubuntu: apt install openssh-client)"}, // no version flag: only found, never run
+	}, {
 		Bin: "cloud-sql-proxy", Purpose: "Cloud SQL tunnels (mek tunnel)", Needed: hasCloudSQL,
 		Tool: Tool{VersionArgs: []string{"--version"}, Brew: "brew install cloud-sql-proxy",
 			URL: "https://cloud.google.com/sql/docs/postgres/connect-auth-proxy#install"},

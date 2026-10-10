@@ -36,6 +36,20 @@ func hasClusters(c *config.Context) bool { return len(c.Clusters) > 0 }
 
 func hasTargets(c *config.Context) bool { return len(c.Targets) > 0 }
 
+// usesSSH: gcloud compute ssh runs for shells (targets) and tunnels to
+// another host.
+func usesSSH(c *config.Context) bool {
+	if len(c.Targets) > 0 {
+		return true
+	}
+	for _, t := range c.Tunnels {
+		if t.Host != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func hasCloudSQL(c *config.Context) bool {
 	for _, t := range c.Tunnels {
 		if t.CloudSQL != "" {

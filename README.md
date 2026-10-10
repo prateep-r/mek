@@ -115,6 +115,23 @@ exactly which):
 | GKE clusters | [gke-gcloud-auth-plugin](https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_plugin) |
 | `mek shell` / `mek tunnel` on AWS | [session-manager-plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html) |
 | Cloud SQL tunnels | [cloud-sql-proxy](https://cloud.google.com/sql/docs/postgres/connect-auth-proxy#install) |
+| GCP shells, GCP tunnels to another host | `ssh` and `ssh-keygen` ([OpenSSH](https://www.openssh.com); built into macOS, `apt install openssh-client` on Debian/Ubuntu) |
+
+AWS CLI v1 doesn't work: it can't do IAM Identity Center (`sso-session`) logins, and
+`mek doctor` says so.
+
+### What the cloud side needs
+
+mek adds no agent, server or open port of its own; shells, tunnels and clusters need what the
+official tools need. Ask whoever runs the account for:
+
+| Feature | On the cloud side | For your role / user |
+|---|---|---|
+| AWS `mek shell`, `mek tunnel` | the SSM Agent running on the instance, an instance profile with `AmazonSSMManagedInstanceCore`, and a way out to the SSM endpoints (internet or VPC endpoints) | `ssm:StartSession` (plus `ec2:DescribeInstances` for `tag:` targets) |
+| GCP `mek shell`, tunnels with `via:` | a firewall rule allowing `35.235.240.0/20` (IAP) to port 22, or to the forwarded port for tunnels without `host:` | IAP-secured Tunnel User, and OS Login or permission to add SSH keys (shells and `host:` tunnels) |
+| Cloud SQL tunnels | the Cloud SQL Admin API enabled; with `private_ip: true`, a network path from your machine to the instance (VPN, peering) | Cloud SQL Client |
+| EKS (`mek kube`, `mek kubectl`) | an access entry (or `aws-auth` mapping) for your role, and an endpoint you can reach | `eks:DescribeCluster` |
+| GKE (`mek kube`, `mek kubectl`) | Kubernetes RBAC for your user, and an endpoint you can reach | Kubernetes Engine Cluster Viewer |
 
 ## 2. Getting started
 
@@ -186,7 +203,8 @@ $ mek doctor
 ```
 
 `mek doctor` checks the config and that `aws` and `gcloud` (and any plugin a context
-needs) are installed, with the install command for anything missing.
+needs — `session-manager-plugin`, `gke-gcloud-auth-plugin`, `cloud-sql-proxy`, `ssh`) are
+installed, with the install command for anything missing. It also flags AWS CLI v1.
 
 ### Step 4 — log in
 
@@ -792,6 +810,7 @@ belongs in IAM roles, SCPs and org policies.
 | `localhost:15432 is in use` / `already forwarded by mek tunnel db` | `--local <port>`, or `mek tunnel stop db` |
 | `cloud-sql-proxy needs application-default credentials` | `mek login <context> --adc` |
 | `aws not found in PATH` | install the CLI; `mek doctor` shows how |
+| `AWS CLI v1 can't do IAM Identity Center logins` | install AWS CLI v2 |
 | kubectl: `getting credentials: exec: … mek …` | the kubeconfig remembers where mek was; run `mek -c <context> kube` again after moving mek |
 | anything else | `mek doctor`, and the audit log for what ran |
 

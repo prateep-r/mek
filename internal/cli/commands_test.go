@@ -31,6 +31,7 @@ type recorder struct {
 	code int
 	// respond, when set, scripts a command's stdout and exit code.
 	respond func(argv []string) (stdout string, code int)
+	fail    error // returned as if the command couldn't start
 }
 
 func (r *recorder) Run(inv *runner.Invocation) error {
@@ -43,7 +44,7 @@ func (r *recorder) Run(inv *runner.Invocation) error {
 		}
 		inv.ExitCode = code
 	}
-	return nil
+	return r.fail
 }
 
 func (r *recorder) argv() []string {

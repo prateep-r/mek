@@ -24,7 +24,7 @@ var awsCloud = Cloud{
 	Classify:    guard.ClassifyAWS,
 	Validate:    validateAWS,
 	ValidateAll: validateSSOSessions,
-	Tool: Tool{VersionArgs: []string{"--version"}, Brew: "brew install awscli",
+	Tool: Tool{VersionArgs: []string{"--version"}, Check: awsCLIv2, Brew: "brew install awscli",
 		URL: "https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"},
 	Plugins: []Plugin{{
 		Bin: "session-manager-plugin", Purpose: "SSM sessions (mek shell, mek tunnel)",
@@ -35,6 +35,15 @@ var awsCloud = Cloud{
 }
 
 var accountID = regexp.MustCompile(`^[0-9]{12}$`)
+
+// awsCLIv2 rejects AWS CLI v1, which has no IAM Identity Center sso-session
+// logins (what mek's generated profiles use).
+func awsCLIv2(version string) error {
+	if strings.HasPrefix(version, "aws-cli/1.") {
+		return errors.New("AWS CLI v1 can't do IAM Identity Center logins — install v2")
+	}
+	return nil
+}
 
 // isSSO reports whether an AWS context logs in through IAM Identity Center
 // (as opposed to reusing an existing aws_profile).

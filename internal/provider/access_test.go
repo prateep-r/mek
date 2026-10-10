@@ -195,3 +195,19 @@ func TestGCPShell(t *testing.T) {
 		t.Error("mkdir error not reported")
 	}
 }
+
+func TestUsesSSHAndAWSCLIv2(t *testing.T) {
+	for c, want := range map[*config.Context]bool{
+		{}: false,
+		{Targets: map[string]*config.Target{"w": {}}}:                    true,
+		{Tunnels: map[string]*config.Tunnel{"p": {Via: "w", Port: 1}}}:   false,
+		{Tunnels: map[string]*config.Tunnel{"p": {Via: "w", Host: "h"}}}: true,
+	} {
+		if usesSSH(c) != want {
+			t.Errorf("usesSSH(%+v) = %v", c, !want)
+		}
+	}
+	if awsCLIv2("aws-cli/1.33.0 Python/3.11") == nil || awsCLIv2("aws-cli/2.17.0 Python/3.12") != nil {
+		t.Error("awsCLIv2")
+	}
+}

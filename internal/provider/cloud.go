@@ -35,9 +35,10 @@ type Cloud struct {
 
 // Tool tells `mek doctor` how to find a CLI and how to install it.
 type Tool struct {
-	VersionArgs []string
-	Brew        string // macOS install command ("" = none)
-	URL         string // install docs
+	VersionArgs []string                   // how to print its version (nil: don't run it, only find it)
+	Check       func(version string) error // problems with the installed version (nil: none)
+	Brew        string                     // macOS install command ("" = none)
+	URL         string                     // install docs
 }
 
 // clouds is the registry, in the order mek lists them.

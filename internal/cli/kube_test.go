@@ -219,3 +219,15 @@ func TestCompleteClusters(t *testing.T) {
 		t.Errorf("unknown context: %q", got)
 	}
 }
+
+// A lookup that never ran (the CLI isn't installed) gets no "logged in?" hint.
+func TestKubeLookupThatCouldNotRun(t *testing.T) {
+	h := newKubeHarness(t)
+	h.exec.respond = nil
+	h.exec.fail = errors.New("aws not found in PATH — run `mek doctor`")
+	_, err := h.run("-c", "prod", "kube")
+	wantErr(t, err, "aws eks describe-cluster: aws not found in PATH")
+	if err != nil && strings.Contains(err.Error(), "logged in?") {
+		t.Errorf("hint for a missing CLI: %v", err)
+	}
+}

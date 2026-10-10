@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -20,9 +21,10 @@ import (
 
 type tool struct {
 	bin, purpose string
-	versionArgs  []string
+	versionArgs  []string                  // nil: only look it up, never run it
 	needed       func(*config.Config) bool // required by this config; nil = optional
 	brew, url    string
+	check        func(version string) error // nil: any version will do
 }
 
 // tools are every cloud's CLI and plugins (from the provider registry) plus
@@ -30,12 +32,12 @@ type tool struct {
 func tools() []tool {
 	var ts []tool
 	for _, c := range provider.Clouds() {
-		ts = append(ts, tool{c.CLI, c.Title, c.Tool.VersionArgs, anyContext(func(x *config.Context) bool { return x.Provider == c.Name }), c.Tool.Brew, c.Tool.URL})
+		ts = append(ts, tool{c.CLI, c.Title, c.Tool.VersionArgs, anyContext(func(x *config.Context) bool { return x.Provider == c.Name }), c.Tool.Brew, c.Tool.URL, c.Tool.Check})
 	}
 	for _, c := range provider.Clouds() {
 		for _, p := range c.Plugins {
 			uses := func(x *config.Context) bool { return x.Provider == c.Name && p.Needed(x) }
-			ts = append(ts, tool{p.Bin, p.Purpose, p.Tool.VersionArgs, anyContext(uses), p.Tool.Brew, p.Tool.URL})
+			ts = append(ts, tool{p.Bin, p.Purpose, p.Tool.VersionArgs, anyContext(uses), p.Tool.Brew, p.Tool.URL, p.Tool.Check})
 		}
 	}
 	return append(ts, extraTools...)
@@ -51,9 +53,9 @@ func anyContext(f func(*config.Context) bool) func(*config.Config) bool {
 var extraTools = []tool{
 	{"kubectl", "Kubernetes CLI (mek kubectl)", []string{"version", "--client"},
 		anyContext(func(x *config.Context) bool { return len(x.Clusters) > 0 }),
-		"brew install kubectl", "https://kubernetes.io/docs/tasks/tools/"},
+		"brew install kubectl", "https://kubernetes.io/docs/tasks/tools/", nil},
 	{"k9s", "Kubernetes TUI", []string{"version", "--short"}, nil,
-		"brew install k9s", "https://k9scli.io/topics/install/"},
+		"brew install k9s", "https://k9scli.io/topics/install/", nil},
 }
 
 func newDoctorCmd() *cobra.Command {
@@ -99,7 +101,18 @@ func newDoctorCmd() *cobra.Command {
 					fmt.Fprintf(out, "  %s %-24s not found (%s: %s)\n      install: %s\n", mark, t.bin, label, t.purpose, hint(p, t))
 					continue
 				}
-				fmt.Fprintf(out, "  %s %-24s %s %s\n", p.Green("✓"), t.bin, pr.version, p.Dim(pr.path))
+				if t.check != nil {
+					if err := t.check(pr.version); err != nil {
+						mark := p.Yellow("!")
+						if cfg != nil && t.needed != nil && t.needed(cfg) {
+							mark = p.Red("✗")
+							problems++
+						}
+						fmt.Fprintf(out, "  %s %-24s %s %s\n      %v\n      install: %s\n", mark, t.bin, pr.version, p.Dim(pr.path), err, hint(p, t))
+						continue
+					}
+				}
+				fmt.Fprintf(out, "  %s %-24s %s\n", p.Green("✓"), t.bin, strings.TrimSpace(pr.version+" "+p.Dim(pr.path)))
 			}
 
 			if problems > 0 {
@@ -126,7 +139,11 @@ func probeTools(ts []tool) []chan probe {
 				ch <- probe{}
 				return
 			}
-			ch <- probe{path: path, version: firstLine(path, t.versionArgs)}
+			version := ""
+			if t.versionArgs != nil { // some tools (ssh-keygen) start working when run bare
+				version = firstLine(path, t.versionArgs)
+			}
+			ch <- probe{path: path, version: version}
 		}()
 	}
 	return res
@@ -144,11 +161,20 @@ func hint(p ui.Palette, t tool) string {
 func firstLine(path string, args []string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	b, err := exec.CommandContext(ctx, path, args...).CombinedOutput()
-	if err != nil && len(b) == 0 {
+	// stdout first: tools warn on stderr (kubectl about an expired login), but a
+	// few print their version only there (ssh -V).
+	var stdout, stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, path, args...)
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	text := strings.TrimSpace(stdout.String())
+	if text == "" {
+		text = strings.TrimSpace(stderr.String())
+	}
+	if err != nil && text == "" {
 		return "(version unknown)"
 	}
-	line, _, _ := strings.Cut(strings.TrimSpace(string(b)), "\n")
+	line, _, _ := strings.Cut(text, "\n")
 	if r := []rune(line); len(r) > 60 { // cut on a character, not mid-UTF-8
 		line = string(r[:60]) + "…"
 	}

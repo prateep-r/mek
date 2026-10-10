@@ -166,8 +166,13 @@ func (a *app) query(l *loaded) provider.Query {
 		var out bytes.Buffer
 		inv := &runner.Invocation{Context: l.ctx, Argv: argv, Env: l.env.Apply(os.Environ()), Class: guard.Read, Stdout: &out}
 		if err := inv.Err(a.pipeline().Run(inv)); err != nil {
+			what := strings.Join(argv[:min(3, len(argv))], " ")
+			var exit *runner.ExitError
+			if !errors.As(err, &exit) { // it never ran (not installed…): logging in won't help
+				return nil, fmt.Errorf("%s: %w", what, err)
+			}
 			// Not %w: an *ExitError would make main exit quietly, without the hint.
-			return nil, fmt.Errorf("%s: %v (logged in? try: mek -c %s login)", strings.Join(argv[:min(3, len(argv))], " "), err, l.ctx.Name)
+			return nil, fmt.Errorf("%s: %v (logged in? try: mek -c %s login)", what, err, l.ctx.Name)
 		}
 		return out.Bytes(), nil
 	}
