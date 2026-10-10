@@ -95,12 +95,13 @@ func waitReady(r Record, owner int, wait time.Duration, exited <-chan struct{}) 
 	deadline := time.After(wait)
 	addr := fmt.Sprintf("localhost:%d", r.Local)
 	for {
+		// Ready means the port answers and the supervisor has recorded the
+		// tunnel as running (the port can open first).
 		if c, err := net.DialTimeout("tcp", addr, pollEvery); err == nil {
 			c.Close()
-			if cur, err := load(r.ID); err == nil {
-				r = cur
+			if cur, err := load(r.ID); err == nil && cur.Phase != phaseStarting {
+				return cur, nil
 			}
-			return r, nil
 		}
 		select {
 		case <-exited:
