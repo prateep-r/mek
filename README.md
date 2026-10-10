@@ -247,22 +247,120 @@ overrides both):
 
 AWS SSO tokens stay in the AWS CLI's own cache (`~/.aws/sso/cache`); mek stores no keys.
 
-### Context fields
+### File format
 
-| Field | Providers | Meaning |
-|---|---|---|
-| `provider` | all | `aws` or `gcp` (required) |
-| `region` | all | default region (AWS `AWS_REGION`; GCP compute region) |
-| `protected` | all | confirm writes, type the name for destructive commands |
-| `readonly` | all | block writes and destructive commands |
-| `sso_start_url`, `sso_region`, `account_id`, `role` | aws (SSO) | the IAM Identity Center portal, its region, the account and permission set |
-| `aws_profile` | aws | instead of the SSO fields: use this profile from your own `~/.aws/config` |
-| `project`, `account` | gcp | the project (required) and, optionally, the account to log in as |
-| `clusters` | all | Kubernetes clusters for `mek kube` — [section 5](#5-kubernetes-eks-gke) |
-| `targets` | all | hosts for `mek shell` and tunnel hops — [section 6](#6-shell-on-an-instance) |
-| `tunnels` | all | named port forwards for `mek tunnel` — [section 7](#7-tunnels) |
+`config.yaml` is YAML with a single top-level key:
 
-A context using everything:
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `contexts` | map of *name* → [context](#context-all-providers) | no (without it there are no contexts) | every cloud target you work with, by the name you'll type (`mek use <name>`, `-c <name>`) |
+
+Context names match `^[A-Za-z0-9][A-Za-z0-9._-]*$` — letters, digits, `.`, `_` and `-`, not
+starting with `.`, `_` or `-` — because a name becomes a directory and an AWS profile name. A
+context with no fields at all is an error. Block style and flow style
+(`dev: {provider: aws, …}`) are both fine.
+
+> **Keys mek doesn't know are ignored, not rejected** — a typo such as `protcted: true`
+> leaves the context unprotected. Check `mek ctx ls`: protected and readonly contexts show
+> `[protected]` / `[readonly]`.
+
+### Context (all providers)
+
+| Field | Type | Required | Default | Rules | Effect |
+|---|---|---|---|---|---|
+| `provider` | string | **yes** | — | `aws` or `gcp` | which cloud and CLI the context drives |
+| `region` | string | no | none | no line breaks | AWS: `AWS_REGION` / `AWS_DEFAULT_REGION` and the profile's region, and the default for EKS clusters and SSO; GCP: `CLOUDSDK_COMPUTE_REGION` |
+| `protected` | bool | no | `false` | | writes, shells, tunnels and `mek exec` ask y/N; destructive commands need the context name typed ([section 9](#9-how-the-guard-works)) |
+| `readonly` | bool | no | `false` | | writes, destructive commands, shells and `mek exec` are blocked; reads and tunnels run. With `protected` too, tunnels ask |
+| `clusters` | map of *alias* → [cluster](#clustersalias) | no | none | | Kubernetes clusters for `mek kube` / `mek kubectl` |
+| `targets` | map of *alias* → [target](#targetsalias) | no | none | | hosts for `mek shell` and tunnel hops |
+| `tunnels` | map of *alias* → [tunnel](#tunnelsalias) | no | none | | named port forwards for `mek tunnel` |
+
+### AWS context
+
+An AWS context uses **either** IAM Identity Center (SSO) **or** a profile you already have.
+With `aws_profile` set, the SSO fields are not used.
+
+| Field | Type | Required | Default | Rules | Effect |
+|---|---|---|---|---|---|
+| `sso_start_url` | string (URL) | SSO: **yes** | — | no line breaks | your IAM Identity Center portal. Contexts with the same URL share one `[sso-session]`, so one `mek login` covers them all |
+| `sso_region` | string | SSO: **yes**, unless `region` is set | `region` | the same for every context with the same `sso_start_url` | the region IAM Identity Center lives in |
+| `account_id` | string | SSO: **yes** | — | exactly 12 digits; quote it (`"012345678901"`) | the AWS account |
+| `role` | string | SSO: **yes** | — | no line breaks | the permission set name |
+| `aws_profile` | string | profile mode: **yes** | — | no line breaks | use this profile from your own `~/.aws/config` untouched (any kind: SSO, keys, `credential_process`, assume-role) |
+
+SSO contexts become profiles `mek-<context>` in mek's own `~/.config/mek/aws/config`
+(rewritten on every run; never edit it). Commands get `AWS_PROFILE`, `AWS_CONFIG_FILE` (SSO
+only) and the region; `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`,
+`AWS_SECURITY_TOKEN` and `AWS_DEFAULT_PROFILE` from your shell are removed so they can't
+override the context.
+
+### GCP context
+
+| Field | Type | Required | Default | Rules | Effect |
+|---|---|---|---|---|---|
+| `project` | string | **yes** | — | no line breaks | the project ID: `CLOUDSDK_CORE_PROJECT`, `GOOGLE_CLOUD_PROJECT` |
+| `account` | string (e-mail) | no | gcloud's active account in the context | no line breaks | `gcloud auth login <account>` and `CLOUDSDK_CORE_ACCOUNT` |
+
+Each GCP context has its own gcloud config directory (`CLOUDSDK_CONFIG`), so its login and
+settings never mix with another context's or your own `~/.config/gcloud`. After
+`mek login <context> --adc`, commands also get `GOOGLE_APPLICATION_CREDENTIALS` pointing at
+the context's application-default credentials; otherwise that variable is removed.
+
+### `clusters.<alias>`
+
+The alias is your short name for the cluster: the kube context becomes `<context>/<alias>`,
+and `mek kube <alias>` makes it the current one.
+
+| Field | Type | AWS (EKS) | GCP (GKE) | Rules | Effect |
+|---|---|---|---|---|---|
+| `name` | string | **required** | **required** | no leading `-`, no control characters | the cluster's name in the cloud |
+| `region` | string | optional; default: the context's `region` (one of the two is required) | **not allowed** | same | the cluster's region (`aws eks …--region`) |
+| `location` | string | **not allowed** | **required** | same | the cluster's zone or region (`gcloud … --location`) |
+| `namespace` | string | optional | optional | same | the kube context's default namespace |
+
+Aliases follow the context-name rule and can't be `token`. AWS reads the cluster with
+`aws eks describe-cluster` (it must be `ACTIVE`), GCP with `gcloud container clusters describe`
+(`RUNNING`).
+
+### `targets.<alias>`
+
+A target is a host for `mek shell <alias>` and a hop for tunnels (`via: <alias>`).
+
+| Field | Type | AWS | GCP | Rules | Effect |
+|---|---|---|---|---|---|
+| `instance` | string | **required**: an instance id (`i-…` or `mi-…`, 8–17 hex digits) or `tag:Key=Value` | **required**: a VM name (`^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$`) | no leading `-`, no control characters | which host. A tag must match exactly one *running* instance when used |
+| `zone` | string | **not allowed** | optional; default: looked up (the one running VM of that name) | same | the VM's zone |
+| `user` | string | **not allowed** (SSM picks the OS user) | optional; default: gcloud's (your local user name) | same | the SSH user |
+
+Aliases follow the context-name rule and can't be `ls`, `list`, `stop` or `logs`.
+
+### `tunnels.<alias>`
+
+| Field | Type | Required | Default | Rules | Effect |
+|---|---|---|---|---|---|
+| `via` | string | for every kind except Cloud SQL | — | a target alias, or a literal instance id / `tag:Key=Value` (AWS) / VM name (GCP); no leading `-` | the host the tunnel goes through |
+| `host` | string | no | — | no leading `-`, no control characters | another host to reach *through* `via` (an RDS endpoint, an internal IP…); without it, the port is on `via` itself |
+| `port` | int | with `via` | — | 1–65535 | the remote port |
+| `local_port` | int | Cloud SQL: **yes** | `port` + 10000 | 1–65535; set it when `port` > 55535 | the port on `127.0.0.1` |
+| `cloudsql` | string | — | — | GCP only; `PROJECT:REGION:INSTANCE`; no `via`, `host` or `port` with it | a Cloud SQL instance, through the Cloud SQL Auth Proxy |
+| `private_ip` | bool | no | `false` | only with `cloudsql` | reach Cloud SQL over its private IP |
+
+The fields set decide the kind of tunnel:
+
+| Fields | AWS | GCP | Guard class |
+|---|---|---|---|
+| `via` + `port` | SSM `AWS-StartPortForwardingSession` | `gcloud compute start-iap-tunnel` | tunnel |
+| `via` + `host` + `port` | SSM `AWS-StartPortForwardingSessionToRemoteHost` | `gcloud compute ssh -- -N -L` | tunnel (AWS) / **shell** (GCP: it logs in to the VM) |
+| `cloudsql` + `local_port` | — | `cloud-sql-proxy … --address 127.0.0.1` (needs `mek login --adc`) | tunnel |
+
+Aliases follow the context-name rule and can't be `ls`, `list`, `stop` or `logs`. Tunnels
+always listen on `127.0.0.1`; flags given to `mek tunnel` (`--local`, `--zone`, `--user`)
+override a named tunnel's settings for that run.
+
+### A complete example
+
+Two contexts using every section:
 
 ```yaml
 contexts:
@@ -297,11 +395,9 @@ contexts:
       sql: {cloudsql: "acme-prod:asia-southeast1:main", local_port: 15432}
 ```
 
-Rules checked on load: context, cluster, target and tunnel names use letters, digits, `.`,
-`_` and `-` (and targets/tunnels can't be called `ls`, `list`, `stop` or `logs`);
-`account_id` is 12 digits; SSO contexts need `sso_region` (or `region`), and contexts sharing
-an `sso_start_url` must agree on it; values may not contain line breaks, and cluster, target
-and tunnel values may not start with `-` (they become CLI arguments).
+Everything above is checked when mek loads the file, before any command runs; the first
+problem found is reported with the context and field it is in, e.g.
+`context "prod": tunnels.db: port 0 is not a port (1-65535)`.
 
 > Never commit real account IDs or SSO URLs to a public repository. Share team configs from a private repo.
 
@@ -447,7 +543,7 @@ PS1='\[\e[36m\]$(mek ctx --short 2>/dev/null)\[\e[0m\] \w \$ '
 
 ## 5. Kubernetes (EKS, GKE)
 
-List the clusters under the context (see the [example](#context-fields)), then write the
+List the clusters under the context (see [the complete example](#a-complete-example)), then write the
 context's kubeconfig:
 
 ```console
