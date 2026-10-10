@@ -123,7 +123,11 @@ func TestInteractivePrompts(t *testing.T) {
 		{"tunnel, answer y", []string{"-c", "prod", "tunnel", "--via", "i-0123456789abcdef0", "--to", "db.internal:5432", "--local", "45432"}, "tunnel command on prod", "y\r", 0, true, "confirmed"},
 		{"tunnel, answer n", []string{"-c", "prod", "tunnel", "--via", "i-0123456789abcdef0", "--to", ":22", "--local", "45433"}, "Continue? [y/N]:", "n\r", 1, false, "declined"},
 	}
+	ports := testkit.FreePorts(t, "45432", "45433") // the tunnel cases' --local
 	for _, c := range cases {
+		for i := range c.args {
+			c.args[i] = ports.Replace(c.args[i])
+		}
 		t.Run(c.name, func(t *testing.T) {
 			mekHome := t.TempDir()
 			stubs, log := testkit.Stubs(t, "aws", "gcloud", "session-manager-plugin")

@@ -51,7 +51,7 @@ func TestTunnelBackground(t *testing.T) {
 		return s.Record, nil
 	}
 	h.mustRun("-c", "prod", "-y", "tunnel", "db", "-b", "--wait", "5s")
-	if got.Name != "db" || got.Context != "prod" || got.Local != 25432 || got.ID == "" || got.Decision != "confirmed" ||
+	if got.Name != "db" || got.Context != "prod" || got.Local != h.port("25432") || got.ID == "" || got.Decision != "confirmed" ||
 		got.Class != "tunnel" || !strings.HasPrefix(strings.Join(got.Command, " "), "aws ssm start-session --target i-0bastion0") ||
 		len(got.Env) == 0 || len(h.exec.invs) != 1 { // only the lookup ran here; the supervisor runs the session
 		t.Errorf("spec: %+v, calls %q", got, h.exec.argv())
@@ -81,15 +81,15 @@ func TestTunnelBackground(t *testing.T) {
 
 func TestTunnelForegroundClaimsPort(t *testing.T) {
 	h := newTunnelHarness(t)
-	done, err := tunnel.Foreground(tunnel.Record{ID: "fg0000000000", Context: "prod", Name: "db", Local: 25432})
+	done, err := tunnel.Foreground(tunnel.Record{ID: "fg0000000000", Context: "prod", Name: "db", Local: h.port("25432")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer done()
 	_, err = h.run("-c", "prod", "-y", "tunnel", "db")
-	wantErr(t, err, "localhost:25432 is already forwarded by mek tunnel db (prod) — mek tunnel stop db")
+	wantErr(t, err, h.P("localhost:25432 is already forwarded by mek tunnel db (prod) — mek tunnel stop db"))
 	// Raced past the first check: the claim itself refuses.
-	err = foreground("db", 25432)(h.exec).Run(&runner.Invocation{Context: &config.Context{Name: "prod"}})
+	err = foreground("db", h.port("25432"))(h.exec).Run(&runner.Invocation{Context: &config.Context{Name: "prod"}})
 	if err == nil || !strings.Contains(err.Error(), "already forwarded") {
 		t.Errorf("claim: %v", err)
 	}

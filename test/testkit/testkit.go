@@ -7,9 +7,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -215,4 +217,26 @@ func Listenstub(t testing.TB) string {
 		t.Fatal(listenstubErr)
 	}
 	return listenstubPath
+}
+
+// FreePorts maps each fixed port number a test's strings mention to a port
+// that is free on this machine right now, so a port another program happens
+// to use can't fail the test: apply the replacer to the test's config and to
+// the output it expects.
+func FreePorts(t testing.TB, fixed ...string) *strings.Replacer {
+	t.Helper()
+	var pairs []string
+	var held []net.Listener
+	for _, f := range fixed {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		held = append(held, ln) // held until all are picked: no duplicates
+		pairs = append(pairs, f, strconv.Itoa(ln.Addr().(*net.TCPAddr).Port))
+	}
+	for _, ln := range held {
+		ln.Close()
+	}
+	return strings.NewReplacer(pairs...)
 }

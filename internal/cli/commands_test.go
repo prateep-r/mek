@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -54,9 +55,24 @@ func (r *recorder) argv() []string {
 }
 
 type harness struct {
-	t    *testing.T
-	home string
-	exec *recorder
+	t     *testing.T
+	home  string
+	exec  *recorder
+	ports *strings.Replacer // free ports in place of a config's fixed ones (nil: none)
+}
+
+// P puts the harness's free ports into a string that names the fixed ones.
+func (h *harness) P(s string) string {
+	if h.ports == nil {
+		return s
+	}
+	return h.ports.Replace(s)
+}
+
+// port is P for a port number.
+func (h *harness) port(fixed string) int {
+	n, _ := strconv.Atoi(h.P(fixed))
+	return n
 }
 
 // newHarness sets up MEK_HOME with config (none if config is ""), an empty

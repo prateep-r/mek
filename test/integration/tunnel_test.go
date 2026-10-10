@@ -3,6 +3,8 @@
 package integration
 
 import (
+	"github.com/prateep-r/mek/test/testkit"
+
 	"net"
 	"os"
 	"path/filepath"
@@ -19,26 +21,28 @@ const tunnelConfig = `contexts:
          tunnels: {app: {via: web-1, port: 8080, local_port: 38080}, sql: {cloudsql: "my-project:asia-southeast1:db", local_port: 35434}}}
 `
 
-// tunnelSetup is setup plus session-manager-plugin and cloud-sql-proxy stubs.
-func tunnelSetup(t *testing.T) *env {
+// tunnelSetup is setup plus session-manager-plugin and cloud-sql-proxy stubs;
+// the config's local ports become free ones (apply P to expected output).
+func tunnelSetup(t *testing.T) (*env, func(string) string) {
 	t.Helper()
-	e := setup(t, tunnelConfig)
+	ports := testkit.FreePorts(t, "35432", "35433", "35434", "38080")
+	e := setup(t, ports.Replace(tunnelConfig))
 	stubs := strings.SplitN(strings.TrimPrefix(e.vars[2], "PATH="), ":", 2)[0]
 	b, _ := os.ReadFile(filepath.Join(stubs, "aws"))
 	for _, p := range []string{"session-manager-plugin", "cloud-sql-proxy"} {
 		os.WriteFile(filepath.Join(stubs, p), b, 0o755)
 	}
-	return e
+	return e, ports.Replace
 }
 
 func TestTunnelSSMRemoteHost(t *testing.T) {
-	e := tunnelSetup(t)
+	e, P := tunnelSetup(t)
 	r := e.run("-c", "prod", "--yes", "tunnel", "db")
-	if r.Code != 0 || !strings.Contains(r.Stderr, "localhost:35432 → db.x.rds.amazonaws.com:5432 via i-0123abcd") {
+	if r.Code != 0 || !strings.Contains(r.Stderr, P("localhost:35432 → db.x.rds.amazonaws.com:5432 via i-0123abcd")) {
 		t.Fatalf("tunnel: %+v", r)
 	}
 	c := e.calls()[0]
-	if c.ArgLine() != `ssm start-session --target i-0123abcd --document-name AWS-StartPortForwardingSessionToRemoteHost --parameters {"host":["db.x.rds.amazonaws.com"],"localPortNumber":["35432"],"portNumber":["5432"]}` ||
+	if c.ArgLine() != P(`ssm start-session --target i-0123abcd --document-name AWS-StartPortForwardingSessionToRemoteHost --parameters {"host":["db.x.rds.amazonaws.com"],"localPortNumber":["35432"],"portNumber":["5432"]}`) ||
 		c.Env["AWS_PROFILE"] != "admin" {
 		t.Errorf("call: %+v", c)
 	}
@@ -49,7 +53,7 @@ func TestTunnelSSMRemoteHost(t *testing.T) {
 }
 
 func TestTunnelGuard(t *testing.T) {
-	e := tunnelSetup(t)
+	e, _ := tunnelSetup(t)
 	if r := e.run("-c", "ro", "tunnel", "db"); r.Code != 0 {
 		t.Errorf("readonly allows tunnels: %+v", r)
 	}
@@ -62,7 +66,7 @@ func TestTunnelGuard(t *testing.T) {
 }
 
 func TestTunnelLocalPortInUse(t *testing.T) {
-	e := tunnelSetup(t)
+	e, _ := tunnelSetup(t)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -76,11 +80,11 @@ func TestTunnelLocalPortInUse(t *testing.T) {
 }
 
 func TestTunnelGCP(t *testing.T) {
-	e := tunnelSetup(t)
+	e, P := tunnelSetup(t)
 	if r := e.run("-c", "gcp", "tunnel", "app", "--zone", "asia-southeast1-b"); r.Code != 0 {
 		t.Fatalf("iap: %+v", r)
 	}
-	if c := e.calls()[0]; c.Name != "gcloud" || c.ArgLine() != "compute start-iap-tunnel web-1 8080 --local-host-port=localhost:38080 --zone asia-southeast1-b" {
+	if c := e.calls()[0]; c.Name != "gcloud" || c.ArgLine() != P("compute start-iap-tunnel web-1 8080 --local-host-port=localhost:38080 --zone asia-southeast1-b") {
 		t.Errorf("iap call: %+v", c)
 	}
 
@@ -93,7 +97,7 @@ func TestTunnelGCP(t *testing.T) {
 		t.Fatalf("cloud sql: %+v", r)
 	}
 	c := e.calls()[1]
-	if c.Name != "cloud-sql-proxy" || c.ArgLine() != "my-project:asia-southeast1:db --port 35434 --address 127.0.0.1" ||
+	if c.Name != "cloud-sql-proxy" || c.ArgLine() != P("my-project:asia-southeast1:db --port 35434 --address 127.0.0.1") ||
 		c.Env["GOOGLE_APPLICATION_CREDENTIALS"] != adc {
 		t.Errorf("proxy call: %+v", c)
 	}
