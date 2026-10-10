@@ -46,14 +46,6 @@ var clouds = []Cloud{awsCloud, gcpCloud}
 // Clouds returns every supported cloud.
 func Clouds() []Cloud { return clouds }
 
-// Register adds a cloud to the registry and returns a function that removes
-// it again — how a new cloud plugs in, and how tests add a fake one.
-func Register(c Cloud) (unregister func()) {
-	old := clouds
-	clouds = append(clouds[:len(clouds):len(clouds)], c)
-	return func() { clouds = old }
-}
-
 // Lookup finds a cloud by its provider name.
 func Lookup(name string) (Cloud, bool) {
 	for _, c := range clouds {
@@ -112,18 +104,8 @@ func validateContext(cfg *config.Config, ctx *config.Context) error {
 		return err
 	}
 	p := c.New(cfg, ctx, "")
-	if _, ok := p.(KubeProvider); !ok && len(ctx.Clusters) > 0 {
-		return fmt.Errorf("clusters are not supported on %s yet", c.Name)
-	}
-	if _, ok := p.(Sessioner); !ok && len(ctx.Targets) > 0 {
-		return fmt.Errorf("targets are not supported on %s yet", c.Name)
-	}
-	tp, ok := p.(Tunneler)
-	if !ok && len(ctx.Tunnels) > 0 {
-		return fmt.Errorf("tunnels are not supported on %s yet", c.Name)
-	}
 	for _, alias := range slices.Sorted(maps.Keys(ctx.Tunnels)) {
-		if _, err := tp.TunnelMethod(*ctx.Tunnels[alias]); err != nil { // the factory knows which kinds the cloud has
+		if _, err := p.TunnelMethod(*ctx.Tunnels[alias]); err != nil { // the factory knows which kinds the cloud has
 			return fmt.Errorf("tunnels.%s: %w", alias, err)
 		}
 	}

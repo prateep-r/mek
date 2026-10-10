@@ -19,43 +19,42 @@ var (
 )
 
 func (g *GCP) ResolveTarget(spec string, o TargetOptions, q Query) (Instance, error) {
-	return chain(unresolved{"use a name under targets: or a VM name"},
-		configured(g.ctx.Targets), g.vmLookup(q),
-	).resolve(spec, o)
+	alias, spec, o := fromConfig(g.ctx.Targets, spec, o)
+	if !gcpVMName.MatchString(spec) {
+		return Instance{}, fmt.Errorf("unknown target %q — use a name under targets: or a VM name", spec)
+	}
+	in, err := g.vmLookup(spec, o, q)
+	in.Alias = alias
+	return in, err
 }
 
-// vmLookup takes a VM name; without a zone it finds the one running VM of
-// that name in the project.
-func (g *GCP) vmLookup(q Query) link {
-	return func(spec string, o TargetOptions, next resolver) (Instance, error) {
-		if !gcpVMName.MatchString(spec) {
-			return next.resolve(spec, o)
-		}
-		in := Instance{ID: spec, Zone: o.Zone, User: o.User}
-		if in.Zone != "" {
-			return in, nil
-		}
-		out, err := q([]string{"gcloud", "compute", "instances", "list",
-			"--filter", fmt.Sprintf("name=(%q)", spec), "--format", "json(name,zone,status)"})
-		if err != nil {
-			return Instance{}, err
-		}
-		var vms []struct{ Name, Zone, Status string }
-		if err := json.Unmarshal(out, &vms); err != nil {
-			return Instance{}, fmt.Errorf("compute instances list: %w", err)
-		}
-		var zones []string
-		for _, vm := range vms {
-			if vm.Name == spec && vm.Status == "RUNNING" {
-				zones = append(zones, path.Base(vm.Zone)) // zone comes as a URL
-			}
-		}
-		if len(zones) != 1 {
-			return Instance{}, fmt.Errorf("VM %s: %d running in the project (%s) — pass --zone", spec, len(zones), strings.Join(zones, ", "))
-		}
-		in.Zone = zones[0]
+// vmLookup finds a VM's zone, unless given: the one running VM of that name
+// in the project.
+func (g *GCP) vmLookup(name string, o TargetOptions, q Query) (Instance, error) {
+	in := Instance{ID: name, Zone: o.Zone, User: o.User}
+	if in.Zone != "" {
 		return in, nil
 	}
+	out, err := q([]string{"gcloud", "compute", "instances", "list",
+		"--filter", fmt.Sprintf("name=(%q)", name), "--format", "json(name,zone,status)"})
+	if err != nil {
+		return Instance{}, err
+	}
+	var vms []struct{ Name, Zone, Status string }
+	if err := json.Unmarshal(out, &vms); err != nil {
+		return Instance{}, fmt.Errorf("compute instances list: %w", err)
+	}
+	var zones []string
+	for _, vm := range vms {
+		if vm.Name == name && vm.Status == "RUNNING" {
+			zones = append(zones, path.Base(vm.Zone)) // zone comes as a URL
+		}
+	}
+	if len(zones) != 1 {
+		return Instance{}, fmt.Errorf("VM %s: %d running in the project (%s) — pass --zone", name, len(zones), strings.Join(zones, ", "))
+	}
+	in.Zone = zones[0]
+	return in, nil
 }
 
 // sshDir is the context's own SSH home: gcloud's key and known_hosts live

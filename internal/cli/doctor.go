@@ -49,7 +49,7 @@ func anyContext(f func(*config.Context) bool) func(*config.Config) bool {
 }
 
 var extraTools = []tool{
-	{"kubectl", "Kubernetes CLI (mek kubectl, mek kube --merge)", []string{"version", "--client"},
+	{"kubectl", "Kubernetes CLI (mek kubectl)", []string{"version", "--client"},
 		anyContext(func(x *config.Context) bool { return len(x.Clusters) > 0 }),
 		"brew install kubectl", "https://kubernetes.io/docs/tasks/tools/"},
 	{"k9s", "Kubernetes TUI", []string{"version", "--short"}, nil,

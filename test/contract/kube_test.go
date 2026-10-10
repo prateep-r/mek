@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -79,53 +78,6 @@ func TestKubeWithRealKubectlAndAWS(t *testing.T) {
 		t.Errorf("the API server saw %d EKS tokens, want ≥ 2", authorized.Load())
 	}
 	u.homeUntouched(".kube/config") // kubectl's own ~/.kube/cache holds no credentials
-}
-
-func TestKubeMergeWithRealKubectl(t *testing.T) {
-	u, authorized, kubectl := kubeUser(t)
-	kc := filepath.Join(u.home, ".kube", "config")
-	plain := func(args ...string) string { // the user's own kubectl, no mek
-		t.Helper()
-		cmd := exec.Command(kubectl, append(args, "--kubeconfig", kc)...)
-		cmd.Env = u.vars
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("kubectl %s: %v\n%s", strings.Join(args, " "), err, out)
-		}
-		return string(out)
-	}
-	plain("config", "set-context", "mine", "--cluster=elsewhere")
-	plain("config", "use-context", "mine")
-
-	if out, code := u.run("-c", "prod", "kube", "--merge"); code != 0 {
-		t.Fatalf("merge (exit %d):\n%s", code, out)
-	}
-	if got := plain("config", "get-contexts", "-o", "name"); got != "mine\nprod/main\n" {
-		t.Errorf("contexts after merge:\n%s", got)
-	}
-	if got := plain("config", "current-context"); got != "mine\n" {
-		t.Errorf("--merge without --use changed current-context: %s", got)
-	}
-	if b, _ := os.ReadFile(kc + ".mek-backup"); !strings.Contains(string(b), "mine") || strings.Contains(string(b), "prod/main") {
-		t.Errorf("backup should be the file before mek:\n%s", b)
-	}
-	// The merged entry works on its own: kubectl → mek kube token → aws.
-	if got := plain("--context", "prod/main", "get", "--raw", "/version"); !strings.Contains(got, "v1.31.0-fake") || authorized.Load() == 0 {
-		t.Errorf("merged credentials: %s (authorized %d)", got, authorized.Load())
-	}
-
-	if out, code := u.run("-c", "prod", "kube", "--merge", "--use"); code != 0 || plain("config", "current-context") != "prod/main\n" {
-		t.Errorf("--use (exit %d):\n%s", code, out)
-	}
-	if out, code := u.run("-c", "prod", "kube", "--unmerge"); code != 0 {
-		t.Fatalf("unmerge (exit %d):\n%s", code, out)
-	}
-	if got := plain("config", "get-contexts", "-o", "name"); got != "mine\n" {
-		t.Errorf("contexts after unmerge:\n%s", got)
-	}
-	if got := plain("config", "view", "-o", "jsonpath={.users[*].name} {.clusters[*].name}"); strings.Contains(got, "prod/main") {
-		t.Errorf("unmerge left entries: %s", got)
-	}
 }
 
 // fakeGKE plays the GKE API (clusters.get) and the cluster's API server,

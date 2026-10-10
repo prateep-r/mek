@@ -6,7 +6,6 @@ import (
 	"io"
 	"maps"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -18,10 +17,7 @@ import (
 	"github.com/prateep-r/mek/internal/ui"
 )
 
-type kubeOpts struct {
-	name, region, location string // an ad-hoc cluster
-	merge, use, unmerge    bool
-}
+type kubeOpts struct{ name, region, location string } // an ad-hoc cluster
 
 func (a *app) newKubeCmd() *cobra.Command {
 	var o kubeOpts
@@ -36,8 +32,9 @@ Its credentials come from mek on every request, so it never holds a key.
   mek -c prod kube --name my-eks        # a cluster not in the config
   mek -c prod kubectl get pods          # kubectl, guarded and audited
   eval "$(mek use --shell prod)"        # KUBECONFIG for kubectl/k9s in this shell
-  mek -c prod kube --merge [--use]      # also add it to ~/.kube/config (opt-in)
-  mek -c prod kube --unmerge            # remove mek's entries from it again`,
+
+~/.kube/config is left alone; to see these clusters from it too, list both:
+  export KUBECONFIG=~/.kube/config:<MEK_HOME>/kube/prod.yaml`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: a.completeClusters,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -52,26 +49,12 @@ Its credentials come from mek on every request, so it never holds a key.
 	f.StringVar(&o.name, "name", "", "a cluster that isn't in the config: its name in the cloud")
 	f.StringVar(&o.region, "region", "", "aws: the ad-hoc cluster's region (default: the context's)")
 	f.StringVar(&o.location, "location", "", "gcp: the ad-hoc cluster's zone or region")
-	f.BoolVar(&o.merge, "merge", false, "also add the clusters to your kubeconfig ($KUBECONFIG or ~/.kube/config)")
-	f.BoolVar(&o.use, "use", false, "with --merge: switch kubectl's current-context to the cluster")
-	f.BoolVar(&o.unmerge, "unmerge", false, "remove this context's clusters from your kubeconfig")
-	cmd.MarkFlagsMutuallyExclusive("merge", "unmerge")
 	cmd.AddCommand(a.newKubeTokenCmd())
 	return cmd
 }
 
 func (a *app) kube(out io.Writer, current string, o kubeOpts) error {
-	if o.use && !o.merge {
-		return errors.New("--use needs --merge")
-	}
-	if o.unmerge {
-		return a.kubeUnmerge(current)
-	}
 	l, err := a.load("")
-	if err != nil {
-		return err
-	}
-	kp, err := capability[provider.KubeProvider](l, "mek kube")
 	if err != nil {
 		return err
 	}
@@ -85,7 +68,7 @@ func (a *app) kube(out io.Writer, current string, o kubeOpts) error {
 	if current == "" && o.name != "" {
 		current = o.name
 	}
-	entries, err := kube.Describe(kp, clusters, a.query(l))
+	entries, err := kube.Describe(l.prov, clusters, a.query(l))
 	if err != nil {
 		return err
 	}
@@ -104,9 +87,6 @@ func (a *app) kube(out io.Writer, current string, o kubeOpts) error {
 		aliases[i] = e.Alias
 	}
 	ui.Info("%s kubeconfig for %s: %s", ui.Green("✓"), ui.Bold(l.ctx.Name), strings.Join(aliases, ", "))
-	if o.merge {
-		return a.kubeMerge(l.ctx.Name, entries, current, mek, pathEnv, o.use)
-	}
 	ui.Info("  mek -c %s kubectl get pods\n  eval \"$(mek use --shell %s)\"   # then kubectl, k9s, ...", l.ctx.Name, l.ctx.Name)
 	return nil
 }
@@ -135,91 +115,8 @@ func kubeClusters(cfg *config.Config, ctx *config.Context, o kubeOpts) (map[stri
 	return c.Clusters, nil
 }
 
-// kubeMerge adds the entries to the user's kubeconfig with `kubectl config`.
-func (a *app) kubeMerge(ctx string, entries []kube.Entry, current, mek, pathEnv string, use bool) error {
-	target, err := mergeTarget()
-	if err != nil {
-		return err
-	}
-	if use && current != "" { // use-context switches to the first entry
-		i := slices.IndexFunc(entries, func(e kube.Entry) bool { return e.Alias == current })
-		entries = append([]kube.Entry{entries[i]}, slices.Delete(slices.Clone(entries), i, i+1)...)
-	}
-	tmp, err := os.MkdirTemp("", "mek-kube-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(tmp)
-	cmds, err := kube.MergeCommands(ctx, target, entries, mek, pathEnv, use, func(e kube.Entry) (string, error) { return kube.WriteCA(tmp, e) })
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-		return err
-	}
-	if err := kube.Backup(target); err != nil {
-		return err
-	}
-	for _, argv := range cmds {
-		if err := a.plainTo(argv, os.Environ(), io.Discard); err != nil {
-			return fmt.Errorf("%s: %w", strings.Join(argv[:3], " "), err)
-		}
-	}
-	ui.Info("%s merged into %s %s", ui.Green("✓"), target, ui.Dim("(backup: "+target+".mek-backup)"))
-	return nil
-}
-
-// kubeUnmerge removes the context's entries (named <ctx>/...) from the
-// user's kubeconfig, or only one cluster's when given.
-func (a *app) kubeUnmerge(only string) error {
-	l, err := a.resolve("")
-	if err != nil {
-		return err
-	}
-	target, err := mergeTarget()
-	if err != nil {
-		return err
-	}
-	var buf strings.Builder
-	if err := a.plainTo([]string{"kubectl", "config", "get-contexts", "-o", "name", "--kubeconfig", target}, os.Environ(), &buf); err != nil {
-		return err
-	}
-	var aliases []string
-	for _, name := range strings.Fields(buf.String()) {
-		if alias, ok := strings.CutPrefix(name, l.ctx.Name+"/"); ok && (only == "" || alias == only) {
-			aliases = append(aliases, alias)
-		}
-	}
-	if len(aliases) == 0 {
-		ui.Info("%s no %s clusters in %s", ui.Dim("–"), l.ctx.Name, target)
-		return nil
-	}
-	failed := 0
-	for _, argv := range kube.UnmergeCommands(l.ctx.Name, target, aliases) {
-		if a.plainTo(argv, os.Environ(), io.Discard) != nil {
-			failed++ // e.g. a cluster entry already removed by hand: kubectl said so on stderr
-		}
-	}
-	ui.Info("%s removed %s from %s", ui.Green("✓"), strings.Join(aliases, ", "), target)
-	if failed > 0 {
-		return fmt.Errorf("%d kubectl config command(s) failed", failed)
-	}
-	return nil
-}
-
-// Test seams.
-var (
-	userHome = os.UserHomeDir
-	mekPath  = kube.MekPath
-)
-
-func mergeTarget() (string, error) {
-	home, err := userHome()
-	if err != nil {
-		return "", err
-	}
-	return kube.MergeTarget(os.Getenv("KUBECONFIG"), home), nil
-}
+// mekPath is the mek the kubeconfig runs (a test seam).
+var mekPath = kube.MekPath
 
 // newKubeTokenCmd is the exec credential plugin the kubeconfig runs. It is
 // not audited (kubectl calls it on every request) and needs the context
@@ -239,11 +136,7 @@ func (a *app) newKubeTokenCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			kp, err := capability[provider.KubeProvider](l, "mek kube")
-			if err != nil {
-				return err
-			}
-			return a.runPlain(kp.TokenCommand(name, location), l.env.Apply(os.Environ()))
+			return a.runPlain(l.prov.TokenCommand(name, location), l.env.Apply(os.Environ()))
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "cluster name")

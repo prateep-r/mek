@@ -41,16 +41,13 @@ func TestWrite(t *testing.T) {
 	}
 }
 
-func TestMaskCLISpecificShortFlags(t *testing.T) {
+func TestMaskFlags(t *testing.T) {
 	cases := map[string]string{
-		"az login --service-principal -u app -p S3cret --tenant t":     "az login --service-principal -u app -p **** --tenant t",
 		"az storage blob list --account-key KEY== --account-name a":    "az storage blob list --account-key **** --account-name a",
 		"az storage blob list --connection-string=DefaultEndpoints...": "az storage blob list --connection-string=****",
-		"hcloud obs config -i=AK -k=SK -t=TOKEN":                       "hcloud obs config -i=AK -k=**** -t=****",
-		"/usr/local/bin/az acr login -n reg -p pw":                     "/usr/local/bin/az acr login -n reg -p ****",
 		"kubectl create secret generic db --from-literal=password=x":   "kubectl create secret generic db --from-literal=****",
 		"kubectl get pods --token abc":                                 "kubectl get pods --token ****",
-		"aws ssh -p 2222":                                              "aws ssh -p 2222", // -p is a secret only for az
+		"aws ssh -p 2222":                                              "aws ssh -p 2222", // short flags are never guessed to be secrets
 		"":                                                             "",
 	}
 	for in, want := range cases {
@@ -311,4 +308,15 @@ func TestSessionEntries(t *testing.T) {
 		t.Errorf("ran=%v reported=%v", ran, reported)
 	}
 	SessionStart(nil)(ok).Run(&runner.Invocation{Context: ctx, Session: "x"})
+}
+
+// A session handed to a background supervisor is not audited here: the
+// supervisor writes its end entry when it really ends.
+func TestRecorderSkipsDetachedSessions(t *testing.T) {
+	t.Setenv("MEK_HOME", t.TempDir())
+	detach := runner.Func(func(inv *runner.Invocation) error { inv.Decision, inv.Detached = "allowed", true; return nil })
+	Recorder(nil)(detach).Run(&runner.Invocation{Context: &config.Context{Name: "prod"}, Session: "s1"})
+	if _, err := os.Stat(Path()); !os.IsNotExist(err) {
+		t.Errorf("a detached session was audited: %v", err)
+	}
 }

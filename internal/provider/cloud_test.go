@@ -126,32 +126,3 @@ func TestHelpers(t *testing.T) {
 		t.Error("orDash")
 	}
 }
-
-// bareProvider has none of the optional capabilities (kube, shell, tunnel).
-type bareProvider struct{}
-
-func (bareProvider) Prepare() (Env, error)         { return Env{}, nil }
-func (bareProvider) LoginCommands(bool) [][]string { return nil }
-func (bareProvider) WhoAmICommand() []string       { return nil }
-func (bareProvider) Describe() string              { return "bare" }
-
-// A cloud may implement only some capabilities: config that needs the
-// others is refused for it, naming what is missing.
-func TestCapabilitiesAreOptional(t *testing.T) {
-	t.Cleanup(Register(Cloud{Name: "bare", CLI: "bare", Title: "Bare", Classify: guard.ClassifyAWS,
-		Validate: func(*config.Context) error { return nil },
-		New:      func(*config.Config, *config.Context, string) Provider { return bareProvider{} }}))
-	bare := "contexts:\n  a:\n    provider: bare\n"
-	for in, want := range map[string]string{
-		bare + "    clusters: {m: {name: x}}\n":         "clusters are not supported on bare yet",
-		bare + "    targets: {b: {instance: x}}\n":      "targets are not supported on bare yet",
-		bare + "    tunnels: {db: {via: x, port: 1}}\n": "tunnels are not supported on bare yet",
-	} {
-		if err := parse(in); err == nil || !strings.Contains(err.Error(), want) {
-			t.Errorf("parse(%q) err=%v, want containing %q", in, err, want)
-		}
-	}
-	if err := parse(bare); err != nil {
-		t.Errorf("a bare context is fine: %v", err)
-	}
-}

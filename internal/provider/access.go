@@ -14,8 +14,8 @@ type KubeCluster struct {
 	Location string // region or zone the token command needs
 }
 
-// KubeProvider is implemented by providers whose clusters `mek kube` supports.
-// It supplies the cloud-specific steps of kube.Write (a Template Method).
+// KubeProvider is the part of a Provider behind `mek kube`: the
+// cloud-specific steps of kube.Write (a Template Method).
 type KubeProvider interface {
 	// DescribeCluster looks the cluster up (through q) for the kubeconfig.
 	DescribeCluster(c config.Cluster, q Query) (KubeCluster, error)
@@ -90,7 +90,7 @@ type Command struct {
 	Requires []string          // plugins it needs on PATH
 }
 
-// Sessioner is implemented by providers that `mek shell` supports.
+// Sessioner is the part of a Provider behind `mek shell` (and tunnel hops).
 type Sessioner interface {
 	// ResolveTarget turns what the user typed (a configured name, an instance
 	// id, a tag or VM name) into an instance, looking it up through q.

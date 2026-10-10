@@ -60,7 +60,7 @@ Update with `brew upgrade mek` (Homebrew) or `mek self-update` (script / manual 
 |---|---|
 | AWS contexts | [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) |
 | GCP contexts | [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) |
-| `mek kubectl`, `mek kube --merge` | [kubectl](https://kubernetes.io/docs/tasks/tools/) |
+| `mek kubectl` | [kubectl](https://kubernetes.io/docs/tasks/tools/) |
 | GKE clusters (`clusters:` on a GCP context) | [gke-gcloud-auth-plugin](https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_plugin) |
 | Cloud SQL tunnels (`mek tunnel --cloudsql`) | [cloud-sql-proxy](https://cloud.google.com/sql/docs/postgres/connect-auth-proxy#install) |
 | `mek shell` / `mek tunnel` on AWS | [session-manager-plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html) |
@@ -126,7 +126,7 @@ below show them in use.
 | `mek shell <target>` | open a shell on an instance through AWS SSM or GCP IAP ([Shell](#shell-on-an-instance)) |
 | `mek tunnel [name] [-b]` | forward a local port to a private host, in the foreground or background ([Tunnels](#tunnels)) |
 | `mek tunnel ls` / `stop` / `logs` | list (every context), stop or read tunnels |
-| `mek kube [cluster] [--merge \| --unmerge]` | write the context's kubeconfig for EKS/GKE clusters ([Kubernetes](#kubernetes-eks-gke)) |
+| `mek kube [cluster]` | write the context's kubeconfig for EKS/GKE clusters ([Kubernetes](#kubernetes-eks-gke)) |
 | `mek kubectl …` | run kubectl on the context's clusters, through the guard and audit log |
 | `mek exec -- <cmd>` | run any command with the context's credentials |
 | `eval "$(mek env [ctx])"` | export the context into your shell (bypasses guard/audit) |
@@ -233,15 +233,14 @@ So the file is safe to keep, works in K9s or FreeLens started from the Dock
 (`KUBECONFIG=~/.config/mek/kube/prod.yaml`), and can never use another
 context's credentials. Contexts are named `<context>/<cluster>`, e.g. `prod/main`.
 
-`~/.kube/config` is left alone. To use the clusters from it anyway — with
-plain `kubectl --context prod/main`, or a tool that only reads that file — opt in:
+`~/.kube/config` is left alone. kubectl reads every file listed in `KUBECONFIG`, so
+to see your own clusters and mek's together — `kubectl --context prod/main`, or K9s
+switching between all of them — list both:
 
 ```bash
-mek -c prod kube --merge [--use]      # add (and switch to) prod/* entries, after a one-time .mek-backup
-mek -c prod kube --unmerge            # remove them again
+export KUBECONFIG=~/.kube/config:~/.config/mek/kube/prod.yaml:~/.config/mek/kube/gcp.yaml
 ```
 
-Merging goes through `kubectl config set-*`, so your other entries are kept.
 A cluster that isn't in the config: `mek -c prod kube --name other-eks [--region …]`.
 `kubectl exec`/`attach`/`debug` count as **shell** and `port-forward`/`proxy`
 as **tunnel** for the guard; `--dry-run` is a read.
@@ -299,11 +298,10 @@ How the code fits together (the GoF patterns are named where they shape it):
 - **One file per cloud** (`internal/provider/aws.go`, `gcp.go`). Each defines a `Cloud`:
   an Abstract Factory for that cloud's Provider (an Adapter from a mek context to the
   official CLI), its command classifier (a Strategy from `internal/guard`), its config
-  rules and the plugins it may need. Access features are optional capabilities a
-  Provider implements: `KubeProvider` (`mek kube`), `Sessioner` (`mek shell`) and
-  `Tunneler` (`mek tunnel`; its `TunnelMethod` is a Factory Method for one Strategy per
-  kind of tunnel). Adding a cloud = one file plus an entry in `clouds` (`cloud.go`), or
-  `provider.Register`.
+  rules and the plugins it may need. A Provider also covers the access paths:
+  `KubeProvider` (`mek kube`), `Sessioner` (`mek shell`) and `Tunneler` (`mek tunnel`;
+  its `TunnelMethod` is a Factory Method for one Strategy per kind of tunnel). Adding a
+  cloud = one file plus an entry in `clouds` (`cloud.go`).
 - **Every guarded command is a `runner.Invocation`** (a Command) passed through
   Decorators: `audit → guard → sessionStart → terminal`, so blocked commands are
   audited too and sessions get start and end entries. The terminal is `exec`, a
@@ -311,14 +309,14 @@ How the code fits together (the GoF patterns are named where they shape it):
   tests swap it for a fake.
 - **`internal/kube`** renders kubeconfigs (a Template Method; the cloud's describe call
   fills the steps). **`internal/tunnel`** is a Facade over tunnel records, flock-based
-  liveness, port claims and the supervisor, with a State per tunnel and Observers of
-  its lifecycle. Target lookups (`provider/resolve.go`) are a Chain of Responsibility.
+  liveness, port claims and the supervisor, with a State per tunnel deciding what
+  listing and stopping it means.
   Design notes: [docs/design/0001-tunnel-shell-kube.md](docs/design/0001-tunnel-shell-kube.md).
 
 ```bash
 make             # list all targets
 make check       # gofmt check + go vet + unit tests (race) — run before pushing
-make test-all    # check + integration + e2e + contract + emulator
+make test-all    # check + integration + e2e + contract + emulator (the SSO login)
 make cover       # unit + integration coverage; fails below 100%
 make run ARGS="doctor"
 make install     # build with version info and copy to ~/.local/bin
@@ -334,7 +332,7 @@ Tests come in five layers, all run by CI (integration and e2e on Linux and macOS
 | Integration (`-tags integration`) | `test/integration` | the real binary against recording stub CLIs: env per cloud, leaked credentials removed, guard + audit, exit codes, signal forwarding, concurrent runs, login flows, kube/shell/tunnel commands, and background tunnels with a stub that really listens (start → ls → stop, a `kill -9`ed supervisor, ten simultaneous starts) |
 | E2E (`-tags e2e`) | `test/e2e` | release archives served over HTTP, installed by the real `install.sh` (including tampered / unlisted archives being refused), a new user's first session on both clouds, the confirmation prompts (including shells and tunnels) answered on a real pseudo-terminal, and a background tunnel outliving the terminal that started it |
 | Contract (`-tags contract`) | `test/contract` | mek with the **real** `aws`, `gcloud`, `gke-gcloud-auth-plugin` and `kubectl`, offline: each CLI reads the config, directories, kubeconfigs and session commands mek hands it, against local fake APIs where one is needed. A missing CLI is skipped; `MEK_CONTRACT_REQUIRE=1` makes it fail. `sh test/contract/install-clis.sh` installs the CLIs on Debian/Ubuntu |
-| Emulator (`-tags emulator`) | `test/emulator` | the real CLIs making **real API calls** against [Floci](https://floci.io) emulators in docker — AWS and GCP (Cloud Storage): a command the guard blocks never reaches the API, a confirmed one really changes state, API errors come back with the CLI's exit code. Each test starts its own container on a random local port (never an emulator you already run). AWS also runs the **full IAM Identity Center login** — `mek login` → `aws sso login` (device code) → approval → role credentials through the profile mek generates — with a small test proxy adding the `x-amzn-ErrorType` header Floci 2.1.0 leaves out of pending-token responses |
+| Emulator (`-tags emulator`) | `test/emulator` | the **full AWS IAM Identity Center login** with the real `aws` against the [Floci](https://floci.io) emulator in docker — `mek login` → `aws sso login` (device code) → approval → role credentials through the profile mek generates — then a real call, a readonly block and a confirmed delete with them. It starts its own container on a random local port (never an emulator you already run); a small test proxy adds the `x-amzn-ErrorType` header Floci 2.1.0 leaves out of pending-token responses |
 
 `make cover` merges unit coverage with coverage from the instrumented binary the
 integration tests run, so `main()` and real process paths count too. Tests that
@@ -343,26 +341,25 @@ check permission errors need a non-root user.
 ### Everything in Docker
 
 `test/docker/` is mek's own test environment, so you don't install the cloud CLIs
-or start emulators by hand: an image with Go and the real `aws`, `gcloud` (with
-`gke-gcloud-auth-plugin`) and `kubectl`, plus Floci emulators for AWS and GCP.
+or start the emulator by hand: an image with Go and the real `aws`, `gcloud` (with
+`gke-gcloud-auth-plugin`) and `kubectl`, plus the Floci AWS emulator.
 
 ```bash
 make docker-test                          # every layer + coverage, nothing skipped
 make docker-test TARGETS="test-contract"  # just some make targets
-make docker-up                            # only the emulators, for local runs
+make docker-up                            # only the emulator, for local runs
 make docker-down                          # remove mek's containers, network, cache volume
 make docker-clean                         # ...and the mek-test image (a few GB)
 ```
 
 It is isolated from other projects on the same machine: compose project
 `mek-test` with its own network and volume, everything labelled
-`io.github.prateep-r.mek=test`, and emulator ports that aren't Floci's defaults —
-`127.0.0.1:14566` (AWS) and `14588` (GCP) — so an emulator another
-project runs on 4566 is never touched. With `make docker-up` running, point the
-emulator tests at it:
+`io.github.prateep-r.mek=test`, and an emulator port that isn't Floci's default —
+`127.0.0.1:14566` — so an emulator another project runs on 4566 is never touched.
+With `make docker-up` running, point the emulator test at it:
 
 ```bash
-MEK_FLOCI_AWS_URL=http://127.0.0.1:14566 MEK_FLOCI_GCP_URL=http://127.0.0.1:14588 make test-emulator
+MEK_FLOCI_AWS_URL=http://127.0.0.1:14566 make test-emulator
 ```
 
 Releases: push a tag `vX.Y.Z` — GitHub Actions runs GoReleaser, publishes the

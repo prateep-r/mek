@@ -92,8 +92,9 @@ func TestGuardedPipeline(t *testing.T) {
 	}
 }
 
-// describer is the minimal Provider banner() needs.
-type describer struct{}
+// describer is the minimal Provider banner() needs (calling anything else
+// panics on the nil embedded Provider).
+type describer struct{ provider.Provider }
 
 func (describer) CLI() string                    { return "aws" }
 func (describer) Prepare() (provider.Env, error) { return provider.Env{}, nil }

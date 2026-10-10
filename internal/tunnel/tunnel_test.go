@@ -441,22 +441,6 @@ func TestSupervise(t *testing.T) {
 	}
 }
 
-func TestObserverErrors(t *testing.T) {
-	home := setup(t)
-	var got []error
-	note := func(err error) { got = append(got, err) }
-	os.WriteFile(filepath.Join(home, "file"), nil, 0o600)
-	t.Setenv("MEK_HOME", filepath.Join(home, "file"))
-	stateStore{note}.Notify(Event{Kind: Started, Record: Record{ID: "x"}})
-	auditSink{note}.Notify(Event{Kind: Exited, Record: Record{ID: "x"}})
-	auditSink{note}.Notify(Event{Kind: Started}) // only exits are audited
-	stateStore{}.Notify(Event{Record: Record{ID: "x"}})
-	auditSink{}.Notify(Event{Kind: Exited})
-	if len(got) != 2 {
-		t.Errorf("reported: %v", got)
-	}
-}
-
 func TestLockErrors(t *testing.T) {
 	home := setup(t)
 	os.WriteFile(filepath.Join(home, "file"), nil, 0o600)

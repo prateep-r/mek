@@ -62,8 +62,13 @@ func orDash(s string) string {
 	return s
 }
 
-// Provider is implemented once per cloud.
+// Provider is implemented once per cloud: the context's environment and
+// login, and its access paths (clusters, shells, tunnels).
 type Provider interface {
+	KubeProvider
+	Sessioner
+	Tunneler
+
 	// Prepare writes any files the CLI needs and returns the environment for the context.
 	Prepare() (Env, error)
 	// LoginCommands returns the CLI invocations that log the user in.

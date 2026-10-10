@@ -84,26 +84,18 @@ func (a *app) tunnel(name string, o tunnelOpts) error {
 	if err != nil {
 		return err
 	}
-	tp, err := capability[provider.Tunneler](l, "mek tunnel")
-	if err != nil {
-		return err
-	}
 	spec, err := tunnelSpec(l, name, o)
 	if err != nil {
 		return err
 	}
-	m, err := tp.TunnelMethod(spec)
+	m, err := l.prov.TunnelMethod(spec)
 	if err != nil {
 		return err
 	}
 	var in provider.Instance
 	target := fmt.Sprintf("localhost:%d → %s", spec.Local(), m.Remote())
 	if m.Via() != "" {
-		s, err := capability[provider.Sessioner](l, "mek tunnel --via")
-		if err != nil {
-			return err
-		}
-		if in, err = s.ResolveTarget(m.Via(), o.target, a.query(l)); err != nil {
+		if in, err = l.prov.ResolveTarget(m.Via(), o.target, a.query(l)); err != nil {
 			return err
 		}
 		target += " via " + in.Label()

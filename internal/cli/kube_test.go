@@ -116,9 +116,7 @@ func TestKubeErrors(t *testing.T) {
 		{[]string{"-c", "bare", "kube", "--name", "x", "--region=-r"}, "clusters.x.region must not start with '-'"},
 		{[]string{"-c", "bare", "kube", "--name", "x", "--location", "z"}, "use region, not location"},
 		{[]string{"-c", "nope", "kube"}, "unknown context"},
-		{[]string{"-c", "prod", "kube", "--use"}, "--use needs --merge"},
 		{[]string{"-c", "bare", "kube", "--name", "down"}, "aws eks describe-cluster: exit status 254 (logged in? try: mek -c bare login)"},
-		{[]string{"-c", "prod", "kube", "--merge", "--unmerge"}, "none of the others can be"},
 	} {
 		_, err := h.run(c.args...)
 		wantErr(t, err, c.want)
@@ -185,126 +183,6 @@ func TestKubectl(t *testing.T) {
 	_, err = h.run("kubectl", "-c")
 	wantErr(t, err, "needs a value")
 	_, err = h.run("kubectl", "-c", "nope", "get")
-	wantErr(t, err, "unknown context")
-}
-
-func TestKubeMerge(t *testing.T) {
-	h := newKubeHarness(t)
-	target := filepath.Join(t.TempDir(), "user", "config")
-	t.Setenv("KUBECONFIG", target)
-
-	h.mustRun("-c", "prod", "kube", "main", "--merge", "--use")
-	var cfgCmds []string
-	for _, a := range h.exec.argv() {
-		if strings.HasPrefix(a, "kubectl config") {
-			cfgCmds = append(cfgCmds, a)
-		}
-	}
-	if len(cfgCmds) != 7 || !strings.Contains(cfgCmds[0], "set-cluster prod/main") ||
-		cfgCmds[6] != "kubectl config use-context prod/main --kubeconfig "+target {
-		t.Errorf("merge commands:\n%s", strings.Join(cfgCmds, "\n"))
-	}
-	if !strings.Contains(cfgCmds[1], "--exec-command=/bin/mek") {
-		t.Errorf("credentials: %s", cfgCmds[1])
-	}
-	if _, err := os.Stat(filepath.Dir(target)); err != nil {
-		t.Errorf("target dir not created: %v", err)
-	}
-
-	os.WriteFile(target, []byte("mine"), 0o600) // the user's file is backed up first
-	h.mustRun("-c", "prod", "kube", "--merge")
-	if readFile(t, target+".mek-backup") != "mine" {
-		t.Error("no backup")
-	}
-
-	h.exec.respond = func(argv []string) (string, int) {
-		if len(argv) > 2 && argv[2] == "set-credentials" {
-			return "", 1
-		}
-		return cloudAPI(argv)
-	}
-	_, err := h.run("-c", "prod", "kube", "--merge")
-	wantErr(t, err, "kubectl config set-credentials: exit status 1")
-	h.exec.respond = cloudAPI
-
-	_, err = h.run("-c", "bare", "kube", "--name", "badca", "--merge")
-	wantErr(t, err, "cluster badca: certificate-authority-data")
-
-	t.Setenv("KUBECONFIG", filepath.Dir(target)) // a directory can't be backed up
-	_, err = h.run("-c", "prod", "kube", "--merge")
-	if err == nil {
-		t.Error("backup error not reported")
-	}
-	t.Setenv("KUBECONFIG", filepath.Join(target, "under-a-file", "config"))
-	_, err = h.run("-c", "prod", "kube", "--merge")
-	if err == nil {
-		t.Error("mkdir error not reported")
-	}
-	t.Setenv("KUBECONFIG", target)
-	t.Setenv("TMPDIR", filepath.Join(target, "no-tmp"))
-	_, err = h.run("-c", "prod", "kube", "--merge")
-	if err == nil {
-		t.Error("temp dir error not reported")
-	}
-}
-
-func TestKubeMergeTargetError(t *testing.T) {
-	h := newKubeHarness(t)
-	old := userHome
-	userHome = func() (string, error) { return "", errors.New("no home") }
-	t.Cleanup(func() { userHome = old })
-	_, err := h.run("-c", "prod", "kube", "--merge")
-	wantErr(t, err, "no home")
-	_, err = h.run("-c", "prod", "kube", "--unmerge")
-	wantErr(t, err, "no home")
-}
-
-func TestKubeUnmerge(t *testing.T) {
-	h := newKubeHarness(t)
-	t.Setenv("KUBECONFIG", "/u/config")
-	contexts := "prod/main\nprod/data\nother/x\nprodx/y\n"
-	failUser := false
-	h.exec.respond = func(argv []string) (string, int) {
-		switch {
-		case argv[2] == "get-contexts":
-			return contexts, 0
-		case failUser && argv[2] == "delete-user":
-			return "", 1
-		}
-		return "", 0
-	}
-
-	h.mustRun("-c", "prod", "kube", "--unmerge")
-	got := h.exec.argv()
-	if len(got) != 7 || got[0] != "kubectl config get-contexts -o name --kubeconfig /u/config" ||
-		got[1] != "kubectl config delete-context prod/main --kubeconfig /u/config" || got[6] != "kubectl config delete-user prod/data --kubeconfig /u/config" {
-		t.Errorf("unmerge:\n%s", strings.Join(got, "\n"))
-	}
-	if _, err := os.Stat(audit.Path()); !os.IsNotExist(err) {
-		t.Error("unmerge talks to no cloud: nothing to audit")
-	}
-
-	h.exec.invs = nil
-	h.mustRun("-c", "prod", "kube", "data", "--unmerge")
-	if got := h.exec.argv(); len(got) != 4 || !strings.Contains(got[1], "prod/data") {
-		t.Errorf("unmerge one:\n%s", strings.Join(got, "\n"))
-	}
-
-	h.exec.invs = nil
-	h.mustRun("-c", "g", "kube", "--unmerge") // nothing merged
-	if got := h.exec.argv(); len(got) != 1 {
-		t.Errorf("nothing to unmerge: %q", got)
-	}
-
-	failUser = true
-	_, err := h.run("-c", "prod", "kube", "--unmerge")
-	wantErr(t, err, "2 kubectl config command(s) failed")
-
-	contexts = ""
-	h.exec.respond = func([]string) (string, int) { return "", 1 }
-	_, err = h.run("-c", "prod", "kube", "--unmerge")
-	wantErr(t, err, "exit status 1")
-	_, err = h.run("-c", "nope", "kube", "--unmerge")
 	wantErr(t, err, "unknown context")
 }
 

@@ -47,15 +47,11 @@ func (a *app) shell(spec string, o provider.TargetOptions) error {
 	if err != nil {
 		return err
 	}
-	s, err := capability[provider.Sessioner](l, "mek shell")
+	in, err := l.prov.ResolveTarget(spec, o, a.query(l))
 	if err != nil {
 		return err
 	}
-	in, err := s.ResolveTarget(spec, o, a.query(l))
-	if err != nil {
-		return err
-	}
-	c, err := s.ShellCommand(in)
+	c, err := l.prov.ShellCommand(in)
 	if err != nil {
 		return err
 	}

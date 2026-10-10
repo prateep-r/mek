@@ -23,9 +23,9 @@ type TunnelMethod interface {
 	Remote() string
 }
 
-// Tunneler is implemented by providers that `mek tunnel` supports. Its
-// TunnelMethod is a Factory Method: the kind of tunnel follows from which
-// fields are set, and is decided in one place.
+// Tunneler is the part of a Provider behind `mek tunnel`. Its TunnelMethod
+// is a Factory Method: the kind of tunnel follows from which fields are
+// set, and is decided in one place (config validation calls it too).
 type Tunneler interface {
 	TunnelMethod(t config.Tunnel) (TunnelMethod, error)
 }

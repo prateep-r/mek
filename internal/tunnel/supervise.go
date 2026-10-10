@@ -6,9 +6,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/prateep-r/mek/internal/audit"
 	"github.com/prateep-r/mek/internal/runner"
 )
 
@@ -37,40 +39,58 @@ func Supervise(in io.Reader, life, port, log *os.File, sigs <-chan os.Signal) in
 		fmt.Fprintf(log, "mek: reading the tunnel spec: %v\n", err)
 		return 1
 	}
-	note := func(err error) { fmt.Fprintf(log, "mek: %v\n", err) }
-	sup := supervisor{observers: []Observer{stateStore{note}, auditSink{note}, logSink{log}}, grace: grace}
-	return sup.run(s, log, sigs)
+	return supervisor{log: log, grace: grace}.run(s, sigs)
 }
 
 // grace is how long a stopped tunnel's process gets before SIGKILL.
 var grace = 5 * time.Second
 
+// supervisor runs one tunnel's process into log and records its lifecycle:
+// the record file and a log line when it starts and ends, and the audit
+// end entry (the start entry was written before the supervisor was
+// spawned). Failures to record go to the log too.
 type supervisor struct {
-	observers []Observer
-	grace     time.Duration
+	log   io.Writer
+	grace time.Duration
 }
 
-func (s supervisor) notify(e Event) {
-	for _, o := range s.observers {
-		o.Notify(e)
+func (s supervisor) note(err error) {
+	if err != nil {
+		fmt.Fprintf(s.log, "mek: %v\n", err)
 	}
 }
 
-func (s supervisor) run(spec Spec, out io.Writer, sigs <-chan os.Signal) int {
+func (s supervisor) started(r Record) {
+	s.note(save(r))
+	fmt.Fprintf(s.log, "%s mek: started %s (pid %d)\n", time.Now().Format(time.RFC3339), strings.Join(audit.Mask(r.Command), " "), r.Child)
+}
+
+func (s supervisor) exited(r Record) {
+	s.note(save(r))
+	took := r.Ended.Sub(r.Started)
+	fmt.Fprintf(s.log, "%s mek: exited with code %d after %s\n", time.Now().Format(time.RFC3339), r.ExitCode, took.Round(time.Second))
+	s.note(audit.Write(audit.Entry{
+		Time: r.Started, Context: r.Context, Provider: r.Provider, Command: r.Command,
+		Class: r.Class, Decision: r.Decision, ExitCode: r.ExitCode,
+		DurationMS: took.Milliseconds(), Event: "end", Session: r.ID, Target: r.Target,
+	}))
+}
+
+func (s supervisor) run(spec Spec, sigs <-chan os.Signal) int {
 	r := spec.Record
 	r.Owner = os.Getpid()
 	cmd := exec.Command(spec.Path, r.Command[1:]...)
 	cmd.Args[0] = r.Command[0]
-	cmd.Env, cmd.Stdout, cmd.Stderr = spec.Env, out, out
+	cmd.Env, cmd.Stdout, cmd.Stderr = spec.Env, s.log, s.log
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // so a stop reaches its children too
 	if err := cmd.Start(); err != nil {
-		fmt.Fprintf(out, "mek: %v\n", err)
+		s.note(err)
 		r.Phase, r.ExitCode, r.Ended = phaseExited, 127, time.Now()
-		s.notify(Event{Kind: Exited, Record: r, ExitCode: 127})
+		s.exited(r)
 		return 127
 	}
 	r.Phase, r.Child = phaseRunning, cmd.Process.Pid
-	s.notify(Event{Kind: Started, Record: r})
+	s.started(r)
 
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
@@ -86,8 +106,7 @@ func (s supervisor) run(spec Spec, out io.Writer, sigs <-chan os.Signal) int {
 			err = <-done
 		}
 	}
-	code := runner.ExitCode(err)
-	r.Phase, r.ExitCode, r.Ended = phaseExited, code, time.Now()
-	s.notify(Event{Kind: Exited, Record: r, ExitCode: code})
-	return code
+	r.Phase, r.ExitCode, r.Ended = phaseExited, runner.ExitCode(err), time.Now()
+	s.exited(r)
+	return r.ExitCode
 }

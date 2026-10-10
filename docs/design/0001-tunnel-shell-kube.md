@@ -21,8 +21,7 @@ and audited.
   `mek tunnel` (local port → private host), `mek shell` (interactive session on a host),
   `mek kube` (kubeconfig for a cluster, usable by kubectl / K9s / FreeLens).
 - Credentials always come from the context (generated AWS profile, isolated gcloud dirs).
-- Nothing written to the user's `~/.kube/config`, `~/.ssh` or `~/.aws` unless they opt in
-  (`mek kube --merge`).
+- Nothing written to the user's `~/.kube/config`, `~/.ssh` or `~/.aws`.
 - Protected/readonly contexts behave predictably; every session is in the audit log.
 
 ## Non-goals
@@ -40,7 +39,6 @@ and audited.
 mek -c prod kube                  # writes <MEK_HOME>/kube/prod.yaml
 mek -c prod kubectl get pods      # kubectl through the guard and audit log
 eval "$(mek use --shell prod)"    # sets KUBECONFIG too: kubectl / k9s typed directly
-mek -c prod kube --merge [--use]  # opt-in: add prod/* entries to ~/.kube/config
 mek -c prod shell bastion         # v0.7.0: named target, instance id or tag:Key=Value
 mek -c prod tunnel db             # v0.7.0: named tunnel from config → localhost:15432
 mek -c prod tunnel db -b          # v0.8.0: in the background; mek tunnel ls / stop / logs
@@ -99,11 +97,10 @@ resolved with a read-only describe call and must match exactly one running insta
    `--name`), so `mek exec`, `mek env`, `mek use --shell` and `mek kubectl` all see it.
    Switching to a context without clusters unsets `KUBECONFIG` only when it points into
    `<MEK_HOME>/kube/` — never a value the user set.
-3. **`~/.kube/config` is opt-in.** `mek kube --merge` adds the entries with the official
-   `kubectl config set-cluster/set-credentials/set-context` commands (kubectl merges; mek
-   never parses or writes that file), into the first `$KUBECONFIG` file that isn't mek's or
-   `~/.kube/config`, after a one-time `.mek-backup`. It changes current-context only with
-   `--use`. `--unmerge` deletes the `<ctx>/*` entries.
+3. **`~/.kube/config` is never touched.** kubectl already merges every file listed in
+   `KUBECONFIG`, so `KUBECONFIG=~/.kube/config:<MEK_HOME>/kube/prod.yaml` shows both. (v0.6.0
+   –v0.10.0 also had `mek kube --merge/--unmerge`, writing entries into `~/.kube/config` with
+   `kubectl config set-*`; it was removed as it added little over that.)
 4. **Guard classes** `shell` and `tunnel`:
 
    | | plain | protected | readonly |
@@ -132,19 +129,21 @@ resolved with a read-only describe call and must match exactly one running insta
 
 | Pattern | Where |
 |---|---|
-| Abstract Factory (extended) | `provider.Cloud` gains optional capability interfaces (`KubeProvider`, `Sessioner`, `Tunneler`) and `Plugins`; `provider.Register` adds a cloud; the CLI asks for a capability with `capability[T]` |
+| Abstract Factory (extended) | `provider.Provider` now includes `KubeProvider`, `Sessioner` and `Tunneler`; `provider.Cloud` gains `Plugins` |
 | Template Method | `kube.Describe`/`Render`/`Write`: fixed kubeconfig skeleton, cloud steps from `KubeProvider` |
 | Strategy | `guard.ClassifyKubectl`; `provider.TunnelMethod`: `ssmPort`, `ssmRemoteHost`, `iapPort`, `iapSSH` (a shell), `cloudSQL` |
 | Factory Method | `Tunneler.TunnelMethod(config.Tunnel)`: the kind follows from the fields set; config validation calls it too, so each cloud's rules live in one place |
-| Chain of Responsibility | `provider/resolve.go`: configured name → instance id → tag lookup (AWS) / VM-name lookup (GCP) |
 | Builder | `provider/argv.go`: `command(...).opt(...).env(...).needs(...)` assembles session commands |
 | Decorator (new) | `audit.SessionStart` after the guard: `audit → guard → sessionStart → exec` |
-| Command + Builder | `kube.MergeCommands`/`UnmergeCommands` build `kubectl config` argv lists |
 | Command / Decorator (extended) | `runner.Invocation.Stdout` lets lookups run through `audit → guard → exec` |
 | State | `internal/tunnel/state.go`: `starting`, `running`, `exited`, `dead` — each knows its listing and what stopping means (signal the owner, or only clean up) |
-| Observer | the supervisor notifies `stateStore` (record file), `auditSink` (end entry) and `logSink` (log lines) of `Started`/`Exited` |
 | Facade | `internal/tunnel`: `Start`, `Foreground`, `List`, `Find`, `Stop`, `Logs`, `Supervise` over records, flocks, port claims, spawning and signals |
 | Strategy (pipeline terminal) | `a.pipelineTo(terminal)`: `exec` wrapped by `foreground` registration, or `background` (spawn a supervisor) — guard and audit are the same either way |
+
+Tried and taken out again (v0.11.0) because plain code was clearer: a Chain of
+Responsibility for target lookups (two or three steps per cloud), an Observer for the
+supervisor's lifecycle (three fixed listeners) and optional capability interfaces with a
+cloud registry hook (every cloud mek has implements them all).
 
 ## Spikes (M0)
 
@@ -164,12 +163,11 @@ resolved with a read-only describe call and must match exactly one running insta
 ## Testing
 
 - Unit (100%): validation tables, `ClassifyKubectl`, `Decide` matrix, describe parsing,
-  golden kubeconfig, merge/unmerge argv, `MekPath`, CLI commands with a fake runner.
+  golden kubeconfig, `MekPath`, CLI commands with a fake runner.
 - Integration (real binary, stub CLIs): describe/token argv and env, `kube token` unaudited,
   `mek kubectl` guard and `--from-literal` masking, `eval "$(mek use --shell …)"` in a real sh.
 - Contract (real CLIs, offline): `mek kube` + kubectl against a fake TLS EKS API with real
-  `aws eks get-token`, and a fake GKE API with real gcloud and gke-gcloud-auth-plugin; merge and
-  unmerge with real kubectl keeping the user's entries.
+  `aws eks get-token`, and a fake GKE API with real gcloud and gke-gcloud-auth-plugin.
 - E2E: the installed binary writes a kubeconfig that runs itself.
 - Sessions: SSM/IAP data channels can't be emulated, so shells and tunnels are tested up to
   the hand-off. Integration: argv and env per cloud and per tunnel kind, guard per class,

@@ -1,14 +1,14 @@
 //go:build emulator
 
-// Emulator tests run mek with the real cloud CLIs against Floci, a free local
-// emulator of each cloud's APIs (floci.io): real API calls, no cloud account.
-// They prove what stub CLIs can't — a command the guard blocks never reaches
-// the API, a confirmed one really changes cloud state — on AWS and GCP.
-// Run with `make test-emulator`.
+// The emulator test runs mek's whole AWS IAM Identity Center login with the
+// real aws CLI against Floci, a free local emulator of AWS's APIs
+// (floci.io): device-code login, approval, role credentials through the
+// profile mek generates — what stub CLIs can't show. Run with
+// `make test-emulator`.
 //
-// Each test starts its own Floci container on a random 127.0.0.1 port and
-// removes it afterwards; it never touches an emulator already running on the
-// machine. Set MEK_FLOCI_{AWS,GCP}_URL to use a running one instead.
+// It starts its own Floci container on a random 127.0.0.1 port and removes
+// it afterwards; it never touches an emulator already running on the
+// machine. Set MEK_FLOCI_AWS_URL to use a running one instead.
 // Without docker or a CLI the test is skipped, unless MEK_EMULATOR_REQUIRE=1
 // (CI) makes that a failure.
 package emulator
@@ -29,7 +29,6 @@ import (
 // Pinned so emulator upgrades never change results on their own.
 const (
 	flociAWS = "floci/floci:2.1.0"
-	flociGCP = "floci/floci-gcp:0.9.0"
 )
 
 var mek string
@@ -144,71 +143,5 @@ func (u *user) blocked(args ...string) {
 	u.t.Helper()
 	if r := u.run(args...); r.Code == 0 || !strings.Contains(r.Stderr, "readonly — blocked") {
 		u.t.Fatalf("mek %s should be blocked: exit %d\n%s", strings.Join(args, " "), r.Code, r.Stderr)
-	}
-}
-
-func (u *user) audit() string {
-	b, _ := os.ReadFile(filepath.Join(u.mekHome, "audit.jsonl"))
-	return string(b)
-}
-
-// AWS with a profile of static test keys; TestAWSSSOLogin covers SSO contexts.
-func TestAWS(t *testing.T) {
-	aws := realCLI(t, "aws")
-	url := emulator(t, flociAWS, 4566, "MEK_FLOCI_AWS_URL", flociAWSEnv...)
-	u := newUser(t, `contexts:
-  dev:  {provider: aws, aws_profile: floci, region: ap-southeast-1}
-  ro:   {provider: aws, aws_profile: floci, readonly: true}
-  prod: {provider: aws, aws_profile: floci, protected: true}
-`, aws, "AWS_ACCESS_KEY_ID=leaked-should-be-removed")
-	os.MkdirAll(filepath.Join(u.home, ".aws"), 0o700)
-	os.WriteFile(filepath.Join(u.home, ".aws", "config"), []byte("[profile floci]\nregion = ap-southeast-1\nendpoint_url = "+url+"\n"), 0o600)
-	os.WriteFile(filepath.Join(u.home, ".aws", "credentials"), []byte("[floci]\naws_access_key_id = test\naws_secret_access_key = test\n"), 0o600)
-
-	// The call reaches the emulator with the profile's keys, not the leaked env key.
-	if out := u.ok("-c", "dev", "aws", "sts", "get-caller-identity", "--query", "Account", "--output", "text"); !strings.Contains(out, "000000000000") {
-		t.Errorf("sts get-caller-identity: %s", out)
-	}
-	u.ok("-c", "dev", "aws", "s3", "mb", "s3://mek-e2e")
-	u.blocked("-c", "ro", "aws", "s3", "rb", "s3://mek-e2e")
-	if out := u.ok("-c", "ro", "aws", "s3", "ls"); !strings.Contains(out, "mek-e2e") { // reads are fine
-		t.Fatalf("the blocked rb reached the API: bucket is gone\n%s", out)
-	}
-	if r := u.run("-c", "prod", "aws", "s3", "rb", "s3://mek-e2e"); r.Code == 0 {
-		t.Fatal("protected: destructive without --confirm must not run")
-	}
-	u.ok("-c", "prod", "--confirm", "prod", "aws", "s3", "rb", "s3://mek-e2e")
-	if out := u.ok("-c", "dev", "aws", "s3", "ls"); strings.Contains(out, "mek-e2e") {
-		t.Errorf("confirmed rb did not delete the bucket:\n%s", out)
-	}
-	// An error from the real API reaches the user with the CLI's exit code.
-	if r := u.run("-c", "dev", "aws", "s3", "rb", "s3://mek-no-such-bucket"); r.Code == 0 || !strings.Contains(r.Stderr, "NoSuchBucket") {
-		t.Errorf("API error: exit %d stderr %q", r.Code, r.Stderr)
-	}
-}
-
-func TestGCP(t *testing.T) {
-	gcloud := realCLI(t, "gcloud")
-	url := emulator(t, flociGCP, 4588, "MEK_FLOCI_GCP_URL")
-	extra := []string{"CLOUDSDK_API_ENDPOINT_OVERRIDES_STORAGE=" + url + "/", "CLOUDSDK_AUTH_ACCESS_TOKEN=floci"}
-	if py := os.Getenv("CLOUDSDK_PYTHON"); py != "" {
-		extra = append(extra, "CLOUDSDK_PYTHON="+py)
-	} else if py, err := exec.LookPath("python3"); err == nil && strings.Contains(py, "/.asdf/shims/") {
-		extra = append(extra, "CLOUDSDK_PYTHON="+realCLI(t, "python3")) // gcloud needs a modern Python
-	}
-	u := newUser(t, `contexts:
-  dev: {provider: gcp, project: mek-e2e}
-  ro:  {provider: gcp, project: mek-e2e, readonly: true}
-`, gcloud, extra...)
-
-	u.ok("-c", "dev", "gcloud", "storage", "buckets", "create", "gs://mek-e2e")
-	u.blocked("-c", "ro", "gcloud", "storage", "rm", "--recursive", "gs://mek-e2e")
-	u.blocked("-c", "ro", "gcloud", "storage", "buckets", "delete", "gs://mek-e2e")
-	if out := u.ok("-c", "ro", "gcloud", "storage", "ls"); !strings.Contains(out, "gs://mek-e2e/") {
-		t.Fatalf("the blocked delete reached the API: bucket is gone\n%s", out)
-	}
-	u.ok("-c", "dev", "gcloud", "storage", "buckets", "delete", "gs://mek-e2e")
-	if r := u.run("-c", "dev", "gcloud", "storage", "ls"); strings.Contains(r.Stdout, "gs://mek-e2e/") {
-		t.Errorf("bucket still listed after delete:\n%s", r.Stdout)
 	}
 }

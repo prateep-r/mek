@@ -164,26 +164,14 @@ func rotate() error {
 
 var secretFlag = regexp.MustCompile(`(?i)(password|passwd|secret|token|private-key|key-material|credential|plaintext|auth-key|api-key|account-key|connection-string|from-literal|cli-input-json|cli-input-yaml)`)
 
-// Short flags that carry a secret in one CLI only (in others they mean
-// something else): `az login -p <password>`, `hcloud obs config -k <sk> -t <token>`.
-var shortSecretFlags = map[string]map[string]bool{
-	"az":     {"-p": true},
-	"hcloud": {"-k": true, "-t": true},
-}
-
 // Mask hides values of secret-looking flags in both `--flag value` and
 // `--flag=value` forms. args[0] is the program name.
 func Mask(args []string) []string {
 	out := make([]string, len(args))
 	copy(out, args)
-	var short map[string]bool
-	if len(args) > 0 {
-		short = shortSecretFlags[filepath.Base(args[0])]
-	}
 	for i := 0; i < len(out); i++ {
 		a := out[i]
-		name, _, _ := strings.Cut(a, "=")
-		if !strings.HasPrefix(a, "-") || !(secretFlag.MatchString(a) || short[name]) {
+		if !strings.HasPrefix(a, "-") || !secretFlag.MatchString(a) {
 			continue
 		}
 		if k, _, ok := strings.Cut(a, "="); ok {

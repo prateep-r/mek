@@ -39,7 +39,7 @@ jobs:
       - run: make test-e2e
 
   # mek with the real aws / gcloud / kubectl CLIs: offline contract
-  # checks, then real API calls against Floci emulators (AWS, GCP).
+  # checks, then the full AWS SSO login against the Floci emulator.
   real-clis:
     runs-on: ubuntu-latest
     steps:

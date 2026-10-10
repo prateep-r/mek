@@ -5,7 +5,6 @@ package kube
 
 import (
 	"bytes"
-	"encoding/base64"
 	"fmt"
 	"maps"
 	"os"
@@ -189,87 +188,4 @@ type contextInfo struct {
 	Cluster   string `yaml:"cluster"`
 	User      string `yaml:"user"`
 	Namespace string `yaml:"namespace,omitempty"`
-}
-
-// MergeTarget is the kubeconfig `mek kube --merge` edits: the first file of
-// $KUBECONFIG that isn't mek's own, else ~/.kube/config.
-func MergeTarget(kubeconfigEnv, home string) string {
-	for _, p := range filepath.SplitList(kubeconfigEnv) {
-		if p != "" && !owned(p) {
-			return p
-		}
-	}
-	return filepath.Join(home, ".kube", "config")
-}
-
-// MergeCommands builds the official `kubectl config` commands (Command +
-// Builder) that add entries to target — kubectl merges and keeps everything
-// else. caFile writes each CA to a file, since kubectl embeds certificates
-// from files.
-func MergeCommands(ctx, target string, entries []Entry, mek, pathEnv string, use bool, caFile func(Entry) (string, error)) ([][]string, error) {
-	var cmds [][]string
-	cfg := func(args ...string) {
-		cmds = append(cmds, append(append([]string{"kubectl", "config"}, args...), "--kubeconfig", target))
-	}
-	for _, e := range entries {
-		name := e.Name(ctx)
-		ca, err := caFile(e)
-		if err != nil {
-			return nil, err
-		}
-		cfg("set-cluster", name, "--server="+e.Info.Server, "--certificate-authority="+ca, "--embed-certs=true")
-		user := []string{"set-credentials", name, "--exec-api-version=client.authentication.k8s.io/v1beta1",
-			"--exec-command=" + mek, "--exec-env=PATH=" + pathEnv, "--exec-interactive-mode=Never"}
-		for _, a := range e.tokenArgs(ctx) {
-			user = append(user, "--exec-arg="+a)
-		}
-		cfg(user...)
-		setCtx := []string{"set-context", name, "--cluster=" + name, "--user=" + name}
-		if e.Cluster.Namespace != "" {
-			setCtx = append(setCtx, "--namespace="+e.Cluster.Namespace)
-		}
-		cfg(setCtx...)
-	}
-	if use {
-		cfg("use-context", entries[0].Name(ctx))
-	}
-	return cmds, nil
-}
-
-// UnmergeCommands removes what MergeCommands added (the reverse commands).
-func UnmergeCommands(ctx, target string, aliases []string) [][]string {
-	var cmds [][]string
-	for _, alias := range aliases {
-		name := ctx + "/" + alias
-		for _, del := range []string{"delete-context", "delete-cluster", "delete-user"} {
-			cmds = append(cmds, []string{"kubectl", "config", del, name, "--kubeconfig", target})
-		}
-	}
-	return cmds
-}
-
-// WriteCA decodes an entry's CA into dir for `kubectl config set-cluster`.
-func WriteCA(dir string, e Entry) (string, error) {
-	pem, err := base64.StdEncoding.DecodeString(e.Info.CAData)
-	if err != nil {
-		return "", fmt.Errorf("cluster %s: certificate-authority-data: %w", e.Alias, err)
-	}
-	p := filepath.Join(dir, e.Alias+".crt")
-	return p, os.WriteFile(p, pem, 0o600)
-}
-
-// Backup copies target to target.mek-backup once, before mek first edits it.
-func Backup(target string) error {
-	b, err := os.ReadFile(target)
-	if os.IsNotExist(err) {
-		return nil // nothing to keep
-	}
-	if err != nil {
-		return err
-	}
-	backup := target + ".mek-backup"
-	if _, err := os.Stat(backup); err == nil {
-		return nil
-	}
-	return os.WriteFile(backup, b, 0o600)
 }

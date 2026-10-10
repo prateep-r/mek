@@ -110,7 +110,7 @@ func TestWriteAndEnv(t *testing.T) {
 	}
 }
 
-func TestOwnedAndMergeTarget(t *testing.T) {
+func TestOwned(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("MEK_HOME", home)
 	mine := filepath.Join(home, "kube", "prod.yaml")
@@ -125,94 +125,6 @@ func TestOwnedAndMergeTarget(t *testing.T) {
 		if Owned(v) != want {
 			t.Errorf("Owned(%q) = %v", v, !want)
 		}
-	}
-	for env, want := range map[string]string{
-		"":                           "/u/.kube/config",
-		mine:                         "/u/.kube/config",
-		mine + "::/w/k.yaml:/x.yaml": "/w/k.yaml",
-	} {
-		if got := MergeTarget(env, "/u"); got != want {
-			t.Errorf("MergeTarget(%q) = %s, want %s", env, got, want)
-		}
-	}
-}
-
-func TestMergeCommands(t *testing.T) {
-	es := entries(t)
-	ca := func(e Entry) (string, error) { return "/tmp/" + e.Alias + ".crt", nil }
-	cmds, err := MergeCommands("prod", "/u/.kube/config", es, "/bin/mek", "/bin", true, ca)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got []string
-	for _, c := range cmds {
-		got = append(got, strings.Join(c, " "))
-	}
-	want := []string{
-		"kubectl config set-cluster prod/data --server=https://B.eks.amazonaws.com --certificate-authority=/tmp/data.crt --embed-certs=true --kubeconfig /u/.kube/config",
-		"kubectl config set-credentials prod/data --exec-api-version=client.authentication.k8s.io/v1beta1 --exec-command=/bin/mek --exec-env=PATH=/bin --exec-interactive-mode=Never" +
-			" --exec-arg=--context --exec-arg=prod --exec-arg=kube --exec-arg=token --exec-arg=--name --exec-arg=data-eks --exec-arg=--location --exec-arg=us-east-1 --kubeconfig /u/.kube/config",
-		"kubectl config set-context prod/data --cluster=prod/data --user=prod/data --kubeconfig /u/.kube/config",
-		"kubectl config set-cluster prod/main --server=https://A.eks.amazonaws.com --certificate-authority=/tmp/main.crt --embed-certs=true --kubeconfig /u/.kube/config",
-		"kubectl config set-credentials prod/main --exec-api-version=client.authentication.k8s.io/v1beta1 --exec-command=/bin/mek --exec-env=PATH=/bin --exec-interactive-mode=Never" +
-			" --exec-arg=--context --exec-arg=prod --exec-arg=kube --exec-arg=token --exec-arg=--name --exec-arg=prod-eks --exec-arg=--location --exec-arg=ap-southeast-1 --kubeconfig /u/.kube/config",
-		"kubectl config set-context prod/main --cluster=prod/main --user=prod/main --namespace=app --kubeconfig /u/.kube/config",
-		"kubectl config use-context prod/data --kubeconfig /u/.kube/config",
-	}
-	if strings.Join(got, "\n") != strings.Join(want, "\n") {
-		t.Errorf("commands:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
-	}
-	if cmds, _ := MergeCommands("prod", "k", es, "mek", "", false, ca); len(cmds) != 6 {
-		t.Errorf("without use: %d commands", len(cmds))
-	}
-	boom := errors.New("boom")
-	if _, err := MergeCommands("prod", "k", es, "mek", "", false, func(Entry) (string, error) { return "", boom }); !errors.Is(err, boom) {
-		t.Errorf("CA error: %v", err)
-	}
-}
-
-func TestUnmergeCommands(t *testing.T) {
-	var got []string
-	for _, c := range UnmergeCommands("prod", "k", []string{"main"}) {
-		got = append(got, strings.Join(c, " "))
-	}
-	want := "kubectl config delete-context prod/main --kubeconfig k\n" +
-		"kubectl config delete-cluster prod/main --kubeconfig k\n" +
-		"kubectl config delete-user prod/main --kubeconfig k"
-	if strings.Join(got, "\n") != want {
-		t.Errorf("unmerge:\n%s", strings.Join(got, "\n"))
-	}
-}
-
-func TestWriteCA(t *testing.T) {
-	dir := t.TempDir()
-	p, err := WriteCA(dir, Entry{Alias: "main", Info: provider.KubeCluster{CAData: "Q0E="}})
-	if b, _ := os.ReadFile(p); err != nil || string(b) != "CA" {
-		t.Errorf("CA file: %q %v", b, err)
-	}
-	if _, err := WriteCA(dir, Entry{Alias: "x", Info: provider.KubeCluster{CAData: "%%%"}}); err == nil || !strings.Contains(err.Error(), "cluster x") {
-		t.Errorf("bad base64: %v", err)
-	}
-}
-
-func TestBackup(t *testing.T) {
-	dir := t.TempDir()
-	target := filepath.Join(dir, "config")
-	if err := Backup(target); err != nil { // nothing to back up yet
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(target + ".mek-backup"); !os.IsNotExist(err) {
-		t.Error("backup of a missing file")
-	}
-	os.WriteFile(target, []byte("v1"), 0o600)
-	Backup(target)
-	os.WriteFile(target, []byte("v2"), 0o600)
-	Backup(target) // keeps the first backup: the file before mek ever touched it
-	if b, _ := os.ReadFile(target + ".mek-backup"); string(b) != "v1" {
-		t.Errorf("backup = %q", b)
-	}
-	if err := Backup(dir); err == nil { // a directory can't be read as a file
-		t.Error("read error not reported")
 	}
 }
 
