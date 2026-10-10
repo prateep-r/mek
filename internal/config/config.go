@@ -91,7 +91,9 @@ func Load() (*Config, error) {
 // Parse decodes and validates config bytes.
 func Parse(b []byte) (*Config, error) {
 	var c Config
-	if err := yaml.Unmarshal(b, &c); err != nil {
+	// Unknown keys are errors: a typo such as `protcted: true` must not leave a
+	// context silently unprotected.
+	if err := yaml.UnmarshalWithOptions(b, &c, yaml.DisallowUnknownField()); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", Path(), err)
 	}
 	if c.Contexts == nil {

@@ -250,8 +250,9 @@ AWS SSO tokens stay in the AWS CLI's own cache (`~/.aws/sso/cache`); mek stores 
 ### Specification
 
 `config.yaml` is YAML. Every key mek reads is in this one table; paths under a context are
-relative to `contexts.<name>`. "—" means the key doesn't apply to that cloud: under
-`clusters`, `targets` and `tunnels` setting it is an error; other keys are ignored. Rules
+relative to `contexts.<name>`; a key that isn't in it is an error. "—" means the key doesn't
+apply to that cloud: under `clusters`, `targets` and `tunnels` setting it is an error; other
+keys are ignored. Rules
 marked *arg* mean no leading `-` and no control characters, because the value becomes a CLI
 argument.
 
@@ -298,9 +299,8 @@ Block style and flow style (`dev: {provider: aws, …}`) are both fine. Everythi
 when mek loads the file, before any command runs; the first problem is reported with its
 context and key, e.g. `context "prod": tunnels.db: port 0 is not a port (1-65535)`.
 
-> **Keys mek doesn't know are ignored, not rejected** — a typo such as `protcted: true`
-> leaves the context unprotected. Check `mek ctx ls`: protected and readonly contexts show
-> `[protected]` / `[readonly]`.
+Keys mek doesn't know are errors, so a typo can't slip by — `protcted: true` stops mek with
+`unknown field "protcted"` and the line it is on, instead of leaving `prod` unprotected.
 
 What commands get: AWS SSO contexts become profiles `mek-<name>` in mek's own
 `~/.config/mek/aws/config` (rewritten on every run — never edit it), passed as `AWS_PROFILE`
@@ -752,6 +752,7 @@ belongs in IAM roles, SCPs and org policies.
 | `no config found — run mek init first` | `mek init`, then edit `~/.config/mek/config.yaml` |
 | `no context selected — run mek use <context> or pass --context` | `mek use <context>`, or pass `-c <context>` |
 | `unknown context "x"` | check the name with `mek ctx ls` |
+| `unknown field "…"` (with the line) | a misspelt key in `config.yaml` — compare with the [specification](#specification) |
 | `unknown provider "azure"` | mek supports AWS and GCP; Azure and Huawei Cloud are paused (use v0.9.0 for them) |
 | an SSO / token expired error from aws, or `… (logged in? try: mek -c dev login)` | `mek login <context>` |
 | `confirmation required but no terminal is available` | add `--yes` (writes) or `--confirm <context>` (destructive) |

@@ -160,3 +160,18 @@ func TestInit(t *testing.T) {
 		t.Error("Init in a read-only parent must fail")
 	}
 }
+
+// A misspelt key is an error, never silently ignored: `protcted: true` would
+// otherwise leave the context unprotected.
+func TestUnknownKeysAreRejected(t *testing.T) {
+	for in, want := range map[string]string{
+		"contexts:\n  prod: {provider: aws, aws_profile: admin, protcted: true}\n":                       `unknown field "protcted"`,
+		"contexts:\n  a: {provider: gcp, project: p, tunnels: {db: {via: vm, port: 1, locl_port: 5}}}\n": `unknown field "locl_port"`,
+		"context:\n  a: {provider: gcp, project: p}\n":                                                   `unknown field "context"`,
+	} {
+		_, err := Parse([]byte(in))
+		if err == nil || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), "config.yaml") {
+			t.Errorf("Parse(%q) err=%v, want containing %q", in, err, want)
+		}
+	}
+}
