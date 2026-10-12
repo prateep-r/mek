@@ -433,9 +433,15 @@ mek use -s gcp
 Write-Output "use=$env:MEK_CONTEXT"`
 	ps1 := filepath.Join(t.TempDir(), "test.ps1")
 	os.WriteFile(ps1, []byte(script), 0o600)
-	vars := append(e.vars[:2:2], e.vars[3:]...)
-	r := testkit.Run(t, pwsh, append(vars, e.pathWith(filepath.Dir(mek)), "MEK="+mek), "-NoProfile", "-NonInteractive", "-File", ps1)
-	if r.Code != 0 || !strings.Contains(r.Stdout, "env=mek-uat/uat") || !strings.Contains(r.Stdout, "use=gcp") {
-		t.Errorf("pwsh: %+v", r)
+	// Not testkit.Run: PowerShell needs the console a detached process lacks.
+	cmd := exec.Command(pwsh, "-NoProfile", "-NonInteractive", "-File", ps1)
+	cmd.Env = append(os.Environ(), append(e.vars[:2:2], e.vars[3:]...)...)
+	cmd.Env = append(cmd.Env, e.pathWith(filepath.Dir(mek)), "MEK="+mek, "NO_COLOR=1")
+	if d := testkit.CoverDir(); d != "" {
+		cmd.Env = append(cmd.Env, "GOCOVERDIR="+d)
+	}
+	out, err := cmd.Output()
+	if err != nil || !strings.Contains(string(out), "env=mek-uat/uat") || !strings.Contains(string(out), "use=gcp") {
+		t.Errorf("pwsh: %v\n%s", err, out)
 	}
 }
