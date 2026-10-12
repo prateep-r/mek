@@ -3,10 +3,10 @@
 package integration
 
 import (
-	"runtime"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -36,7 +36,11 @@ func TestKubeWritesKubeconfig(t *testing.T) {
 		t.Fatalf("mek kube: %+v", r)
 	}
 	kc, _ := os.ReadFile(path)
-	for _, want := range []string{"server: https://ABC.eks.amazonaws.com", "command: " + mek, "current-context: prod/main", "interactiveMode: Never"} {
+	command := "command: " + mek
+	if strings.Contains(mek, `\`) { // YAML quotes a Windows path
+		command = `command: "` + strings.ReplaceAll(mek, `\`, `\\`) + `"`
+	}
+	for _, want := range []string{"server: https://ABC.eks.amazonaws.com", command, "current-context: prod/main", "interactiveMode: Never"} {
 		if !strings.Contains(string(kc), want) {
 			t.Errorf("kubeconfig missing %q:\n%s", want, kc)
 		}

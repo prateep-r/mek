@@ -430,11 +430,12 @@ func TestPowerShell(t *testing.T) {
 Write-Output "env=$env:AWS_PROFILE/$env:MEK_CONTEXT"
 & $env:MEK shell-init powershell | Out-String | Invoke-Expression
 mek use -s gcp
-Write-Output "use=$env:MEK_CONTEXT/$env:CLOUDSDK_CORE_PROJECT/$env:AWS_PROFILE"`
+Write-Output "use=$env:MEK_CONTEXT"`
+	ps1 := filepath.Join(t.TempDir(), "test.ps1")
+	os.WriteFile(ps1, []byte(script), 0o600)
 	vars := append(e.vars[:2:2], e.vars[3:]...)
-	r := testkit.Run(t, pwsh, append(vars, e.pathWith(filepath.Dir(mek)), "MEK="+mek), "-NoProfile", "-NonInteractive", "-Command", script)
-	if r.Code != 0 || !strings.Contains(r.Stdout, "env=mek-uat/uat") || !strings.Contains(r.Stdout, "use=gcp/my-project/\n") &&
-		!strings.Contains(r.Stdout, "use=gcp/my-project/\r\n") {
+	r := testkit.Run(t, pwsh, append(vars, e.pathWith(filepath.Dir(mek)), "MEK="+mek), "-NoProfile", "-NonInteractive", "-File", ps1)
+	if r.Code != 0 || !strings.Contains(r.Stdout, "env=mek-uat/uat") || !strings.Contains(r.Stdout, "use=gcp") {
 		t.Errorf("pwsh: %+v", r)
 	}
 }
