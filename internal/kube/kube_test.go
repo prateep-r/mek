@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -98,7 +99,7 @@ func TestWriteAndEnv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fi, err := os.Stat(p); err != nil || fi.Mode().Perm() != 0o600 {
+	if fi, err := os.Stat(p); err != nil || runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("written: %v %v", fi, err)
 	}
 	ctx.Clusters = nil // ad-hoc clusters only: the file still counts
@@ -114,13 +115,14 @@ func TestOwned(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("MEK_HOME", home)
 	mine := filepath.Join(home, "kube", "prod.yaml")
+	sep := string(filepath.ListSeparator)
 	for v, want := range map[string]bool{
-		"":                          false,
-		mine:                        true,
-		mine + ":" + mine:           true,
-		mine + ":/u/.kube/config":   false,
-		filepath.Join(home, "kube"): false,
-		"/u/.kube/config":           false,
+		"":                             false,
+		mine:                           true,
+		mine + sep + mine:              true,
+		mine + sep + "/u/.kube/config": false,
+		filepath.Join(home, "kube"):    false,
+		"/u/.kube/config":              false,
 	} {
 		if Owned(v) != want {
 			t.Errorf("Owned(%q) = %v", v, !want)

@@ -8,7 +8,11 @@ import (
 	"path/filepath"
 )
 
-var createTemp = os.CreateTemp // test seam
+// Test seams; rename retries on Windows (rename_windows.go).
+var (
+	createTemp = os.CreateTemp
+	rename     = os.Rename
+)
 
 // WriteFileAtomic replaces path with data so readers never see a partial
 // file, even when several mek processes write it at once: each writer uses
@@ -32,5 +36,5 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	if err := errors.Join(werr, tmp.Chmod(perm), tmp.Close()); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), path)
+	return rename(tmp.Name(), path)
 }

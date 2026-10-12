@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -157,6 +158,9 @@ func TestUseAndCtx(t *testing.T) {
 	_, err := h.run("use", "nope")
 	wantErr(t, err, "unknown context")
 
+	if runtime.GOOS == "windows" {
+		return // no read-only directories
+	}
 	os.Chmod(h.home, 0o500) // config readable, state can't be saved
 	t.Cleanup(func() { os.Chmod(h.home, 0o700) })
 	_, err = h.run("use", "uat")

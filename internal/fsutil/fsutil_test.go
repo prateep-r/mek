@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -18,7 +19,7 @@ func TestWriteFileAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fi.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 { // Windows has no mode bits
 		t.Errorf("perm = %v, want 0600", fi.Mode().Perm())
 	}
 
@@ -77,11 +78,13 @@ func TestWriteFileAtomicErrors(t *testing.T) {
 		t.Error("MkdirAll under a file must fail")
 	}
 
-	locked := filepath.Join(dir, "locked")
-	os.Mkdir(locked, 0o500) // can't create the temp file here
-	t.Cleanup(func() { os.Chmod(locked, 0o700) })
-	if err := WriteFileAtomic(filepath.Join(locked, "config"), []byte("a"), 0o600); err == nil {
-		t.Error("CreateTemp in a read-only dir must fail")
+	if runtime.GOOS != "windows" { // Windows has no read-only directories
+		locked := filepath.Join(dir, "locked")
+		os.Mkdir(locked, 0o500) // can't create the temp file here
+		t.Cleanup(func() { os.Chmod(locked, 0o700) })
+		if err := WriteFileAtomic(filepath.Join(locked, "config"), []byte("a"), 0o600); err == nil {
+			t.Error("CreateTemp in a read-only dir must fail")
+		}
 	}
 
 	target := filepath.Join(dir, "target")

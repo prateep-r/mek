@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -113,7 +114,7 @@ func TestUpdate(t *testing.T) {
 	if b, _ := os.ReadFile(exe); string(b) != "NEW" {
 		t.Errorf("binary = %q", b)
 	}
-	if fi, _ := os.Stat(exe); fi.Mode().Perm() != 0o755 {
+	if fi, _ := os.Stat(exe); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o755 {
 		t.Errorf("perm = %v", fi.Mode().Perm())
 	}
 
@@ -170,15 +171,17 @@ func TestUpdateEnvironmentErrors(t *testing.T) {
 	}
 
 	release(t, "v9.0.0", goodAssets("NEW"))
-	locked := t.TempDir()
-	exe := installed(t, locked)
-	os.Chmod(locked, 0o500) // can't place the new binary next to the old one
-	t.Cleanup(func() { os.Chmod(locked, 0o700) })
-	if _, err := Update("o/mek", "v9.0.0"); err == nil || !strings.Contains(err.Error(), "cannot replace") {
-		t.Errorf("read-only dir: %v", err)
-	}
-	if b, _ := os.ReadFile(exe); string(b) != "OLD" {
-		t.Error("binary changed despite the error")
+	if runtime.GOOS != "windows" { // Windows has no read-only directories
+		locked := t.TempDir()
+		exe := installed(t, locked)
+		os.Chmod(locked, 0o500) // can't place the new binary next to the old one
+		t.Cleanup(func() { os.Chmod(locked, 0o700) })
+		if _, err := Update("o/mek", "v9.0.0"); err == nil || !strings.Contains(err.Error(), "cannot replace") {
+			t.Errorf("read-only dir: %v", err)
+		}
+		if b, _ := os.ReadFile(exe); string(b) != "OLD" {
+			t.Error("binary changed despite the error")
+		}
 	}
 
 	baseURL = "http://127.0.0.1:1"
