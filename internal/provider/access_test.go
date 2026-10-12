@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -183,7 +184,7 @@ func TestGCPShell(t *testing.T) {
 		c.Env["HOME"] != ssh || c.Requires != nil {
 		t.Errorf("shell: %+v %v", c, err)
 	}
-	if fi, err := os.Stat(ssh); err != nil || fi.Mode().Perm() != 0o700 {
+	if fi, err := os.Stat(ssh); err != nil || runtime.GOOS != "windows" && fi.Mode().Perm() != 0o700 {
 		t.Errorf("ssh dir: %v %v", fi, err)
 	}
 	if c, _ := g.ShellCommand(Instance{ID: "vm-1", Zone: "z"}); c.Argv[3] != "vm-1" {

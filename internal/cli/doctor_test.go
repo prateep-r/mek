@@ -3,21 +3,36 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/prateep-r/mek/test/testkit"
 )
 
-// stubTools puts fake CLIs on an otherwise empty PATH. Each value is the
-// shell body of the stub.
-func stubTools(t *testing.T, tools map[string]string) {
+// fakeTool is what a fake CLI prints and exits with.
+type fakeTool struct {
+	out, err string
+	code     int
+}
+
+// stubTools puts fake CLIs (testkit's recordstub, on every OS) alone on PATH
+// and returns their directory.
+func stubTools(t *testing.T, tools map[string]fakeTool) string {
 	t.Helper()
 	bin := t.TempDir()
-	for name, body := range tools {
-		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
+	stub := testkit.Tool(t, "recordstub")
+	for name, tl := range tools {
+		exe := filepath.Join(bin, testkit.Exe(name))
+		if err := testkit.Install(stub, exe); err != nil {
 			t.Fatal(err)
 		}
+		os.WriteFile(exe+".stdout", []byte(tl.out), 0o600)
+		os.WriteFile(exe+".stderr", []byte(tl.err), 0o600)
+		os.WriteFile(exe+".exit", []byte(strconv.Itoa(tl.code)), 0o600)
 	}
 	t.Setenv("PATH", bin)
+	return bin
 }
 
 func setGOOS(t *testing.T, os string) {
@@ -29,10 +44,10 @@ func setGOOS(t *testing.T, os string) {
 
 func TestDoctorAllGood(t *testing.T) {
 	h := newHarness(t, "contexts:\n  uat: {provider: aws, aws_profile: p}\n")
-	stubTools(t, map[string]string{
-		"aws":     `echo "aws-cli/2.17.0 Python/3.12"`,
-		"kubectl": "exit 1",                                 // no output: version unknown
-		"k9s":     `echo "` + strings.Repeat("v", 80) + `"`, // long: truncated
+	stubTools(t, map[string]fakeTool{
+		"aws":     {out: "aws-cli/2.17.0 Python/3.12"},
+		"kubectl": {code: 1},                      // no output: version unknown
+		"k9s":     {out: strings.Repeat("v", 80)}, // long: truncated
 	})
 	h.mustRun("use", "uat")
 	out := h.mustRun("doctor")
@@ -73,17 +88,18 @@ func TestDoctorProblems(t *testing.T) {
 // key), checks versions (AWS CLI v1 can't do SSO logins), and requires ssh
 // only when GCP shells or host tunnels are configured.
 func TestDoctorChecks(t *testing.T) {
-	marker := filepath.Join(t.TempDir(), "ran")
-	stubTools(t, map[string]string{
-		"aws":        `echo "aws-cli/1.33.0 Python/3.11"`,
-		"gcloud":     `echo "WARNING: login expired" >&2; echo "Google Cloud SDK 500.0.0"`,
-		"ssh":        `echo "OpenSSH_9.8p1" >&2`,
-		"ssh-keygen": "touch " + marker,
+	log := filepath.Join(t.TempDir(), "calls.log")
+	t.Setenv("STUB_LOG", log) // every stub that runs records itself
+	bin := stubTools(t, map[string]fakeTool{
+		"aws":        {out: "aws-cli/1.33.0 Python/3.11"},
+		"gcloud":     {err: "WARNING: login expired", out: "Google Cloud SDK 500.0.0"},
+		"ssh":        {err: "OpenSSH_9.8p1"},
+		"ssh-keygen": {},
 	})
 	h := newHarness(t, "contexts:\n  a: {provider: aws, sso_start_url: \"https://o.awsapps.com/start\", sso_region: r, account_id: \"111122223333\", role: R}\n  g: {provider: gcp, project: p, targets: {web: {instance: web-1}}}\n")
 	out, err := h.run("doctor")
 	wantErr(t, err, "1 problem(s)") // only the AWS CLI version: ssh and ssh-keygen are there
-	for _, want := range []string{"✗ aws", "AWS CLI v1 can't do IAM Identity Center logins", "✓ ssh ", "OpenSSH_9.8p1", "✓ ssh-keygen               /", "Google Cloud SDK 500.0.0"} {
+	for _, want := range []string{"✗ aws", "AWS CLI v1 can't do IAM Identity Center logins", "✓ ssh ", "OpenSSH_9.8p1", "✓ ssh-keygen               " + bin, "Google Cloud SDK 500.0.0"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("doctor missing %q:\n%s", want, out)
 		}
@@ -91,8 +107,10 @@ func TestDoctorChecks(t *testing.T) {
 	if strings.Contains(out, "login expired") {
 		t.Errorf("doctor showed a stderr warning as the version:\n%s", out)
 	}
-	if _, err := os.Stat(marker); err == nil {
-		t.Error("doctor ran ssh-keygen")
+	for _, c := range testkit.Calls(t, log) {
+		if c.Name == "ssh-keygen" {
+			t.Error("doctor ran ssh-keygen")
+		}
 	}
 
 	// Not needed: a version problem is a warning, not a failure.
@@ -104,7 +122,7 @@ func TestDoctorChecks(t *testing.T) {
 }
 
 func TestDoctorRequiresSSHForGCPShells(t *testing.T) {
-	stubTools(t, map[string]string{"gcloud": "echo gcloud"})
+	stubTools(t, map[string]fakeTool{"gcloud": {out: "gcloud"}})
 	h := newHarness(t, "contexts:\n  g: {provider: gcp, project: p, tunnels: {pg: {via: web-1, host: 10.0.0.5, port: 5432}}}\n")
 	out, err := h.run("doctor")
 	wantErr(t, err, "2 problem(s)")
