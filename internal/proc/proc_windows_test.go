@@ -3,6 +3,7 @@
 package proc
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -64,7 +65,7 @@ func TestCommandThroughCmd(t *testing.T) {
 	os.WriteFile(bat, []byte("@\""+os.Args[0]+"\" helper-args %*\r\n"), 0o700)
 	args := []string{"json(endpoint,masterAuth.clusterCaCertificate,status)", "x&y", "a|b", "^caret", "(paren)", "with space",
 		`trail\`, `back\slash`, "<in>", "!bang", "", `C:\Program Files\x\\`, "--format=value(a)", "--filter=name='x y'"}
-	cmd := Command(bat, args...)
+	cmd := CommandContext(context.Background(), bat, args...) // as Command, killable
 	out, err := cmd.Output()
 	var got []string
 	json.Unmarshal(out, &got)

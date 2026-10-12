@@ -84,8 +84,12 @@ func (g *GCP) sshBuilder(in Instance) (*cmdBuilder, error) {
 	if in.User != "" {
 		host = in.User + "@" + in.ID
 	}
-	return command("gcloud", "compute", "ssh", host).opt("--zone", in.Zone).args("--tunnel-through-iap").
-		opt("--ssh-key-file", filepath.Join(dir, "google_compute_engine")).env("HOME", dir), nil
+	b := command("gcloud", "compute", "ssh", host).opt("--zone", in.Zone).args("--tunnel-through-iap").
+		opt("--ssh-key-file", filepath.Join(dir, "google_compute_engine"))
+	if goos != "windows" { // there gcloud uses PuTTY, which keeps host keys in the registry
+		b.env("HOME", dir)
+	}
+	return b, nil
 }
 
 var _ Tunneler = (*GCP)(nil)

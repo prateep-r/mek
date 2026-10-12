@@ -209,3 +209,11 @@ func TestEnvFish(t *testing.T) {
 		t.Errorf("fish: %q", got)
 	}
 }
+
+func TestEnvPowerShell(t *testing.T) {
+	e := Env{Set: map[string]string{"A": `it's C:\Users\me $HOME`, "B": "x"}, Unset: []string{"C"}}
+	want := "Remove-Item Env:C -ErrorAction SilentlyContinue\n$env:A = 'it''s C:\\Users\\me $HOME'\n$env:B = 'x'\n"
+	if got := e.PowerShell(); got != want {
+		t.Errorf("powershell: %q", got)
+	}
+}

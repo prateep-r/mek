@@ -72,6 +72,20 @@ func fishQuote(s string) string {
 	return "'" + strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(s) + "'"
 }
 
+// PowerShell renders the env as PowerShell statements, for
+// `mek env --syntax powershell | Out-String | Invoke-Expression` and
+// PowerShell's `mek use -s` (see `mek shell-init powershell`).
+func (e Env) PowerShell() string {
+	var b strings.Builder
+	for _, k := range e.Unset {
+		fmt.Fprintf(&b, "Remove-Item Env:%s -ErrorAction SilentlyContinue\n", k)
+	}
+	for _, k := range slices.Sorted(maps.Keys(e.Set)) {
+		fmt.Fprintf(&b, "$env:%s = '%s'\n", k, strings.ReplaceAll(e.Set[k], "'", "''"))
+	}
+	return b.String()
+}
+
 // orDash shows an unset value as "-" in one-line summaries.
 func orDash(s string) string {
 	if s == "" {

@@ -106,7 +106,7 @@ Note: commands run this way bypass mek's guard and audit log.`,
 }
 
 func syntaxFlag(cmd *cobra.Command, syntax *string) {
-	cmd.Flags().StringVar(syntax, "syntax", "posix", "shell syntax of the output: posix (sh, bash, zsh) or fish")
+	cmd.Flags().StringVar(syntax, "syntax", "posix", "shell syntax of the output: posix (sh, bash, zsh), fish or powershell")
 }
 
 // printEnv writes env as statements the shell runs.
@@ -116,8 +116,10 @@ func printEnv(w io.Writer, env provider.Env, syntax string) error {
 		fmt.Fprint(w, env.Shell())
 	case "fish":
 		fmt.Fprint(w, env.Fish())
+	case "powershell":
+		fmt.Fprint(w, env.PowerShell())
 	default:
-		return fmt.Errorf("--syntax %q: want posix or fish", syntax)
+		return fmt.Errorf("--syntax %q: want posix, fish or powershell", syntax)
 	}
 	return nil
 }

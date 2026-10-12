@@ -1,6 +1,10 @@
 package provider
 
-import "github.com/prateep-r/mek/internal/config"
+import (
+	"runtime"
+
+	"github.com/prateep-r/mek/internal/config"
+)
 
 // Query runs a read-only CLI command for a provider and returns its stdout
 // (describe calls). The caller decides how it runs and is audited, so
@@ -35,6 +39,12 @@ type Plugin struct {
 func hasClusters(c *config.Context) bool { return len(c.Clusters) > 0 }
 
 func hasTargets(c *config.Context) bool { return len(c.Targets) > 0 }
+
+var goos = runtime.GOOS // test seam
+
+// needsOpenSSH: gcloud compute ssh uses OpenSSH, except on Windows, where it
+// brings its own PuTTY.
+func needsOpenSSH(c *config.Context) bool { return goos != "windows" && usesSSH(c) }
 
 // usesSSH: gcloud compute ssh runs for shells (targets) and tunnels to
 // another host.

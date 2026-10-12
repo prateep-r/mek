@@ -3,6 +3,7 @@
 package proc
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -42,6 +43,9 @@ func TestCommandAndDetach(t *testing.T) {
 	Detach(cmd)
 	if !cmd.SysProcAttr.Setsid {
 		t.Error("not detached")
+	}
+	if out, err := CommandContext(context.Background(), "/bin/echo", "hi").Output(); err != nil || string(out) != "hi\n" {
+		t.Errorf("CommandContext: %q %v", out, err)
 	}
 }
 
