@@ -1,3 +1,5 @@
+//go:build !windows
+
 package runner
 
 import (
@@ -113,5 +115,15 @@ func TestSIGHUPReachesTheChildNotMek(t *testing.T) {
 func TestExitCode(t *testing.T) {
 	if ExitCode(nil) != 0 || ExitCode(errors.New("never started")) != 1 {
 		t.Error("ExitCode")
+	}
+}
+
+// A foreground tunnel stopped from another terminal: stop ends the child.
+func TestRunStoppable(t *testing.T) {
+	stop := make(chan struct{})
+	go func() { time.Sleep(100 * time.Millisecond); close(stop) }()
+	code, err := RunStoppable([]string{"sh", "-c", "sleep 30"}, nil, os.Stdout, stop)
+	if err != nil || code != 128+15 {
+		t.Errorf("stopped: %d %v", code, err)
 	}
 }

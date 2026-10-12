@@ -14,8 +14,9 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/prateep-r/mek/internal/proc"
 )
 
 // Info is a tunnel with its current state.
@@ -76,8 +77,8 @@ func Start(s Spec, wait time.Duration) (Record, error) {
 	// its record and audit entry); the tunnel's environment — which may move
 	// HOME, as gcloud ssh tunnels do — reaches only the tunnel, through spec.
 	cmd.Env, cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Environ(), bytes.NewReader(spec), log, log
-	cmd.ExtraFiles = []*os.File{life, port, log}         // fds 3, 4, 5: the supervisor keeps the locks
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // outlives this terminal
+	handOver(cmd, life, port, log)
+	proc.Detach(cmd) // outlives this terminal
 	if err := cmd.Start(); err != nil {
 		remove(s.ID)
 		return Record{}, err
@@ -134,7 +135,7 @@ func logTail(id string) string {
 // claimPort locks a local port for one tunnel, across every mek process.
 func claimPort(port int) (*os.File, error) {
 	f, err := tryLock(portLockPath(port))
-	if !errors.Is(err, errLocked) {
+	if !errors.Is(err, proc.ErrLocked) {
 		return f, err
 	}
 	if err := PortFree(port); err != nil {
@@ -154,27 +155,30 @@ func PortFree(port int) error {
 }
 
 // Foreground records a tunnel that runs in this mek process, so `ls` shows
-// it and `stop` can end it; call done when it ends.
-func Foreground(r Record) (done func(), err error) {
+// it and `stop` can end it; call done when it ends. stop fires when `mek
+// tunnel stop` asks for it where signals can't (Windows; nil elsewhere).
+func Foreground(r Record) (stop <-chan struct{}, done func(), err error) {
 	port, err := claimPort(r.Local)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	life, err := tryLock(file(r.ID, ".lock"))
 	if err != nil {
 		port.Close()
-		return nil, err
+		return nil, nil, err
 	}
 	r.Phase, r.Owner, r.Started = phaseRunning, os.Getpid(), time.Now()
 	if err := save(r); err != nil {
 		life.Close()
 		port.Close()
-		return nil, err
+		return nil, nil, err
 	}
-	return func() {
-		remove(r.ID)
-		life.Close()
+	stop, unlisten := foregroundStop(r.ID)
+	return stop, func() {
+		unlisten()
+		life.Close() // before removing: Windows can't remove an open file
 		port.Close()
+		remove(r.ID)
 	}, nil
 }
 

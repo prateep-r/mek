@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/prateep-r/mek/internal/audit"
+	"github.com/prateep-r/mek/internal/proc"
 	"github.com/prateep-r/mek/internal/runner"
 )
 
@@ -23,23 +22,19 @@ type Spec struct {
 }
 
 // Supervise runs a background tunnel's process (`mek tunnel _supervise`).
-// life and port are the tunnel's locks, inherited from the mek that started
-// it; holding them until the process ends is what makes the tunnel alive
-// for `ls` and claims its port. A signal stops the process: TERM to its
-// process group, KILL after a grace period.
-func Supervise(in io.Reader, life, port, log *os.File, sigs <-chan os.Signal) int {
+// life and port are the tunnel's locks; holding them until the process ends
+// is what makes the tunnel alive for `ls` and claims its port. stop ends the
+// process: its whole group, gracefully first where the OS allows.
+func Supervise(in io.Reader, life, port, log *os.File, stop <-chan struct{}) int {
 	defer life.Close() // releases the locks
 	defer port.Close()
 	defer log.Close()
-	for _, f := range []*os.File{life, port, log} {
-		syscall.CloseOnExec(int(f.Fd())) // inherited without it: the tunnel's process must not hold the locks
-	}
 	var s Spec
 	if err := json.NewDecoder(in).Decode(&s); err != nil {
 		fmt.Fprintf(log, "mek: reading the tunnel spec: %v\n", err)
 		return 1
 	}
-	return supervisor{log: log, grace: grace, retry: retry}.run(s, sigs)
+	return supervisor{log: log, grace: grace, retry: retry}.run(s, stop)
 }
 
 // grace is how long a stopped tunnel's process gets before SIGKILL.
@@ -89,14 +84,14 @@ func (s supervisor) exited(r Record) {
 	}))
 }
 
-func (s supervisor) run(spec Spec, sigs <-chan os.Signal) int {
+func (s supervisor) run(spec Spec, stop <-chan struct{}) int {
 	r := spec.Record
 	r.Owner = os.Getpid()
 	var wait time.Duration
 	outage := time.Now()
 	for {
 		began := time.Now()
-		code, stopped := s.once(spec, &r, sigs)
+		code, stopped := s.once(spec, &r, stop)
 		r.ExitCode = code
 		ran := time.Since(began)
 		s.logf("exited with code %d after %s", code, ran.Round(time.Second))
@@ -122,7 +117,7 @@ func (s supervisor) run(spec Spec, sigs <-chan os.Signal) int {
 		s.note(save(r))
 		s.logf("reconnecting in %s (restart %d)", wait, r.Restarts)
 		select {
-		case <-sigs:
+		case <-stop:
 			s.exited(r)
 			return code
 		case <-time.After(wait):
@@ -130,35 +125,41 @@ func (s supervisor) run(spec Spec, sigs <-chan os.Signal) int {
 	}
 }
 
-// once runs the tunnel's process until it ends, or a signal stops it
-// (TERM to its process group, KILL after the grace period). stopped is
-// true when it was stopped, or couldn't start at all.
-func (s supervisor) once(spec Spec, r *Record, sigs <-chan os.Signal) (code int, stopped bool) {
-	cmd := exec.Command(spec.Path, r.Command[1:]...)
-	cmd.Args[0] = r.Command[0]
+// start starts the tunnel's process in a group of its own, so a stop
+// reaches its children too.
+func (s supervisor) start(spec Spec, argv []string) (*proc.Group, error) {
+	cmd := proc.Command(spec.Path, argv[1:]...)
+	cmd.Args[0] = argv[0]
 	cmd.Env, cmd.Stdout, cmd.Stderr = spec.Env, s.log, s.log
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // so a stop reaches its children too
-	if err := cmd.Start(); err != nil {
+	return proc.StartGroup(cmd)
+}
+
+// once runs the tunnel's process until it ends, or stop ends it (its whole
+// group: TERM, then KILL after the grace period where TERM is polite).
+// stopped is true when it was stopped, or couldn't start at all.
+func (s supervisor) once(spec Spec, r *Record, stop <-chan struct{}) (code int, stopped bool) {
+	g, err := s.start(spec, r.Command)
+	if err != nil {
 		s.note(err)
 		return 127, true
 	}
-	r.Phase, r.Child = phaseRunning, cmd.Process.Pid
+	r.Phase, r.Child = phaseRunning, g.Pid()
 	s.note(save(*r))
 	s.logf("started %s (pid %d)", strings.Join(audit.Mask(r.Command), " "), r.Child)
 
 	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
+	go func() { done <- g.Wait() }()
 	select {
 	case err := <-done:
 		return runner.ExitCode(err), false
-	case <-sigs:
+	case <-stop:
 	}
-	sendSignal(-r.Child, syscall.SIGTERM)
+	g.Terminate()
 	select {
 	case err := <-done:
 		return runner.ExitCode(err), true
 	case <-time.After(s.grace):
-		sendSignal(-r.Child, syscall.SIGKILL)
+		g.Kill()
 		return runner.ExitCode(<-done), true
 	}
 }

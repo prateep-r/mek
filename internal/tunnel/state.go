@@ -2,8 +2,9 @@ package tunnel
 
 import (
 	"fmt"
-	"syscall"
 	"time"
+
+	"github.com/prateep-r/mek/internal/proc"
 )
 
 // State is what a tunnel is doing now — a GoF State. Each state knows what
@@ -34,17 +35,11 @@ func stateOf(r Record) State {
 	return dead{}
 }
 
-// sendSignal sends sig to pid, or to process group -pid; never to pid 0 or
-// -1, which would reach every process of ours or every process we may.
-func sendSignal(pid int, sig syscall.Signal) {
-	if pid > 1 || pid < -1 {
-		kill(pid, sig)
-	}
-}
-
 // Test seams.
 var (
-	kill        = syscall.Kill
+	requestStop = proc.RequestStop
+	killPID     = proc.Kill
+	killGroup   = proc.KillGroup
 	stopTimeout = 10 * time.Second
 	pollEvery   = 100 * time.Millisecond
 )
@@ -62,14 +57,14 @@ func (running) Stop(r Record) error {
 		return fmt.Errorf("tunnel %s is still starting — try again in a moment", r.ShortID())
 	}
 	lock := file(r.ID, ".lock")
-	sendSignal(r.Owner, syscall.SIGTERM)
+	requestStop(r.ID, r.Owner)
 	deadline := time.Now().Add(stopTimeout)
 	for held(lock) {
 		if time.Now().After(deadline) {
-			sendSignal(-r.Child, syscall.SIGKILL)
-			sendSignal(r.Owner, syscall.SIGKILL)
+			killGroup(r.Child)
+			killPID(r.Owner)
 			if !r.Background { // a foreground mek leads its job's process group: its tunnel too
-				sendSignal(-r.Owner, syscall.SIGKILL)
+				killGroup(r.Owner)
 			}
 			remove(r.ID)
 			return fmt.Errorf("tunnel %s did not stop within %s — killed", r.ID, stopTimeout)

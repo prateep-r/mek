@@ -1,3 +1,5 @@
+//go:build !windows
+
 package tunnel
 
 import (
@@ -18,6 +20,7 @@ import (
 	"time"
 
 	"github.com/prateep-r/mek/internal/audit"
+	"github.com/prateep-r/mek/internal/proc"
 )
 
 // The test binary doubles as the supervisor and as tunnel processes.
@@ -25,9 +28,7 @@ func TestMain(m *testing.M) {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "helper-supervise":
-			sigs := make(chan os.Signal, 1)
-			signal.Notify(sigs, syscall.SIGTERM)
-			os.Exit(Supervise(os.Stdin, os.NewFile(3, "life"), os.NewFile(4, "port"), os.NewFile(5, "log"), sigs))
+			os.Exit(SuperviseMain(os.Stdin, os.Args[2]))
 		case "helper-listen": // listen on a port; TERM ends it with 143
 			ln, err := net.Listen("tcp", "127.0.0.1:"+os.Args[2])
 			if err != nil {
@@ -192,7 +193,7 @@ func TestStartFailures(t *testing.T) {
 
 	// The lock or log can't be opened, or the record can't be saved.
 	lock, _ := tryLock(file("held", ".lock"))
-	if _, err := Start(spec("held", "", port), time.Second); !errors.Is(err, errLocked) {
+	if _, err := Start(spec("held", "", port), time.Second); !errors.Is(err, proc.ErrLocked) {
 		t.Errorf("held lock: %v", err)
 	}
 	lock.Close()
@@ -214,7 +215,7 @@ func TestStartFailures(t *testing.T) {
 func TestForeground(t *testing.T) {
 	setup(t)
 	port := freePort(t)
-	done, err := Foreground(Record{ID: "fg00fg00fg00fg00", Context: "prod", Name: "db", Local: port})
+	_, done, err := Foreground(Record{ID: "fg00fg00fg00fg00", Context: "prod", Name: "db", Local: port})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,7 +223,7 @@ func TestForeground(t *testing.T) {
 	if err != nil || i.Background || i.Owner != os.Getpid() || i.State.Name() != "running" {
 		t.Errorf("foreground: %+v %v", i, err)
 	}
-	if _, err := Foreground(Record{ID: "other", Local: port}); err == nil || !strings.Contains(err.Error(), "already forwarded by mek tunnel db") {
+	if _, _, err := Foreground(Record{ID: "other", Local: port}); err == nil || !strings.Contains(err.Error(), "already forwarded by mek tunnel db") {
 		t.Errorf("same port: %v", err)
 	}
 	done()
@@ -231,15 +232,15 @@ func TestForeground(t *testing.T) {
 	}
 
 	lock, _ := tryLock(file("held", ".lock"))
-	if _, err := Foreground(Record{ID: "held", Local: port}); !errors.Is(err, errLocked) {
+	if _, _, err := Foreground(Record{ID: "held", Local: port}); !errors.Is(err, proc.ErrLocked) {
 		t.Errorf("held lock: %v", err)
 	}
 	lock.Close()
 	os.MkdirAll(file("savedir", ".json"), 0o700)
-	if _, err := Foreground(Record{ID: "savedir", Local: port}); err == nil {
+	if _, _, err := Foreground(Record{ID: "savedir", Local: port}); err == nil {
 		t.Error("save error not reported")
 	}
-	if _, err := Foreground(Record{ID: "ok", Local: port}); err != nil { // the failed ones released the port
+	if _, _, err := Foreground(Record{ID: "ok", Local: port}); err != nil { // the failed ones released the port
 		t.Errorf("port not released: %v", err)
 	}
 }
@@ -256,14 +257,10 @@ func TestClaimPortWithoutRecord(t *testing.T) {
 
 func TestStates(t *testing.T) {
 	setup(t)
-	var signals []string
-	kill = func(pid int, sig syscall.Signal) error {
-		signals = append(signals, fmt.Sprintf("%d:%d", pid, sig))
-		return nil
-	}
+	signals := fakeKills(t)
 	oldTimeout, oldPoll := stopTimeout, pollEvery
 	stopTimeout, pollEvery = 200*time.Millisecond, 10*time.Millisecond
-	t.Cleanup(func() { kill, stopTimeout, pollEvery = syscall.Kill, oldTimeout, oldPoll })
+	t.Cleanup(func() { stopTimeout, pollEvery = oldTimeout, oldPoll })
 
 	save(Record{ID: "ex", Phase: phaseExited, ExitCode: 255})
 	save(Record{ID: "dd", Phase: phaseRunning})
@@ -281,24 +278,24 @@ func TestStates(t *testing.T) {
 			t.Error(err)
 		}
 	}
-	if len(signals) != 0 {
-		t.Errorf("signalled a finished/dead tunnel: %v", signals)
+	if len(*signals) != 0 {
+		t.Errorf("signalled a finished/dead tunnel: %v", *signals)
 	}
 
 	// An owner that ignores TERM is killed with its process group.
 	r, _ := load("st")
 	err := stateOf(r).Stop(r)
 	if err == nil || !strings.Contains(err.Error(), "did not stop within 200ms — killed") ||
-		strings.Join(signals, ",") != "4242:15,-4343:9,4242:9,-4242:9" { // foreground: mek's process group too
-		t.Errorf("forced stop: %v %v", err, signals)
+		strings.Join(*signals, ",") != "4242:15,-4343:9,4242:9,-4242:9" { // foreground: mek's process group too
+		t.Errorf("forced stop: %v %v", err, *signals)
 	}
 	lock.Close()
 
 	// An owner that stops when asked.
-	signals = nil
+	*signals = nil
 	lock, _ = tryLock(file("ok", ".lock"))
 	save(Record{ID: "ok", Phase: phaseRunning, Owner: 77})
-	kill = func(pid int, sig syscall.Signal) error { lock.Close(); return nil }
+	requestStop = func(string, int) { lock.Close() }
 	r, _ = load("ok")
 	if err := stateOf(r).Stop(r); err != nil {
 		t.Errorf("graceful stop: %v", err)
@@ -308,14 +305,9 @@ func TestStates(t *testing.T) {
 	}
 	r = Record{ID: "nochild", Phase: phaseRunning, Owner: 1}
 	lock, _ = tryLock(file("nochild", ".lock"))
-	kill = func(int, syscall.Signal) error { return nil }
-	signals = nil
-	kill = func(pid int, sig syscall.Signal) error {
-		signals = append(signals, fmt.Sprintf("%d:%d", pid, sig))
-		return nil
-	}
-	if err := (running{}).Stop(r); err == nil || len(signals) != 0 { // pid 1 and no child: nothing is signalled
-		t.Errorf("forced stop without pids: %v %v", err, signals)
+	signals = fakeKills(t)
+	if err := (running{}).Stop(r); err == nil || len(*signals) != 0 { // pid 1 and no child: nothing is signalled
+		t.Errorf("forced stop without pids: %v %v", err, *signals)
 	}
 	lock.Close()
 }
@@ -396,19 +388,19 @@ func TestSupervise(t *testing.T) {
 		return bytes.NewReader(b)
 	}
 	port := freePort(t)
-	sigs := make(chan os.Signal, 1)
+	stop := make(chan struct{})
 	go func() {
 		for {
 			if c, err := net.Dial("tcp", "127.0.0.1:"+strconv.Itoa(port)); err == nil {
 				c.Close()
-				sigs <- syscall.SIGTERM
+				close(stop)
 				return
 			}
 			time.Sleep(20 * time.Millisecond)
 		}
 	}()
 	life, p, log := files()
-	if code := Supervise(in(spec("sv", "db", port, "helper-listen", strconv.Itoa(port))), life, p, log, sigs); code != 143 {
+	if code := Supervise(in(spec("sv", "db", port, "helper-listen", strconv.Itoa(port))), life, p, log, stop); code != 143 {
 		t.Errorf("stopped: exit %d", code)
 	}
 	r, _ := load("sv")
@@ -427,28 +419,29 @@ func TestSupervise(t *testing.T) {
 	old := grace
 	grace = 100 * time.Millisecond
 	t.Cleanup(func() { grace = old })
-	go func() { // signal once the helper ignores TERM
+	stop = make(chan struct{})
+	go func() { // stop once the helper ignores TERM
 		for {
 			if b, _ := os.ReadFile(LogPath("sv")); strings.Contains(string(b), "helper: stubborn") {
-				sigs <- syscall.SIGTERM
+				close(stop)
 				return
 			}
 			time.Sleep(20 * time.Millisecond)
 		}
 	}()
 	life, p, log = files()
-	if code := Supervise(in(spec("sv", "", 0, "helper-stubborn")), life, p, log, sigs); code != 128+9 {
+	if code := Supervise(in(spec("sv", "", 0, "helper-stubborn")), life, p, log, stop); code != 128+9 {
 		t.Errorf("grace kill: exit %d", code)
 	}
 
 	life, p, log = files()
 	bad := spec("sv", "", 0)
 	bad.Command = []string{"/nonexistent/tool"}
-	if code := Supervise(in(bad), life, p, log, sigs); code != 127 {
+	if code := Supervise(in(bad), life, p, log, nil); code != 127 {
 		t.Errorf("start failure: exit %d", code)
 	}
 	life, p, log = files()
-	if code := Supervise(strings.NewReader("{"), life, p, log, sigs); code != 1 {
+	if code := Supervise(strings.NewReader("{"), life, p, log, nil); code != 1 {
 		t.Errorf("bad spec: exit %d", code)
 	}
 }
@@ -474,12 +467,12 @@ func TestRemainingPaths(t *testing.T) {
 		t.Error("load of a missing record")
 	}
 
-	old := flock
-	flock = func(int, int) error { return syscall.EINVAL }
+	old := lockFile
+	lockFile = func(*os.File) error { return syscall.EINVAL }
 	if _, err := tryLock(filepath.Join(home, "x.lock")); !errors.Is(err, syscall.EINVAL) {
-		t.Errorf("flock error: %v", err)
+		t.Errorf("lock error: %v", err)
 	}
-	flock = old
+	lockFile = old
 
 	// The default supervisor command is this mek, `tunnel _supervise <id>`.
 	cmd, err := defaultSupervisor("abc")
@@ -493,14 +486,12 @@ func TestRemainingPaths(t *testing.T) {
 	executable = os.Executable
 
 	// Timing out before the supervisor wrote its record: its pid is used.
-	var signals []int
-	kill = func(pid int, _ syscall.Signal) error { signals = append(signals, pid); return nil }
-	t.Cleanup(func() { kill = syscall.Kill })
+	signals := fakeKills(t)
 	lock, _ := tryLock(file("early", ".lock"))
 	stopTimeout = 50 * time.Millisecond
 	t.Cleanup(func() { stopTimeout = 10 * time.Second })
-	if _, err := waitReady(Record{ID: "early", Local: freePort(t)}, 4242, 50*time.Millisecond, nil); err == nil || len(signals) == 0 || signals[0] != 4242 {
-		t.Errorf("early timeout: %v %v", err, signals)
+	if _, err := waitReady(Record{ID: "early", Local: freePort(t)}, 4242, 50*time.Millisecond, nil); err == nil || len(*signals) == 0 || (*signals)[0] != "4242:15" {
+		t.Errorf("early timeout: %v %v", err, *signals)
 	}
 	lock.Close()
 
@@ -521,7 +512,7 @@ func TestRemainingPaths(t *testing.T) {
 	s := spec("sv2", "", 0, "helper-exit", "0")
 	s.Path = s.Command[0]
 	b, _ := json.Marshal(s)
-	Supervise(bytes.NewReader(b), life, port, logf, make(chan os.Signal))
+	Supervise(bytes.NewReader(b), life, port, logf, nil)
 	out, _ := os.ReadFile(logf.Name())
 	if !strings.Contains(string(out), "mek: ") || !strings.Contains(string(out), "not a directory") {
 		t.Errorf("log: %s", out)
@@ -571,28 +562,21 @@ func TestHeldAndStopDedupe(t *testing.T) {
 	if _, err := os.Stat(file("ghost", ".lock")); !os.IsNotExist(err) {
 		t.Error("held created a lock file")
 	}
-	old := flock
-	flock = func(int, int) error { return syscall.EINVAL }
+	old := lockFile
+	lockFile = func(*os.File) error { return syscall.EINVAL }
 	f, _ := os.Create(file("odd", ".lock"))
 	f.Close()
 	if held(file("odd", ".lock")) {
-		t.Error("a flock error is not a held lock")
+		t.Error("a lock error is not a held lock")
 	}
-	flock = old
+	lockFile = old
 
-	var stops []int
-	kill = func(pid int, sig syscall.Signal) error {
-		if sig == syscall.SIGTERM {
-			stops = append(stops, pid)
-		}
-		return nil
-	}
-	t.Cleanup(func() { kill = syscall.Kill })
+	stops := fakeKills(t)
 	lock, _ := tryLock(file("twice000twice000", ".lock"))
 	save(Record{ID: "twice000twice000", Name: "db", Phase: phaseRunning, Owner: 4242, Background: true})
 	go func() { time.Sleep(50 * time.Millisecond); lock.Close() }()
-	if _, err := Stop([]string{"db"}, true, ""); err != nil || len(stops) != 1 {
-		t.Errorf("stop db --all: %v, SIGTERMs %v", err, stops)
+	if _, err := Stop([]string{"db"}, true, ""); err != nil || len(*stops) != 1 {
+		t.Errorf("stop db --all: %v, stop requests %v", err, *stops)
 	}
 }
 
@@ -603,14 +587,14 @@ func TestSuperviseReconnects(t *testing.T) {
 	setup(t)
 	old := retry
 	t.Cleanup(func() { retry = old })
-	run := func(s Spec, sigs <-chan os.Signal) int {
+	run := func(s Spec, stop <-chan struct{}) int {
 		t.Helper()
 		life, _ := tryLock(file(s.ID, ".lock"))
 		port, _ := tryLock(portLockPath(1))
 		log, _ := os.OpenFile(LogPath(s.ID), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 		s.Path, s.Restart = s.Command[0], true
 		b, _ := json.Marshal(s)
-		return Supervise(bytes.NewReader(b), life, port, log, sigs)
+		return Supervise(bytes.NewReader(b), life, port, log, stop)
 	}
 	logOf := func(id string) string { b, _ := os.ReadFile(LogPath(id)); return string(b) }
 
@@ -640,23 +624,36 @@ func TestSuperviseReconnects(t *testing.T) {
 
 	// Stopped while it waits to reconnect; ls shows it reconnecting.
 	retry = backoff{first: time.Hour, most: time.Hour, stable: 0, giveUp: time.Hour}
-	sigs := make(chan os.Signal, 1)
+	stop := make(chan struct{})
 	go func() {
 		for {
 			if is := List(""); len(is) > 0 && is[len(is)-1].ID == "wait" && is[len(is)-1].State.Name() == "reconnecting" {
 				if is[len(is)-1].Child != 0 {
 					t.Errorf("a reconnecting tunnel keeps its old pid %d", is[len(is)-1].Child)
 				}
-				sigs <- syscall.SIGTERM
+				close(stop)
 				return
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
 	}()
-	if code := run(spec("wait", "", 0, "helper-exit", "0"), sigs); code != 0 {
+	if code := run(spec("wait", "", 0, "helper-exit", "0"), stop); code != 0 {
 		t.Errorf("stopped while waiting: exit %d", code)
 	}
 	if r, _ := load("wait"); r.Phase != phaseExited || r.Restarts != 1 {
 		t.Errorf("stopped while waiting: %+v", r)
 	}
+}
+
+// fakeKills records stop requests and kills as "pid:15", "pid:9" and
+// "-pid:9" (a group), the way signals read.
+func fakeKills(t *testing.T) *[]string {
+	t.Helper()
+	var got []string
+	oldStop, oldKill, oldGroup := requestStop, killPID, killGroup
+	t.Cleanup(func() { requestStop, killPID, killGroup = oldStop, oldKill, oldGroup })
+	requestStop = func(_ string, pid int) { got = append(got, fmt.Sprintf("%d:15", pid)) }
+	killPID = func(pid int) { got = append(got, fmt.Sprintf("%d:9", pid)) }
+	killGroup = func(pid int) { got = append(got, fmt.Sprintf("-%d:9", pid)) }
+	return &got
 }

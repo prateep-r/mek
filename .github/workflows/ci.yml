@@ -41,6 +41,21 @@ jobs:
       - run: make test-integration
       - run: make test-e2e
 
+  # Windows: the same code through internal/proc's Windows side (LockFileEx,
+  # Job Objects, named events, cmd.exe quoting).
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - run: go vet ./...
+      - run: go test -count=1 -race ./...
+
   # mek with the real aws / gcloud / kubectl CLIs: offline contract
   # checks, then the full AWS SSO login against the Floci emulator.
   real-clis:

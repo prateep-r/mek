@@ -180,14 +180,14 @@ func TestRotationUnderLimitDoesNothing(t *testing.T) {
 
 func TestRotationErrorsKeepTheEntry(t *testing.T) {
 	small(t, 1, 3)
-	oldFlock := flock
-	t.Cleanup(func() { flock = oldFlock })
+	oldLock := lockFile
+	t.Cleanup(func() { lockFile = oldLock })
 	cases := []struct {
 		name  string
 		setup func(home string)
 	}{
 		{"lock file can't be opened", func(home string) { os.Mkdir(filepath.Join(home, "audit.jsonl.lock"), 0o700) }},
-		{"lock can't be taken", func(string) { flock = func(int, int) error { return errors.New("no lock") } }},
+		{"lock can't be taken", func(string) { lockFile = func(*os.File) error { return errors.New("no lock") } }},
 		{"rename fails", func(home string) { // every slot is a non-empty dir: nothing can move
 			for _, n := range []string{"1", "2", "3"} {
 				os.MkdirAll(filepath.Join(home, "audit.jsonl."+n, "x"), 0o700)
@@ -198,7 +198,7 @@ func TestRotationErrorsKeepTheEntry(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			home := t.TempDir()
 			t.Setenv("MEK_HOME", home)
-			flock = oldFlock
+			lockFile = oldLock
 			os.WriteFile(Path(), []byte("{}\n"), 0o600)
 			c.setup(home)
 			if err := Write(Entry{Context: "kept"}); err == nil {
@@ -217,11 +217,11 @@ func TestRotationRaceRotatesOnce(t *testing.T) {
 	t.Setenv("MEK_HOME", t.TempDir())
 	small(t, 1, 3)
 	os.WriteFile(Path(), []byte("{}\n"), 0o600)
-	oldFlock := flock
-	t.Cleanup(func() { flock = oldFlock })
-	flock = func(fd, how int) error {
+	oldLock := lockFile
+	t.Cleanup(func() { lockFile = oldLock })
+	lockFile = func(f *os.File) error {
 		os.Rename(Path(), Path()+".1") // the other process rotated meanwhile
-		return oldFlock(fd, how)
+		return oldLock(f)
 	}
 	if err := rotate(); err != nil {
 		t.Fatal(err)
