@@ -11,12 +11,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
+
+	"github.com/prateep-r/mek/internal/proc"
 )
 
 // ModuleRoot is the repository root (where go.mod lives).
@@ -76,17 +78,36 @@ type Result struct {
 	Stdout, Stderr string
 }
 
+// baseEnv is what every OS needs a process to have: on Windows, Go and the
+// cloud CLIs need SystemRoot, PATHEXT, the temp and profile directories.
+var baseEnv = []string{"HOME", "PATH", "SystemRoot", "PATHEXT", "TEMP", "TMP", "USERPROFILE", "LOCALAPPDATA", "APPDATA", "ComSpec"}
+
 // Command prepares bin with args and env (added to a minimal base env). It
-// runs in a new session, so like a CI job it has no controlling terminal and
-// mek's confirmation prompts fail closed instead of waiting for input.
+// runs detached (a new session; on Windows no console), so like a CI job it
+// has no terminal and mek's confirmation prompts fail closed instead of
+// waiting for input.
 func Command(bin string, env []string, args ...string) *exec.Cmd {
 	cmd := exec.Command(bin, args...)
-	cmd.Env = append([]string{"HOME=" + os.Getenv("HOME"), "PATH=" + os.Getenv("PATH"), "NO_COLOR=1"}, env...)
+	cmd.Env = []string{"NO_COLOR=1"}
+	for _, k := range baseEnv {
+		if v, ok := os.LookupEnv(k); ok {
+			cmd.Env = append(cmd.Env, k+"="+v)
+		}
+	}
+	cmd.Env = append(cmd.Env, env...)
 	if d := CoverDir(); d != "" {
 		cmd.Env = append(cmd.Env, "GOCOVERDIR="+d)
 	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	proc.Detach(cmd)
 	return cmd
+}
+
+// Exe is a program's file name on this OS (aws, or aws.exe on Windows).
+func Exe(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
 }
 
 // RunTimeout bounds every Run.
@@ -105,7 +126,8 @@ func Run(t testing.TB, bin string, env []string, args ...string) Result {
 	// timing out: kill its process group (Command starts a new session).
 	timer := time.AfterFunc(RunTimeout, func() {
 		t.Errorf("run %s %v: still running after %s, killed", bin, args, RunTimeout)
-		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		proc.KillGroup(cmd.Process.Pid)
+		proc.Kill(cmd.Process.Pid)
 	})
 	err := cmd.Wait()
 	timer.Stop()
@@ -126,35 +148,30 @@ type Call struct {
 // ArgLine is the call's arguments joined by spaces.
 func (c Call) ArgLine() string { return strings.Join(c.Args, " ") }
 
-// stub records "name\037arg\037arg...\n" followed by `env` and a \036 line,
-// then prints $STUB_OUT and exits with $STUB_EXIT (default 0). A mkdir lock
-// keeps records whole when mek runs several stubs at once (mek doctor).
-const stub = `#!/bin/sh
-until mkdir "$STUB_LOG.lock" 2>/dev/null; do sleep 0.01; done
-{
-  printf '%s' "$(basename "$0")"
-  for a in "$@"; do printf '\037%s' "$a"; done
-  printf '\n'
-  env
-  printf '\036\n'
-} >> "$STUB_LOG"
-rmdir "$STUB_LOG.lock"
-[ -n "$STUB_OUT" ] && printf '%s\n' "$STUB_OUT"
-exit "${STUB_EXIT:-0}"
-`
-
-// Stubs writes recording fake CLIs named names into a new directory and
-// returns it (put it first on PATH) and the log file they append to (pass it
-// to the stubs as STUB_LOG).
+// Stubs puts recording fake CLIs (cmd/recordstub) named names into a new
+// directory and returns it (put it first on PATH) and the log file they
+// append to (pass it to the stubs as STUB_LOG); Calls reads it. Each stub
+// prints $STUB_OUT and exits with $STUB_EXIT.
 func Stubs(t testing.TB, names ...string) (dir, log string) {
 	t.Helper()
+	stub := Tool(t, "recordstub")
 	dir = t.TempDir()
 	for _, n := range names {
-		if err := os.WriteFile(filepath.Join(dir, n), []byte(stub), 0o755); err != nil {
+		if err := Install(stub, filepath.Join(dir, Exe(n))); err != nil {
 			t.Fatal(err)
 		}
 	}
 	return dir, filepath.Join(t.TempDir(), "calls.log")
+}
+
+// Install puts a copy of the program src at dst. A copy, not a link: tests
+// overwrite stubs with scripts of their own.
+func Install(src, dst string) error {
+	b, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, b, 0o755)
 }
 
 // Calls parses a stub log; a missing log means no calls.
@@ -186,38 +203,39 @@ func Calls(t testing.TB, log string) []Call {
 }
 
 var (
-	listenstubOnce sync.Once
-	listenstubPath string
-	listenstubErr  error
+	toolsMu sync.Mutex
+	tools   = map[string]string{}
 )
 
-// Listenstub builds cmd/listenstub (a fake tunnel CLI that really listens)
-// once per test binary and returns its path.
-func Listenstub(t testing.TB) string {
+// Tool builds test/testkit/cmd/<name> once per test binary and returns its
+// path.
+func Tool(t testing.TB, name string) string {
 	t.Helper()
-	listenstubOnce.Do(func() {
-		root, err := ModuleRoot()
-		if err != nil {
-			listenstubErr = err
-			return
-		}
-		dir, err := os.MkdirTemp("", "listenstub")
-		if err != nil {
-			listenstubErr = err
-			return
-		}
-		listenstubPath = filepath.Join(dir, "listenstub")
-		cmd := exec.Command("go", "build", "-o", listenstubPath, "./test/testkit/cmd/listenstub")
-		cmd.Dir = root
-		if out, err := cmd.CombinedOutput(); err != nil {
-			listenstubErr = fmt.Errorf("go build listenstub: %w\n%s", err, out)
-		}
-	})
-	if listenstubErr != nil {
-		t.Fatal(listenstubErr)
+	toolsMu.Lock()
+	defer toolsMu.Unlock()
+	if p, ok := tools[name]; ok {
+		return p
 	}
-	return listenstubPath
+	root, err := ModuleRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, err := os.MkdirTemp("", name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, Exe(name))
+	cmd := exec.Command("go", "build", "-o", p, "./test/testkit/cmd/"+name)
+	cmd.Dir = root
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go build %s: %v\n%s", name, err, out)
+	}
+	tools[name] = p
+	return p
 }
+
+// Listenstub is cmd/listenstub, a fake tunnel CLI that really listens.
+func Listenstub(t testing.TB) string { return Tool(t, "listenstub") }
 
 // FreePorts maps each fixed port number a test's strings mention to a port
 // that is free on this machine right now, so a port another program happens

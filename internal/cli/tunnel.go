@@ -6,11 +6,9 @@ import (
 	"maps"
 	"net"
 	"os"
-	"os/signal"
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -136,12 +134,13 @@ func tunnelRecord(inv *runner.Invocation, name string, local int) tunnel.Record 
 func foreground(name string, local int) runner.Decorator {
 	return func(next runner.Runner) runner.Runner {
 		return runner.Func(func(inv *runner.Invocation) error {
-			done, err := tunnel.Foreground(tunnelRecord(inv, name, local))
+			stop, done, err := tunnel.Foreground(tunnelRecord(inv, name, local))
 			if err != nil {
 				inv.ExitCode = 1
 				return err
 			}
 			defer done()
+			inv.Stop = stop
 			return next.Run(inv)
 		})
 	}
@@ -248,16 +247,14 @@ func (a *app) newTunnelLogsCmd() *cobra.Command {
 }
 
 // newSuperviseCmd is the background tunnel's supervisor process, started by
-// tunnel.Start with the tunnel's locks and log as fds 3-5.
+// tunnel.Start.
 func newSuperviseCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:    "_supervise <id>",
 		Hidden: true,
 		Args:   cobra.ExactArgs(1),
-		RunE: func(*cobra.Command, []string) error {
-			sigs := make(chan os.Signal, 1)
-			signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
-			tunnel.Supervise(os.Stdin, os.NewFile(3, "life.lock"), os.NewFile(4, "port.lock"), os.NewFile(5, "tunnel.log"), sigs)
+		RunE: func(_ *cobra.Command, args []string) error {
+			tunnel.SuperviseMain(os.Stdin, args[0])
 			return nil
 		},
 	}

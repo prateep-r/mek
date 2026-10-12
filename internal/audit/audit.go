@@ -11,10 +11,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/prateep-r/mek/internal/config"
+	"github.com/prateep-r/mek/internal/proc"
 	"github.com/prateep-r/mek/internal/runner"
 )
 
@@ -114,9 +114,9 @@ var currentUser = user.Current // test seam
 // Rotation: once audit.jsonl reaches maxSize it becomes audit.jsonl.1, older
 // files shift to .2 … .keep, and the oldest is dropped.
 var (
-	maxSize int64 = 10 << 20
-	keep          = 3
-	flock         = syscall.Flock // test seam
+	maxSize  int64 = 10 << 20
+	keep           = 3
+	lockFile       = proc.Lock // test seam
 )
 
 // Write appends an entry. Errors are returned but callers may ignore them:
@@ -150,7 +150,7 @@ func rotate() error {
 		return err
 	}
 	defer lock.Close() // also releases the lock
-	if err := flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+	if err := lockFile(lock); err != nil {
 		return err
 	}
 	if fi, err := os.Stat(Path()); err != nil || fi.Size() < maxSize {

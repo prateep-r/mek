@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"os/signal"
 	"syscall"
+
+	"github.com/prateep-r/mek/internal/proc"
 )
 
 // ExitError carries a child's exit code up to main without extra output.
@@ -21,6 +23,12 @@ func (e *ExitError) Error() string { return fmt.Sprintf("exit status %d", e.Code
 // waits, and returns the exit code. Ctrl-C goes to the child (same process
 // group); mek itself ignores it while waiting.
 func RunIO(argv []string, env []string, stdout io.Writer) (int, error) {
+	return RunStoppable(argv, env, stdout, nil)
+}
+
+// RunStoppable is RunIO that also ends the child when stop fires (a
+// foreground tunnel stopped from another terminal, on Windows).
+func RunStoppable(argv []string, env []string, stdout io.Writer, stop <-chan struct{}) (int, error) {
 	if len(argv) == 0 {
 		return 1, errors.New("no command given")
 	}
@@ -28,17 +36,13 @@ func RunIO(argv []string, env []string, stdout io.Writer) (int, error) {
 	if err != nil {
 		return 127, fmt.Errorf("%s not found in PATH — run `mek doctor`", argv[0])
 	}
-	cmd := exec.Command(path, argv[1:]...)
-	cmd.Args[0] = argv[0]
-	cmd.Env = env
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, stdout, os.Stderr
-
 	// Subscribe before starting so a signal can't slip through in between.
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer signal.Stop(sig)
 
-	if err := cmd.Start(); err != nil {
+	g, err := start(path, argv, env, stdout)
+	if err != nil {
 		return 1, err
 	}
 	done := make(chan struct{})
@@ -51,15 +55,27 @@ func RunIO(argv []string, env []string, stdout io.Writer) (int, error) {
 				// first. SIGTERM (`timeout`, k8s) and SIGHUP (the terminal closing)
 				// go to the child too, and mek outlives it to write the audit entry.
 				if s != os.Interrupt {
-					_ = cmd.Process.Signal(s)
+					g.Signal(s)
 				}
+			case <-stop:
+				g.Terminate()
+				stop = nil // once
 			case <-done:
 				return
 			}
 		}
 	}()
 
-	return result(cmd.Wait())
+	return result(g.Wait())
+}
+
+// start starts the program at path as argv[0] with the terminal attached.
+func start(path string, argv, env []string, stdout io.Writer) (*proc.Group, error) {
+	cmd := proc.Command(path, argv[1:]...)
+	cmd.Args[0] = argv[0]
+	cmd.Env = env
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, stdout, os.Stderr
+	return proc.StartAttached(cmd)
 }
 
 // ExitCode is the exit code of a process that Wait returned err for.

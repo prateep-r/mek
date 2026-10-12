@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/prateep-r/mek/internal/config"
 	"github.com/prateep-r/mek/internal/fsutil"
+	"github.com/prateep-r/mek/internal/proc"
 )
 
 // Record is what mek keeps about a tunnel in <MEK_HOME>/tunnels/<id>.json.
@@ -93,14 +93,11 @@ func remove(id string) {
 	}
 }
 
-var (
-	errLocked = errors.New("locked")
-	flock     = syscall.Flock // test seam
-)
+var lockFile = proc.TryLock // test seam
 
-// tryLock opens a lock file and takes an exclusive flock without waiting.
-// The lock lives as long as any descriptor of that open file — so it can be
-// handed to a child process, which then holds it alone.
+// tryLock opens a lock file and takes an exclusive lock without waiting.
+// On Unix the lock lives as long as any descriptor of that open file — so
+// it can be handed to a child process, which then holds it alone.
 func tryLock(path string) (*os.File, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
@@ -109,11 +106,8 @@ func tryLock(path string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := lockFile(f); err != nil {
 		f.Close()
-		if errors.Is(err, syscall.EWOULDBLOCK) {
-			return nil, errLocked
-		}
 		return nil, err
 	}
 	return f, nil
@@ -127,5 +121,5 @@ func held(path string) bool {
 		return false
 	}
 	defer f.Close()
-	return errors.Is(flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB), syscall.EWOULDBLOCK)
+	return errors.Is(lockFile(f), proc.ErrLocked)
 }

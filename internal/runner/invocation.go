@@ -22,6 +22,8 @@ type Invocation struct {
 	// Detached is set when a session was handed to a background supervisor,
 	// which writes its end entry when it really ends.
 	Detached bool
+	// Stop ends the command when it fires (nil: never).
+	Stop <-chan struct{}
 
 	Decision string        // set by the guard: allowed | confirmed | blocked | declined
 	ExitCode int           // set by Exec (-1 when the command never ran)
@@ -69,7 +71,7 @@ var Exec Runner = Func(func(inv *Invocation) error {
 	if stdout == nil {
 		stdout = os.Stdout
 	}
-	code, err := RunIO(inv.Argv, inv.Env, stdout)
+	code, err := RunStoppable(inv.Argv, inv.Env, stdout, inv.Stop)
 	inv.ExitCode, inv.Duration = code, time.Since(start)
 	return err
 })

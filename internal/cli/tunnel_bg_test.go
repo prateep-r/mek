@@ -87,7 +87,7 @@ func TestTunnelBackground(t *testing.T) {
 
 func TestTunnelForegroundClaimsPort(t *testing.T) {
 	h := newTunnelHarness(t)
-	done, err := tunnel.Foreground(tunnel.Record{ID: "fg0000000000", Context: "prod", Name: "db", Local: h.port("25432")})
+	_, done, err := tunnel.Foreground(tunnel.Record{ID: "fg0000000000", Context: "prod", Name: "db", Local: h.port("25432")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestTunnelLsStopLogs(t *testing.T) {
 	if out := stderr(t, func() { h.mustRun("tunnel", "ls") }); !strings.Contains(out, "no tunnels") {
 		t.Errorf("empty ls: %q", out)
 	}
-	done, _ := tunnel.Foreground(tunnel.Record{ID: "aaaa1111aaaa1111", Context: "prod", Name: "db", Local: 25432, Target: "localhost:25432 → db:5432"})
+	_, done, _ := tunnel.Foreground(tunnel.Record{ID: "aaaa1111aaaa1111", Context: "prod", Name: "db", Local: 25432, Target: "localhost:25432 → db:5432"})
 	defer done()
 	writeRecord(t, tunnel.Record{ID: "bbbb2222bbbb2222", Context: "gcp", Local: 28080, Background: true, Phase: "exited", ExitCode: 255,
 		Target: "localhost:28080 → port 8080", Started: time.Now().Add(-90 * time.Minute)})

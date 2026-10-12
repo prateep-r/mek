@@ -60,8 +60,9 @@ func Info(format string, a ...any) { fmt.Fprintf(os.Stderr, format+"\n", a...) }
 // ErrNoTTY is returned when confirmation is required but nobody can answer.
 var ErrNoTTY = errors.New("confirmation required but no terminal is available")
 
-// ttyPath is the controlling terminal; tests point it at a file of answers.
-var ttyPath = "/dev/tty"
+// ttyPath is the terminal ("/dev/tty", or the console's input "CONIN$" on
+// Windows); tests point it at a file of answers.
+var ttyPath = ttyDevice
 
 // openTTY reads answers from the controlling terminal, so confirmations still
 // work when stdin is piped into the wrapped command.
