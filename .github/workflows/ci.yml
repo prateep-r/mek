@@ -66,6 +66,7 @@ jobs:
           $ProgressPreference = 'SilentlyContinue'
           Invoke-WebRequest https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-windows-x86_64-bundled-python.zip -OutFile "$env:RUNNER_TEMP\gcloud.zip"
           Expand-Archive "$env:RUNNER_TEMP\gcloud.zip" -DestinationPath $env:RUNNER_TEMP
+          $env:CLOUDSDK_PYTHON = (Get-Command python).Source # the bundled Python can't update its own install
           & "$env:RUNNER_TEMP\google-cloud-sdk\bin\gcloud.cmd" components install gke-gcloud-auth-plugin --quiet
           "$env:RUNNER_TEMP\google-cloud-sdk\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
       # The runner's own aws / gcloud / kubectl where installed (a missing one is skipped).
