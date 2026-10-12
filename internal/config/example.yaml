@@ -44,6 +44,7 @@ contexts:
   #   project: my-project-id
   #   region: asia-southeast1
   #   account: you@example.com      # optional
+  #   use_metadata: true            # optional, on a GCP VM: gcloud may use the VM's service account
   #   clusters:
   #     apps: {name: apps-cluster, location: asia-southeast1}   # GKE: zone or region
   #     core: {name: core-cluster, location: asia-southeast1, endpoint: private}   # or dns

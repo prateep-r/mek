@@ -93,6 +93,14 @@ func (g *GCP) Prepare() (Env, error) {
 	} else {
 		env.Unset = append(env.Unset, "CLOUDSDK_COMPUTE_REGION")
 	}
+	// On a GCP VM (or a network with a metadata server) gcloud would quietly
+	// act as the machine's service account in a context that isn't logged
+	// in. Only contexts that ask for it get that identity.
+	if g.ctx.UseMetadata {
+		env.Unset = append(env.Unset, "CLOUDSDK_CORE_CHECK_GCE_METADATA")
+	} else {
+		env.Set["CLOUDSDK_CORE_CHECK_GCE_METADATA"] = "false"
+	}
 	// Client libraries / terraform pick up ADC from here once `mek login --adc` has run.
 	adc := filepath.Join(dir, "application_default_credentials.json")
 	if _, err := os.Stat(adc); err == nil {

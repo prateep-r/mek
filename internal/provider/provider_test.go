@@ -134,8 +134,13 @@ func TestGCPProvider(t *testing.T) {
 	}
 	dir := filepath.Join(home, "gcloud", "g")
 	if env.Set["CLOUDSDK_CONFIG"] != dir || env.Set["CLOUDSDK_CORE_ACCOUNT"] != "me@x.com" ||
-		env.Set["CLOUDSDK_COMPUTE_REGION"] != "asia-southeast1" || env.Set["GOOGLE_APPLICATION_CREDENTIALS"] != "" {
+		env.Set["CLOUDSDK_COMPUTE_REGION"] != "asia-southeast1" || env.Set["GOOGLE_APPLICATION_CREDENTIALS"] != "" ||
+		env.Set["CLOUDSDK_CORE_CHECK_GCE_METADATA"] != "false" { // never the machine's service account by surprise
 		t.Errorf("env: %+v", env.Set)
+	}
+	vm := &GCP{ctx: &config.Context{Name: "vm", Provider: config.ProviderGCP, Project: "p", UseMetadata: true}, dir: home}
+	if env, _ := vm.Prepare(); env.Set["CLOUDSDK_CORE_CHECK_GCE_METADATA"] != "" || !slices.Contains(env.Unset, "CLOUDSDK_CORE_CHECK_GCE_METADATA") {
+		t.Errorf("use_metadata: %+v", env)
 	}
 	// Once `mek login --adc` created ADC, SDKs get pointed at it.
 	adc := filepath.Join(dir, "application_default_credentials.json")

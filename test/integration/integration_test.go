@@ -105,7 +105,7 @@ func TestCloudEnvironments(t *testing.T) {
 			map[string]string{"AWS_PROFILE": "mek-uat", "AWS_REGION": "ap-southeast-1", "MEK_CONTEXT": "uat"},
 			[]string{"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"}},
 		{"gcp", "gcloud", []string{"compute", "instances", "list"}, "compute instances list",
-			map[string]string{"CLOUDSDK_CORE_PROJECT": "my-project", "CLOUDSDK_COMPUTE_REGION": "asia-southeast1"},
+			map[string]string{"CLOUDSDK_CORE_PROJECT": "my-project", "CLOUDSDK_COMPUTE_REGION": "asia-southeast1", "CLOUDSDK_CORE_CHECK_GCE_METADATA": "false"},
 			[]string{"GOOGLE_APPLICATION_CREDENTIALS"}},
 	}
 	for _, c := range cases {

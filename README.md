@@ -304,6 +304,7 @@ argument.
 | **GCP** | | | | | | | |
 | `project` | string | **yes** | — | — | ✓ | no line breaks | the project ID: `CLOUDSDK_CORE_PROJECT`, `GOOGLE_CLOUD_PROJECT` |
 | `account` | string (e-mail) | no | gcloud's active account | — | ✓ | no line breaks | `gcloud auth login <account>`, `CLOUDSDK_CORE_ACCOUNT` |
+| `use_metadata` | bool | no | `false` | — | ✓ | — | on a GCP VM: let gcloud act as the VM's service account when the context has no login. Off, mek sets `CLOUDSDK_CORE_CHECK_GCE_METADATA=false`, so a context that isn't logged in fails instead of quietly using the machine's identity |
 | **Kubernetes clusters** (`mek kube`, `mek kubectl`) | | | | | | | |
 | `clusters` | map: *alias* → cluster | no | none | ✓ | ✓ | alias: name rule, not `token` | the kube context is `<name>/<alias>`; `mek kube <alias>` makes it current |
 | `clusters.<alias>.name` | string | **yes** | — | EKS name | GKE name | *arg* | the cluster in the cloud (must be `ACTIVE` / `RUNNING`) |
@@ -491,6 +492,9 @@ mek -c gcp-dev exec -- terraform apply      # google provider picks up the ADC a
 mek -c dev exec -- ./deploy.sh              # scripts, SDK programs, anything
 mek -c dev exec -- k9s                      # K9s with dev's clusters
 ```
+
+On a GCP VM, client libraries and Terraform fall back to the VM's service account when
+there are no ADC; mek turns that fallback off only for gcloud (see `use_metadata`).
 
 ### Logging in without a browser (CI)
 

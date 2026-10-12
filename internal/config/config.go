@@ -42,6 +42,9 @@ type Context struct {
 	// GCP
 	Project string `yaml:"project,omitempty"`
 	Account string `yaml:"account,omitempty"` // optional, e.g. you@example.com
+	// UseMetadata lets gcloud use the GCE metadata server's service account
+	// (on a GCP VM) when the context has no login of its own.
+	UseMetadata bool `yaml:"use_metadata,omitempty"`
 
 	// Kubernetes clusters reachable from this context, by alias (mek kube).
 	Clusters map[string]*Cluster `yaml:"clusters,omitempty"`

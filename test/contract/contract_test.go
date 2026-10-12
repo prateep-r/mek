@@ -134,13 +134,13 @@ func TestGcloudUsesContextConfigDir(t *testing.T) {
 	extra := gcloudPython(t)
 	u := newUser(t, `contexts:
   gcp: {provider: gcp, project: acme-dev, region: asia-southeast1}
-`, []string{gcloud}, append(extra, "GOOGLE_APPLICATION_CREDENTIALS=/tmp/leaked.json",
-		"CLOUDSDK_CORE_CHECK_GCE_METADATA=false")...) // a GCE metadata server on the network would add its service account
+`, []string{gcloud}, append(extra, "GOOGLE_APPLICATION_CREDENTIALS=/tmp/leaked.json")...)
 
 	u.want("acme-dev", "-c", "gcp", "gcloud", "config", "get", "core/project")
 	u.want("asia-southeast1", "-c", "gcp", "gcloud", "config", "get", "compute/region")
 	u.want(filepath.Join(u.mekHome, "gcloud", "gcp"), "-c", "gcp", "gcloud", "info", "--format=value(config.paths.global_config_dir)")
 	if out, _ := u.run("-c", "gcp", "gcloud", "auth", "list", "--format=value(account)"); strings.Contains(out, "@") {
+		// Not even a GCE metadata server's service account (on a VM, or on a network that has one).
 		t.Errorf("a fresh context must have no accounts (isolated from the user's gcloud):\n%s", out)
 	}
 	u.homeUntouched(".config/gcloud")

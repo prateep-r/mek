@@ -26,6 +26,7 @@ func TestValidateClusters(t *testing.T) {
 		{gcp + "    clusters:\n      m: {name: x, location: z, region: r}\n", "not region"},
 		{gcp + "    clusters:\n      m: {name: x, location: z, endpoint: public}\n", `endpoint is private or dns, not "public"`},
 		{aws + "    region: r\n    clusters:\n      m: {name: x, endpoint: private}\n", "endpoint is for gcp clusters"},
+		{aws + "    use_metadata: true\n", "use_metadata is for gcp contexts"},
 	}
 	for _, c := range cases {
 		if err := parse(c.in); err == nil || !strings.Contains(err.Error(), c.want) {
