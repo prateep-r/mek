@@ -23,6 +23,14 @@ func TestExtractZip(t *testing.T) {
 	if _, err := extract(buf.Bytes(), "mek.exe"); err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("no binary: %v", err)
 	}
+	buf.Reset()
+	zw = zip.NewWriter(&buf)
+	w, _ := zw.CreateRaw(&zip.FileHeader{Name: "mek.exe", Method: 99}) // a compression zip can't read
+	w.Write([]byte("x"))
+	zw.Close()
+	if _, err := extract(buf.Bytes(), "mek.exe"); !errors.Is(err, zip.ErrAlgorithm) {
+		t.Errorf("unknown method: %v", err)
+	}
 	if bin, err := extract(makeArchive([]byte("NEW")), "MEK.EXE"); err != nil || string(bin) != "NEW" { // case doesn't matter
 		t.Errorf("extract: %q %v", bin, err)
 	}
