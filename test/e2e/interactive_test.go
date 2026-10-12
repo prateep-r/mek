@@ -194,3 +194,70 @@ func TestBackgroundTunnelOutlivesTerminal(t *testing.T) {
 		t.Errorf("stop: %+v", r)
 	}
 }
+
+// eventually waits until check passes.
+func eventually(t *testing.T, what string, check func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for !check() {
+		if time.Now().After(deadline) {
+			t.Fatalf("never: %s", what)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// mek ui on a real terminal: it switches contexts, starts and stops a
+// tunnel and opens a shell by running mek itself, then quits cleanly.
+func TestUI(t *testing.T) {
+	installed := installRelease(t)
+	mekHome, bin := t.TempDir(), t.TempDir()
+	listen := testkit.Listenstub(t)
+	mark := filepath.Join(t.TempDir(), "shell-ran")
+	// aws: a tunnel listens (listenstub); a shell just leaves a mark.
+	os.WriteFile(filepath.Join(bin, "aws"), []byte(fmt.Sprintf(`#!/bin/sh
+case "$*" in *document-name*) exec %q "$@";; esac
+echo "stub shell session" > %q
+`, listen, mark)), 0o755)
+	stub, _ := os.ReadFile(listen)
+	os.WriteFile(filepath.Join(bin, "session-manager-plugin"), stub, 0o755)
+	ln, _ := net.Listen("tcp", "127.0.0.1:0")
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+	os.WriteFile(filepath.Join(mekHome, "config.yaml"), []byte(fmt.Sprintf(`contexts:
+  dev: {provider: aws, aws_profile: dev, targets: {bastion: {instance: i-0123456789abcdef0}}, tunnels: {db: {via: bastion, host: db.internal, port: 5432, local_port: %d}}}
+  prod: {provider: aws, aws_profile: admin, protected: true}
+`, port)), 0o600)
+	env := []string{"MEK_HOME=" + mekHome, "HOME=" + t.TempDir(), "PATH=" + bin + ":/usr/bin:/bin", "TERM=xterm-256color"}
+	t.Cleanup(func() { testkit.Run(t, installed, env, "tunnel", "stop", "--all") })
+	run := func(args ...string) string { return testkit.Run(t, installed, env, args...).Stdout }
+
+	s := startSession(t, installed, env, "ui")
+	pty.Setsize(s.tty, &pty.Winsize{Rows: 30, Cols: 120})
+	s.expect("Contexts")
+	s.expect("prod")
+
+	s.send("\r") // use dev
+	eventually(t, "dev became the current context", func() bool { return strings.TrimSpace(run("ctx", "--short")) == "dev" })
+
+	s.send("2\r") // start the named tunnel
+	eventually(t, "the tunnel runs", func() bool { return strings.Contains(run("tunnel", "ls"), "running") })
+	time.Sleep(1500 * time.Millisecond) // the UI's next refresh lists it
+	s.send("x")
+	eventually(t, "the tunnel stopped", func() bool { return strings.Contains(run("tunnel", "ls"), "no tunnels") || run("tunnel", "ls") == "" })
+
+	s.send("3\r") // a shell on the target: the UI steps aside, then comes back
+	eventually(t, "the shell ran", func() bool { _, err := os.Stat(mark); return err == nil })
+	time.Sleep(500 * time.Millisecond)
+	s.send("q")
+	if code := s.exitCode(); code != 0 {
+		t.Fatalf("exit %d; terminal:\n%s", code, s.output())
+	}
+	if !strings.Contains(s.output(), "\x1b[?1049l") { // left the alternate screen
+		t.Error("the terminal was not restored")
+	}
+	es, _ := os.ReadFile(filepath.Join(mekHome, "audit.jsonl"))
+	if !strings.Contains(string(es), `"start-session"`) {
+		t.Errorf("the UI's commands were not audited:\n%s", es)
+	}
+}

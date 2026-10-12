@@ -417,7 +417,7 @@ func TestHelpGroups(t *testing.T) {
 	h := newHarness(t, "")
 	out := h.mustRun("help")
 	groups := map[string][]string{
-		"Contexts:":                             {"ctx", "init", "login", "use"},
+		"Contexts:":                             {"ctx", "init", "login", "ui", "use"},
 		"Run commands:":                         {"aws", "env", "exec", "gcloud", "kubectl"},
 		"Access (shells, tunnels, Kubernetes):": {"kube", "shell", "tunnel"},
 		"Setup:":                                {"completion", "doctor", "help", "self-update", "shell-init", "version"},

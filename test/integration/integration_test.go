@@ -375,3 +375,11 @@ func TestLoginFlagsReachTheCLI(t *testing.T) {
 		t.Errorf("login ran:\n  %s\nwant:\n  %s", strings.Join(got, "\n  "), strings.Join(want, "\n  "))
 	}
 }
+
+// mek ui needs a terminal; from a script it says so instead of drawing.
+func TestUINeedsATerminal(t *testing.T) {
+	e := setup(t, "contexts:\n  dev: {provider: aws, aws_profile: dev}\n")
+	if r := e.run("ui"); r.Code == 0 || !strings.Contains(r.Stderr, "mek ui needs a terminal") {
+		t.Errorf("ui without a terminal: %+v", r)
+	}
+}

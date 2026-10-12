@@ -395,6 +395,35 @@ get `KUBECONFIG`. Credentials from your shell that would override the context
 
 ## 4. Everyday use
 
+### The terminal UI
+
+`mek ui` puts contexts, tunnels, shells, clusters and the audit log on one screen:
+
+```console
+$ mek ui                 # or: mek -c prod ui, to start on prod
+mek   1 Contexts   2 Tunnels   3 Access   4 Audit
+     CONTEXT  ACCOUNT
+▸ *  dev      aws 111122223333 / Developer / ap-southeast-1
+     gcp-dev  gcp acme-dev / asia-southeast1                  readonly
+     prod     aws 444455556666 / Admin / ap-southeast-1        protected
+
+↑↓ choose · enter use (saved current) · l log in · 1-4/tab switch · ? keys · q quit
+```
+
+| Tab | Shows | Keys |
+|---|---|---|
+| 1 Contexts | every context; `*` is the saved current one | `enter` make it current · `l` log in |
+| 2 Tunnels | every tunnel (state, `↻` reconnects, port, age), and named tunnels that aren't running | `enter` start a named one in the background, or read a running one's log · `x` stop · `l` log (follows new lines) |
+| 3 Access | the chosen context's targets and clusters | `enter` a shell on a target, or write a cluster's kubeconfig · `k` K9s on a cluster |
+| 4 Audit | the last 500 entries, newest first | `/` search · `b` only blocked / declined · `c` only the chosen context · `esc` clear |
+
+The context chosen on tab 1 is the one tabs 3 and 4 use. Everything the UI does runs mek
+itself — `mek use`, `mek -c dev tunnel db -b`, `mek -c dev shell bastion` — so the guard and
+the audit log work exactly as when typed: a protected context asks first (in the UI, or in the
+terminal for shells), a readonly one still blocks shells. Shells, logins and K9s take over the
+terminal and return to the UI when they end; when one fails, it waits for Enter so the error
+can be read. Tunnels and the audit log refresh every second.
+
 ### Several accounts at once
 
 Runs on different contexts never mix credentials, so use as many at once as you like:
@@ -783,6 +812,7 @@ current context). For mek's own description of those commands, use `mek help aws
 |---|---|
 | **Contexts** | |
 | `mek init [--force]` | create the config file from a commented example |
+| `mek ui` | contexts, tunnels, shells, clusters and the audit log in one terminal screen |
 | `mek ctx ls` | list contexts (`*` = current) |
 | `mek ctx [--short]` | show the current context (`--short`: just the name, for prompts) |
 | `mek use <ctx>` | switch the saved context (every terminal without its own) |
@@ -869,9 +899,10 @@ belongs in IAM roles, SCPs and org policies.
 
 1. ✅ Contexts, SSO login, passthrough, exec/env, guard, audit, doctor, self-update
 2. ✅ Access paths ([design](docs/design/0001-tunnel-shell-kube.md)): `mek kube` / `mek kubectl` (EKS, GKE), `mek shell` (SSM, IAP), `mek tunnel` (SSM, IAP, Cloud SQL), background tunnels
-3. TUI with a resource catalog generated from AWS/GCP API models
-4. Desktop GUI (Wails)
-5. Azure and Huawei Cloud again, later (see `keep/azure-huawei`)
+3. ✅ Terminal UI (`mek ui`): contexts, tunnels, shells, clusters, audit log
+4. A resource catalog in the terminal UI, generated from AWS/GCP API models
+5. Desktop GUI (Wails)
+6. Azure and Huawei Cloud again, later (see `keep/azure-huawei`)
 
 ## Development
 
@@ -893,6 +924,9 @@ How the code fits together (the GoF patterns are named where they shape it):
   fills the steps). **`internal/tunnel`** is a Facade over tunnel records, flock-based
   liveness, port claims and the supervisor, with a State per tunnel deciding what
   listing and stopping it means.
+- **`internal/tui`** is `mek ui` (Bubble Tea): each tab and overlay is a State handling its
+  own keys, and every key that acts is an `action` (a Command) holding mek's own arguments,
+  run in the terminal or in the background — the UI never talks to a cloud itself.
   Design notes: [docs/design/0001-tunnel-shell-kube.md](docs/design/0001-tunnel-shell-kube.md).
 
 ```bash
@@ -912,7 +946,7 @@ Tests come in five layers, all run by CI (integration and e2e on Linux and macOS
 |---|---|---|
 | Unit | `*_test.go` next to the code | every package, with fakes for processes, prompts, HTTP and the filesystem |
 | Integration (`-tags integration`) | `test/integration` | the real binary against recording stub CLIs: env per cloud, leaked credentials removed, guard + audit, exit codes, signal forwarding, concurrent runs, login flows, kube/shell/tunnel commands, and background tunnels with a stub that really listens (start → ls → stop, reconnecting, a `kill -9`ed supervisor, ten simultaneous starts) |
-| E2E (`-tags e2e`) | `test/e2e` | release archives served over HTTP, installed by the real `install.sh` (including tampered / unlisted archives being refused), a new user's first session on both clouds, the confirmation prompts (including shells and tunnels) answered on a real pseudo-terminal, and a background tunnel outliving the terminal that started it |
+| E2E (`-tags e2e`) | `test/e2e` | release archives served over HTTP, installed by the real `install.sh` (including tampered / unlisted archives being refused), a new user's first session on both clouds, the confirmation prompts (including shells and tunnels) answered on a real pseudo-terminal, a background tunnel outliving the terminal that started it, and `mek ui` driven by keys (switch, start and stop a tunnel, open a shell, quit with the terminal restored) |
 | Contract (`-tags contract`) | `test/contract` | mek with the **real** `aws`, `gcloud`, `gke-gcloud-auth-plugin` and `kubectl`, offline: each CLI reads the config, directories, kubeconfigs and session commands mek hands it, against local fake APIs where one is needed. A missing CLI is skipped; `MEK_CONTRACT_REQUIRE=1` makes it fail. `sh test/contract/install-clis.sh` installs the CLIs on Debian/Ubuntu |
 | Emulator (`-tags emulator`) | `test/emulator` | the **full AWS IAM Identity Center login** with the real `aws` against the [Floci](https://floci.io) emulator in docker — `mek login` → `aws sso login` (device code) → approval → role credentials through the profile mek generates — then a real call, a readonly block and a confirmed delete with them. It starts its own container on a random local port (never an emulator you already run); a small test proxy adds the `x-amzn-ErrorType` header Floci 2.1.0 leaves out of pending-token responses |
 

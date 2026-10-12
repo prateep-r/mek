@@ -157,12 +157,3 @@ func TestTunnelStopDeadNote(t *testing.T) {
 		t.Errorf("stop of a dead tunnel: %q", out)
 	}
 }
-
-func TestAge(t *testing.T) {
-	now := time.Now()
-	for d, want := range map[time.Duration]string{5 * time.Second: "5s", 12 * time.Minute: "12m", 3 * time.Hour: "3h", 72 * time.Hour: "3d"} {
-		if got := age(now.Add(-d)); got != want {
-			t.Errorf("age(%s) = %s, want %s", d, got, want)
-		}
-	}
-}

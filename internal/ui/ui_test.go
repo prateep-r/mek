@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPalette(t *testing.T) {
@@ -116,5 +117,14 @@ func TestPromptErrors(t *testing.T) {
 	}
 	if _, err := ConfirmTyped("?", "prod"); err == nil {
 		t.Error("ConfirmTyped must pass the read error on")
+	}
+}
+
+func TestAge(t *testing.T) {
+	now := time.Now()
+	for d, want := range map[time.Duration]string{5 * time.Second: "5s", 12 * time.Minute: "12m", 3 * time.Hour: "3h", 72 * time.Hour: "3d"} {
+		if got := Age(now.Add(-d)); got != want {
+			t.Errorf("Age(%s) = %s, want %s", d, got, want)
+		}
 	}
 }

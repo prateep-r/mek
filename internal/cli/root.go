@@ -61,7 +61,7 @@ credentials, plus a safety guard and audit log for protected contexts.`,
 			root.AddCommand(c)
 		}
 	}
-	add("contexts", newInitCmd(), newUseCmd(), a.newCtxCmd(), a.newLoginCmd())
+	add("contexts", newInitCmd(), newUseCmd(), a.newCtxCmd(), a.newLoginCmd(), a.newUICmd())
 	for _, c := range provider.Clouds() {
 		add("run", a.newPassthroughCmd(c))
 	}

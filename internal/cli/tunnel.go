@@ -196,7 +196,7 @@ func (a *app) newTunnelLsCmd() *cobra.Command {
 					mode += fmt.Sprintf(" ↻%d", i.Restarts)
 				}
 				fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s%s\t%s\t%s\n", i.ShortID(), i.Context, orDash(i.Name), i.Local,
-					i.State.Name(), mode, age(i.Started), i.Target)
+					i.State.Name(), mode, ui.Age(i.Started), i.Target)
 			}
 			return w.Flush()
 		},
@@ -268,20 +268,6 @@ func orDash(s string) string {
 		return "-"
 	}
 	return s
-}
-
-// age is a short duration since t, like 5s, 12m or 3h.
-func age(t time.Time) string {
-	d := time.Since(t)
-	switch {
-	case d < time.Minute:
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	case d < time.Hour:
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	case d < 48*time.Hour:
-		return fmt.Sprintf("%dh", int(d.Hours()))
-	}
-	return fmt.Sprintf("%dd", int(d.Hours()/24))
 }
 
 // tunnelSpec is the named tunnel (with --local applied) or the ad-hoc one

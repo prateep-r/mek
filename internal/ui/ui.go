@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 func isTTY(f *os.File) bool {
@@ -107,4 +108,18 @@ func ConfirmTyped(question, word string) (bool, error) {
 		return false, err
 	}
 	return ans == word, nil
+}
+
+// Age is a short duration since t, like 5s, 12m or 3h.
+func Age(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd", int(d.Hours()/24))
 }
