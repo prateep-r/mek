@@ -240,6 +240,6 @@ func TestKill(t *testing.T) {
 		t.Error("not killed")
 	}
 	Kill(0)
-	Kill(cmd.Process.Pid) // gone: OpenProcess fails
+	Kill(1<<30 + 2) // no such process (Windows pids are multiples of 4): OpenProcess fails
 	KillGroup(cmd.Process.Pid)
 }
