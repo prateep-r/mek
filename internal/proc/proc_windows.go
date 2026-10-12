@@ -112,30 +112,49 @@ func StartGroup(cmd *exec.Cmd) (*Group, error) {
 // (and what it starts) if mek ends — as its process group does on Unix.
 func StartAttached(cmd *exec.Cmd) (*Group, error) { return startInJob(cmd) }
 
-func startInJob(cmd *exec.Cmd) (*Group, error) {
+// Test seams: making a Job Object that ends its processes when closed, and
+// putting a process in it.
+var (
+	newJob      = defaultNewJob
+	assignToJob = defaultAssign
+)
+
+func defaultNewJob() (windows.Handle, error) {
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	g := &Group{cmd, groupSys{job}}
 	info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{
 		BasicLimitInformation: windows.JOBOBJECT_BASIC_LIMIT_INFORMATION{LimitFlags: windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE},
 	}
 	if _, err := windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation,
 		uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info))); err != nil {
-		g.close()
+		windows.CloseHandle(job)
+		return 0, err
+	}
+	return job, nil
+}
+
+func defaultAssign(job windows.Handle, pid int) error {
+	h, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(pid))
+	if err != nil {
+		return err
+	}
+	defer windows.CloseHandle(h)
+	return windows.AssignProcessToJobObject(job, h)
+}
+
+func startInJob(cmd *exec.Cmd) (*Group, error) {
+	job, err := newJob()
+	if err != nil {
 		return nil, err
 	}
+	g := &Group{cmd, groupSys{job}}
 	if err := cmd.Start(); err != nil {
 		g.close()
 		return nil, err
 	}
-	h, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, uint32(cmd.Process.Pid))
-	if err == nil {
-		err = windows.AssignProcessToJobObject(job, h)
-		windows.CloseHandle(h)
-	}
-	if err != nil {
+	if err := assignToJob(job, cmd.Process.Pid); err != nil {
 		cmd.Process.Kill()
 		cmd.Wait()
 		g.close()

@@ -54,7 +54,9 @@ jobs:
         with:
           go-version: stable
       - run: go vet ./...
-      - run: go test -count=1 -race ./...
+      - run: go test -count=1 -race -coverpkg=./internal/... -coverprofile=cover.out ./...
+      - name: Windows-only code is fully covered (the 100% gate elsewhere never compiles it)
+        run: go run ./test/testkit/cmd/covercheck -suffix _windows.go cover.out
 
   # mek with the real aws / gcloud / kubectl CLIs: offline contract
   # checks, then the full AWS SSO login against the Floci emulator.
