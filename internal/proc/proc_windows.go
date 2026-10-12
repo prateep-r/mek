@@ -32,8 +32,10 @@ func Lock(f *os.File) error {
 
 // Command runs path with args. A .cmd or .bat (gcloud is gcloud.cmd) runs
 // through cmd.exe, which gives ( ) , & | ^ < > a meaning of their own:
-// every argument is quoted for it, and one that cmd.exe would expand (%)
-// or split (line breaks) is refused: Start returns that error (cmd.Err).
+// every argument is quoted for it. One that cmd.exe would expand (%) or
+// split (a line break), or with a double quote (cmd.exe and the program
+// would read its quoting differently), is refused: Start returns that
+// error (cmd.Err).
 func Command(path string, args ...string) *exec.Cmd {
 	ext := strings.ToLower(filepath.Ext(path))
 	if ext != ".cmd" && ext != ".bat" {
@@ -42,8 +44,8 @@ func Command(path string, args ...string) *exec.Cmd {
 	line := []string{cmdQuote(path)}
 	var bad error
 	for _, a := range args {
-		if strings.ContainsAny(a, "%\r\n\x00") && bad == nil {
-			bad = fmt.Errorf("%s: argument %q has a character cmd.exe would change (%%, a line break)", filepath.Base(path), a)
+		if strings.ContainsAny(a, "%\"\r\n\x00") && bad == nil {
+			bad = fmt.Errorf("%s: argument %q has a character cmd.exe would change (%%, \", a line break) — use single quotes", filepath.Base(path), a)
 		}
 		line = append(line, cmdQuote(a))
 	}
@@ -58,30 +60,13 @@ func Command(path string, args ...string) *exec.Cmd {
 	return cmd
 }
 
-// cmdQuote quotes an argument for cmd.exe and then for the program's own
-// parser (the C runtime's): inside double quotes cmd.exe leaves its special
-// characters alone; a quote is doubled (cmd.exe stays inside the quotes, the
-// C runtime reads "" as a quote), and backslashes before a quote or the end
-// are doubled.
+// cmdQuote quotes an argument (with no double quote in it) for cmd.exe,
+// which leaves its special characters alone inside double quotes, and for
+// the program's parser, which needs the backslashes before the closing
+// quote doubled.
 func cmdQuote(s string) string {
-	var b strings.Builder
-	b.WriteByte('"')
-	slashes := 0
-	for _, r := range s {
-		switch r {
-		case '\\':
-			slashes++
-			continue
-		case '"':
-			b.WriteString(strings.Repeat(`\`, 2*slashes) + `""`)
-		default:
-			b.WriteString(strings.Repeat(`\`, slashes))
-			b.WriteRune(r)
-		}
-		slashes = 0
-	}
-	b.WriteString(strings.Repeat(`\`, 2*slashes) + `"`)
-	return b.String()
+	trail := len(s) - len(strings.TrimRight(s, `\`))
+	return `"` + s + strings.Repeat(`\`, trail) + `"`
 }
 
 // Detach makes cmd outlive this console: no console, its own process group.

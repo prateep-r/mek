@@ -63,7 +63,7 @@ func TestCommandThroughCmd(t *testing.T) {
 	bat := filepath.Join(t.TempDir(), "args tool.cmd") // a space in the path too
 	os.WriteFile(bat, []byte("@\""+os.Args[0]+"\" helper-args %*\r\n"), 0o700)
 	args := []string{"json(endpoint,masterAuth.clusterCaCertificate,status)", "x&y", "a|b", "^caret", "(paren)", "with space",
-		`quote"inside`, `trail\`, `back\"slash`, "<in>", "!bang", "", `C:\Program Files\x`, "--format=value(a)"}
+		`trail\`, `back\slash`, "<in>", "!bang", "", `C:\Program Files\x\\`, "--format=value(a)", "--filter=name='x y'"}
 	cmd := Command(bat, args...)
 	out, err := cmd.Output()
 	var got []string
@@ -74,8 +74,10 @@ func TestCommandThroughCmd(t *testing.T) {
 	if cmd := Command(bat, "100%"); cmd.Err == nil || !strings.Contains(cmd.Err.Error(), "cmd.exe would change") {
 		t.Errorf("percent: %v", cmd.Err)
 	}
-	if cmd := Command(bat, "a\nb"); cmd.Err == nil {
-		t.Error("line break")
+	for _, bad := range []string{"a\nb", `say "hi"`} {
+		if cmd := Command(bat, bad); cmd.Err == nil {
+			t.Errorf("%q: not refused", bad)
+		}
 	}
 	if cmd := Command(os.Args[0], "x"); cmd.SysProcAttr != nil { // not a .cmd: run directly
 		t.Errorf("exe: %+v", cmd.SysProcAttr)
@@ -90,10 +92,9 @@ func TestCmdQuote(t *testing.T) {
 	for in, want := range map[string]string{
 		"":         `""`,
 		"a b":      `"a b"`,
-		`a"b`:      `"a""b"`,
 		`a\b`:      `"a\b"`,
 		`a\`:       `"a\\"`,
-		`a\"b`:     `"a\\""b"`,
+		`a\\`:      `"a\\\\"`,
 		"x&y|z(1)": `"x&y|z(1)"`,
 	} {
 		if got := cmdQuote(in); got != want {
