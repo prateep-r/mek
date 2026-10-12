@@ -37,6 +37,11 @@ archives:
 checksum:
   name_template: checksums.txt
 
+# v0.16.0-rc1 is a GitHub pre-release: releases/latest (install.sh,
+# install.ps1, self-update) skips it.
+release:
+  prerelease: auto
+
 changelog:
   sort: asc
   filters:
