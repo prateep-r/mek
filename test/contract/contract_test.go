@@ -134,7 +134,8 @@ func TestGcloudUsesContextConfigDir(t *testing.T) {
 	extra := gcloudPython(t)
 	u := newUser(t, `contexts:
   gcp: {provider: gcp, project: acme-dev, region: asia-southeast1}
-`, []string{gcloud}, append(extra, "GOOGLE_APPLICATION_CREDENTIALS=/tmp/leaked.json")...)
+`, []string{gcloud}, append(extra, "GOOGLE_APPLICATION_CREDENTIALS=/tmp/leaked.json",
+		"CLOUDSDK_CORE_CHECK_GCE_METADATA=false")...) // a GCE metadata server on the network would add its service account
 
 	u.want("acme-dev", "-c", "gcp", "gcloud", "config", "get", "core/project")
 	u.want("asia-southeast1", "-c", "gcp", "gcloud", "config", "get", "compute/region")

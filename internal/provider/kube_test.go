@@ -24,6 +24,8 @@ func TestValidateClusters(t *testing.T) {
 		{aws + "    region: r\n    clusters:\n      m: {name: x, location: z}\n", "use region, not location"},
 		{gcp + "    clusters:\n      m: {name: x}\n", "needs a location"},
 		{gcp + "    clusters:\n      m: {name: x, location: z, region: r}\n", "not region"},
+		{gcp + "    clusters:\n      m: {name: x, location: z, endpoint: public}\n", `endpoint is private or dns, not "public"`},
+		{aws + "    region: r\n    clusters:\n      m: {name: x, endpoint: private}\n", "endpoint is for gcp clusters"},
 	}
 	for _, c := range cases {
 		if err := parse(c.in); err == nil || !strings.Contains(err.Error(), c.want) {
@@ -34,6 +36,7 @@ func TestValidateClusters(t *testing.T) {
 		aws + "    region: r\n    clusters:\n      m: {name: x}\n",
 		aws + "    clusters:\n      m: {name: x, region: r}\n",
 		gcp + "    clusters:\n      m: {name: x, location: asia-southeast1-a}\n",
+		gcp + "    clusters:\n      m: {name: x, location: z, endpoint: private}\n      d: {name: y, location: z, endpoint: dns}\n",
 	} {
 		if err := parse(ok); err != nil {
 			t.Errorf("parse(%q) should be valid: %v", ok, err)
@@ -102,11 +105,14 @@ func TestGKE(t *testing.T) {
 	if err != nil || got != (KubeCluster{Server: "https://34.1.2.3", CAData: "Q0E=", Location: "asia-southeast1"}) {
 		t.Fatalf("describe: %+v %v", got, err)
 	}
-	if s := strings.Join(argv, " "); s != "gcloud container clusters describe gke-1 --location asia-southeast1 --format json(endpoint,masterAuth.clusterCaCertificate,status)" {
+	if s := strings.Join(argv, " "); s != "gcloud container clusters describe gke-1 --location asia-southeast1 --format json(endpoint,"+
+		"masterAuth.clusterCaCertificate,status,privateClusterConfig.privateEndpoint,controlPlaneEndpointsConfig.dnsEndpointConfig,"+
+		"controlPlaneEndpointsConfig.ipEndpointsConfig.enabled)" {
 		t.Errorf("argv: %s", s)
 	}
 	for out, want := range map[string]string{
 		`{"status":"PROVISIONING"}`: "is PROVISIONING, not RUNNING",
+		`{"status":"RUNNING"}`:      "gke cluster gke-1 has no endpoint",
 		`[`:                         "gke describe gke-1",
 	} {
 		if _, err := g.DescribeCluster(c, fakeQuery(out, nil, &argv)); err == nil || !strings.Contains(err.Error(), want) {
@@ -128,5 +134,39 @@ func TestGKE(t *testing.T) {
 	ctx.Clusters = map[string]*config.Cluster{"m": {}}
 	if !gke.Needed(ctx) {
 		t.Error("plugin not needed with clusters")
+	}
+}
+
+// The endpoint a GKE kubeconfig uses, as gcloud get-credentials picks it.
+func TestGKEEndpoints(t *testing.T) {
+	g := &GCP{ctx: &config.Context{Name: "g", Provider: config.ProviderGCP, Project: "p"}}
+	const (
+		full    = `{"endpoint":"34.1.2.3","masterAuth":{"clusterCaCertificate":"Q0E="},"status":"RUNNING","privateClusterConfig":{"privateEndpoint":"10.0.0.2"},"controlPlaneEndpointsConfig":{"dnsEndpointConfig":{"endpoint":"gke-abc.asia-southeast1.gke.goog","allowExternalTraffic":true},"ipEndpointsConfig":{"enabled":true}}}`
+		ipOff   = `{"masterAuth":{"clusterCaCertificate":"Q0E="},"status":"RUNNING","controlPlaneEndpointsConfig":{"dnsEndpointConfig":{"endpoint":"gke-abc.gke.goog","allowExternalTraffic":true},"ipEndpointsConfig":{"enabled":false}}}`
+		public  = `{"endpoint":"34.1.2.3","masterAuth":{"clusterCaCertificate":"Q0E="},"status":"RUNNING"}`
+		dnsIn   = `{"endpoint":"34.1.2.3","status":"RUNNING","controlPlaneEndpointsConfig":{"dnsEndpointConfig":{"endpoint":"gke-abc.gke.goog","allowExternalTraffic":false}}}`
+		dnsGone = `{"endpoint":"34.1.2.3","status":"RUNNING"}`
+	)
+	var argv []string
+	for _, c := range []struct{ endpoint, out, server, ca, err string }{
+		{"", full, "https://34.1.2.3", "Q0E=", ""},
+		{"private", full, "https://10.0.0.2", "Q0E=", ""},
+		{"dns", full, "https://gke-abc.asia-southeast1.gke.goog", "", ""}, // a publicly trusted certificate
+		{"", ipOff, "https://gke-abc.gke.goog", "", ""},                   // IP endpoints off: DNS, as gcloud does
+		{"private", ipOff, "", "", "has its IP endpoints off — use endpoint: dns"},
+		{"private", public, "", "", "gke cluster gke-1 has no private endpoint"},
+		{"dns", dnsGone, "", "", "has no DNS-based endpoint"},
+		{"dns", dnsIn, "", "", "DNS-based endpoint doesn't allow external traffic"},
+	} {
+		got, err := g.DescribeCluster(config.Cluster{Name: "gke-1", Location: "l", Endpoint: c.endpoint}, fakeQuery(c.out, nil, &argv))
+		if c.err != "" {
+			if err == nil || !strings.Contains(err.Error(), c.err) {
+				t.Errorf("%s %s: err %v, want %q", c.endpoint, c.out, err, c.err)
+			}
+			continue
+		}
+		if err != nil || got.Server != c.server || got.CAData != c.ca {
+			t.Errorf("%s %s: %+v %v", c.endpoint, c.out, got, err)
+		}
 	}
 }

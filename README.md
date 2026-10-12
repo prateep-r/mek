@@ -309,6 +309,7 @@ argument.
 | `clusters.<alias>.name` | string | **yes** | — | EKS name | GKE name | *arg* | the cluster in the cloud (must be `ACTIVE` / `RUNNING`) |
 | `clusters.<alias>.region` | string | AWS: yes, unless the context has `region` | the context's `region` | ✓ | — | *arg* | the EKS cluster's region |
 | `clusters.<alias>.location` | string | GCP: **yes** | — | — | ✓ | *arg* | the GKE cluster's zone or region |
+| `clusters.<alias>.endpoint` | `private` / `dns` | no | the cluster's endpoint | — | ✓ | one of the two | which GKE endpoint the kubeconfig uses: `private` = its internal IP (from inside the VPC or over VPN), `dns` = its DNS-based endpoint (from anywhere IAM allows, if it allows external traffic) — see [private clusters](#private-clusters) |
 | `clusters.<alias>.namespace` | string | no | `default` | ✓ | ✓ | *arg* | the kube context's default namespace |
 | **Hosts** (`mek shell`, tunnel hops) | | | | | | | |
 | `targets` | map: *alias* → target | no | none | ✓ | ✓ | alias: name rule, not `ls` `list` `stop` `logs` | hosts by short name: `mek shell <alias>`, `via: <alias>` |
@@ -366,7 +367,7 @@ contexts:
     project: acme-prod
     region: asia-southeast1
     clusters:
-      apps: {name: apps-1, location: asia-southeast1}    # GKE: zone or region
+      apps: {name: apps-1, location: asia-southeast1}    # GKE: zone or region (endpoint: private | dns for private clusters)
     targets:
       web: {instance: web-1, zone: asia-southeast1-b, user: ops}   # zone is looked up if omitted
     tunnels:
@@ -546,7 +547,7 @@ KUBECONFIG=~/.config/mek/kube/prod.yaml k9s  # or point any tool at the file
 |---|---|
 | `mek -c prod kube` | every cluster under `clusters:`; the first is current |
 | `mek -c prod kube main` | …with `main` as the current one |
-| `mek -c prod kube --name other-eks [--region us-east-1]` | a cluster that isn't in the config (GCP: `--location`) |
+| `mek -c prod kube --name other-eks [--region us-east-1]` | a cluster that isn't in the config (GCP: `--location`, `--endpoint`) |
 
 Kube contexts are named `<context>/<cluster>` (`prod/main`), so they never clash across
 accounts. To see clusters from several accounts — and your own `~/.kube/config` — in one
@@ -567,6 +568,25 @@ K9s or FreeLens started from the Dock, and can never use another context's crede
 For the guard, `kubectl get/describe/logs` are reads, `apply/scale/…` writes,
 `delete/drain` destructive, `exec/attach/debug` a **shell** and `port-forward/proxy` a
 **tunnel**; `--dry-run` is a read.
+
+### Private clusters
+
+**EKS** has one API hostname: with a private endpoint it resolves to the private address
+inside the VPC (or over VPN / Direct Connect), so nothing changes in mek — be on that network.
+
+**GKE** has separate endpoints; pick one per cluster with `endpoint:`, as
+`gcloud container clusters get-credentials --internal-ip` / `--dns-endpoint` would:
+
+```yaml
+clusters:
+  apps: {name: apps-1, location: asia-southeast1}                  # the cluster's default endpoint
+  core: {name: core-1, location: asia-southeast1, endpoint: private}  # internal IP: from the VPC or over VPN
+  edge: {name: edge-1, location: asia-southeast1, endpoint: dns}      # DNS-based: no VPN, IAM decides
+```
+
+The DNS-based endpoint (`gke-….gke.goog`) needs "allow external traffic" turned on for the
+cluster; its certificate is publicly trusted, so the kubeconfig carries no CA for it. A
+cluster with its IP endpoints turned off uses it automatically.
 
 ### Example: reach an nginx pod in EKS
 

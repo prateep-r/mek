@@ -12,6 +12,7 @@ type Cluster struct {
 	Name      string `yaml:"name"`                // the cloud's cluster name
 	Region    string `yaml:"region,omitempty"`    // aws: defaults to the context's region
 	Location  string `yaml:"location,omitempty"`  // gcp: zone or region
+	Endpoint  string `yaml:"endpoint,omitempty"`  // gcp: private (internal IP) or dns (DNS-based); default: the cluster's
 	Namespace string `yaml:"namespace,omitempty"` // default namespace in the kubeconfig
 }
 

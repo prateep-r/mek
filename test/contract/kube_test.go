@@ -92,7 +92,12 @@ func fakeGKE(t *testing.T, token string) (srv *httptest.Server, caFile string, a
 			ca := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
 			json.NewEncoder(w).Encode(map[string]any{
 				"name": "apps-1", "status": "RUNNING", "endpoint": strings.TrimPrefix(srv.URL, "https://"),
-				"masterAuth": map[string]string{"clusterCaCertificate": base64.StdEncoding.EncodeToString(ca)},
+				"masterAuth":           map[string]string{"clusterCaCertificate": base64.StdEncoding.EncodeToString(ca)},
+				"privateClusterConfig": map[string]any{"enablePrivateNodes": true, "privateEndpoint": "10.9.8.7"},
+				"controlPlaneEndpointsConfig": map[string]any{
+					"dnsEndpointConfig": map[string]any{"endpoint": "gke-fake.asia-southeast1.gke.goog", "allowExternalTraffic": true},
+					"ipEndpointsConfig": map[string]any{"enabled": true},
+				},
 			})
 		case r.URL.Path == "/version":
 			if r.Header.Get("Authorization") != "Bearer "+token {
@@ -133,4 +138,31 @@ func TestKubeWithRealGcloudAndPlugin(t *testing.T) {
 		t.Error("the API server saw no plugin token")
 	}
 	u.homeUntouched(".kube/config", ".config/gcloud")
+}
+
+// Real gcloud returns the private and DNS-based endpoints mek asks for.
+func TestKubeGKEEndpointsWithRealGcloud(t *testing.T) {
+	gcloud := realCLI(t, "gcloud")
+	srv, caFile, _ := fakeGKE(t, "unused")
+	u := newUser(t, `contexts:
+  gke:
+    provider: gcp
+    project: my-project
+    clusters:
+      priv: {name: apps-1, location: asia-southeast1, endpoint: private}
+      dns: {name: apps-1, location: asia-southeast1, endpoint: dns}
+`, []string{gcloud}, append(gcloudPython(t),
+		"CLOUDSDK_AUTH_ACCESS_TOKEN=ya29.fake-access-token",
+		"CLOUDSDK_API_ENDPOINT_OVERRIDES_CONTAINER="+srv.URL+"/",
+		"CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE="+caFile,
+		"CLOUDSDK_CORE_DISABLE_PROMPTS=1", "CLOUDSDK_COMPONENT_MANAGER_DISABLE_UPDATE_CHECK=1")...)
+	if out, code := u.run("-c", "gke", "kube"); code != 0 {
+		t.Fatalf("mek kube (exit %d):\n%s", code, out)
+	}
+	b, _ := os.ReadFile(filepath.Join(u.mekHome, "kube", "gke.yaml"))
+	cfg := string(b)
+	if !strings.Contains(cfg, "server: https://10.9.8.7") || !strings.Contains(cfg, "server: https://gke-fake.asia-southeast1.gke.goog") ||
+		strings.Count(cfg, "certificate-authority-data") != 1 { // the DNS endpoint's certificate is publicly trusted
+		t.Errorf("kubeconfig:\n%s", cfg)
+	}
 }

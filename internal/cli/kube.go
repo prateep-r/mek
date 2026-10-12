@@ -17,7 +17,7 @@ import (
 	"github.com/prateep-r/mek/internal/ui"
 )
 
-type kubeOpts struct{ name, region, location string } // an ad-hoc cluster
+type kubeOpts struct{ name, region, location, endpoint string } // an ad-hoc cluster
 
 func (a *app) newKubeCmd() *cobra.Command {
 	var o kubeOpts
@@ -49,6 +49,7 @@ Its credentials come from mek on every request, so it never holds a key.
 	f.StringVar(&o.name, "name", "", "a cluster that isn't in the config: its name in the cloud")
 	f.StringVar(&o.region, "region", "", "aws: the ad-hoc cluster's region (default: the context's)")
 	f.StringVar(&o.location, "location", "", "gcp: the ad-hoc cluster's zone or region")
+	f.StringVar(&o.endpoint, "endpoint", "", "gcp: the ad-hoc cluster's endpoint: private or dns (default: the cluster's)")
 	cmd.AddCommand(a.newKubeTokenCmd())
 	return cmd
 }
@@ -95,8 +96,8 @@ func (a *app) kube(out io.Writer, current string, o kubeOpts) error {
 // validated with the config's rules.
 func kubeClusters(cfg *config.Config, ctx *config.Context, o kubeOpts) (map[string]*config.Cluster, error) {
 	if o.name == "" {
-		if o.region != "" || o.location != "" {
-			return nil, errors.New("--region and --location need --name")
+		if o.region != "" || o.location != "" || o.endpoint != "" {
+			return nil, errors.New("--region, --location and --endpoint need --name")
 		}
 		if len(ctx.Clusters) == 0 {
 			return nil, fmt.Errorf("context %s has no clusters — add `clusters:` to its config, or pass --name", ctx.Name)
@@ -108,7 +109,7 @@ func kubeClusters(cfg *config.Config, ctx *config.Context, o kubeOpts) (map[stri
 	if c.Clusters == nil {
 		c.Clusters = map[string]*config.Cluster{}
 	}
-	c.Clusters[o.name] = &config.Cluster{Name: o.name, Region: o.region, Location: o.location}
+	c.Clusters[o.name] = &config.Cluster{Name: o.name, Region: o.region, Location: o.location, Endpoint: o.endpoint}
 	if err := provider.CheckContext(cfg, &c); err != nil {
 		return nil, err
 	}

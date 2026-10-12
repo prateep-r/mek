@@ -27,6 +27,9 @@ var gcpCloud = Cloud{
 			if cl.Location == "" {
 				return fmt.Errorf("clusters.%s needs a location (zone or region)", alias)
 			}
+			if cl.Endpoint != "" && cl.Endpoint != "private" && cl.Endpoint != "dns" {
+				return fmt.Errorf("clusters.%s: endpoint is private or dns, not %q", alias, cl.Endpoint)
+			}
 		}
 		for alias, t := range c.Targets {
 			if !gcpVMName.MatchString(t.Instance) {

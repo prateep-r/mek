@@ -62,6 +62,9 @@ func validateAWS(c *config.Context) error {
 		if cl.Location != "" {
 			return fmt.Errorf("clusters.%s: aws clusters use region, not location", alias)
 		}
+		if cl.Endpoint != "" { // EKS has one hostname; inside the VPC it resolves to the private endpoint
+			return fmt.Errorf("clusters.%s: endpoint is for gcp clusters", alias)
+		}
 		if cl.Region == "" && c.Region == "" {
 			return fmt.Errorf("clusters.%s needs a region (or set the context's region)", alias)
 		}

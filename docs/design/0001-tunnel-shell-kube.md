@@ -185,7 +185,9 @@ cloud registry hook (every cloud mek has implements them all).
 
 ## Open questions
 
-1. GKE private/DNS-based endpoints in `mek kube`.
+1. ~~GKE private/DNS-based endpoints in `mek kube`~~ — done in v0.15.0: `endpoint: private | dns`
+   per cluster, chosen as `gcloud container clusters get-credentials --internal-ip` /
+   `--dns-endpoint` would (DNS when the IP endpoints are off; no CA for the DNS endpoint).
 2. ~~Restarting a background tunnel when the cloud closes its session~~ — done in v0.14.0:
    the supervisor starts the process again when it ends on its own after running at least
    10 s (a run that worked), with a doubling wait (1 s → 30 s) between quick failures and

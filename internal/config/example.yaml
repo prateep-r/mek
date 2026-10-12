@@ -46,6 +46,7 @@ contexts:
   #   account: you@example.com      # optional
   #   clusters:
   #     apps: {name: apps-cluster, location: asia-southeast1}   # GKE: zone or region
+  #     core: {name: core-cluster, location: asia-southeast1, endpoint: private}   # or dns
   #   targets:
   #     web: {instance: web-1, zone: asia-southeast1-b}          # zone is looked up if omitted
   #   tunnels:

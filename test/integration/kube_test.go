@@ -80,7 +80,8 @@ func TestKubeGKE(t *testing.T) {
 		t.Fatalf("mek kube: %+v", r)
 	}
 	c := e.calls()[0]
-	if c.Name != "gcloud" || c.ArgLine() != "container clusters describe apps-1 --location asia-southeast1 --format json(endpoint,masterAuth.clusterCaCertificate,status)" ||
+	if c.Name != "gcloud" || c.ArgLine() != "container clusters describe apps-1 --location asia-southeast1 --format json(endpoint,masterAuth.clusterCaCertificate,status,privateClusterConfig.privateEndpoint,"+
+		"controlPlaneEndpointsConfig.dnsEndpointConfig,controlPlaneEndpointsConfig.ipEndpointsConfig.enabled)" ||
 		c.Env["CLOUDSDK_CONFIG"] != filepath.Join(e.mekHome, "gcloud", "gke") {
 		t.Errorf("describe: %+v", c)
 	}
