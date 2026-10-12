@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"runtime"
 	"github.com/prateep-r/mek/test/testkit"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,9 @@ import (
 // `mek use -s` switches the shell it is typed in, once `mek shell-init` is
 // loaded — in each real shell that is installed. Everything else goes to mek.
 func TestShellInitInRealShells(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell; PowerShell has its own test")
+	}
 	e := setup(t, `contexts:
   prod: {provider: aws, aws_profile: admin, clusters: {main: {name: prod-eks, region: us-east-1}}}
   dev:  {provider: aws, aws_profile: dev}
@@ -49,7 +53,7 @@ echo "status=$status ctx=$MEK_CONTEXT"
 			}
 			cmd := exec.Command(bin, append(strings.Fields(sh.args), sh.script)...)
 			cmd.Env = append(e.vars[:2:2], e.vars[3:]...)
-			cmd.Env = append(cmd.Env, "PATH="+filepath.Dir(mek)+":"+strings.TrimPrefix(e.vars[2], "PATH="), "NO_COLOR=1", "MEK_CONTEXT=", "KUBECONFIG=")
+			cmd.Env = append(cmd.Env, e.pathWith(filepath.Dir(mek)), "NO_COLOR=1", "MEK_CONTEXT=", "KUBECONFIG=")
 			if d := testkit.CoverDir(); d != "" { // coverage runs: the instrumented mek writes its counters there
 				cmd.Env = append(cmd.Env, "GOCOVERDIR="+d)
 			}

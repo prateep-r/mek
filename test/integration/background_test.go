@@ -35,10 +35,8 @@ func bgSetup(t *testing.T) (*env, int) {
   dev: {provider: aws, aws_profile: dev, region: ap-southeast-1, tunnels: {db: {via: i-0123abcd, host: db.internal, port: 5432, local_port: %d}}}
   ro:  {provider: aws, aws_profile: viewer, readonly: true, tunnels: {db: {via: i-0123abcd, port: 5432, local_port: %d}}}
 `, port, port))
-	stubs := strings.SplitN(strings.TrimPrefix(e.vars[2], "PATH="), ":", 2)[0]
-	b, _ := os.ReadFile(testkit.Listenstub(t))
 	for _, name := range []string{"aws", "session-manager-plugin"} {
-		os.WriteFile(filepath.Join(stubs, name), b, 0o755)
+		testkit.Install(testkit.Listenstub(t), filepath.Join(e.stubs, testkit.Exe(name)))
 	}
 	t.Cleanup(func() { e.run("tunnel", "stop", "--all") }) // no stray processes
 	return e, port

@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"runtime"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,14 +21,7 @@ const kubeConfig = `contexts:
 func kubeSetup(t *testing.T) *env {
 	t.Helper()
 	e := setup(t, kubeConfig)
-	stubs := strings.SplitN(strings.TrimPrefix(e.vars[2], "PATH="), ":", 2)[0]
-	b, err := os.ReadFile(filepath.Join(stubs, "aws"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(stubs, "kubectl"), b, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	e.copyStub("aws", "kubectl")
 	return e
 }
 
@@ -128,6 +122,9 @@ func TestKubectlPassthrough(t *testing.T) {
 // eval "$(mek use --shell ...)" in a real shell: kubectl typed directly
 // follows the context, and mek only ever unsets its own KUBECONFIG.
 func TestUseShellKubeconfig(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell; PowerShell has its own test")
+	}
 	e := kubeSetup(t)
 	script := `
 eval "$(mek use --shell prod)"; kubectl get ns
@@ -138,7 +135,7 @@ eval "$(mek use --shell bare)"; echo "user=${KUBECONFIG}"
 	bin := filepath.Dir(mek)
 	cmd := exec.Command("/bin/sh", "-c", script)
 	cmd.Env = append(e.vars[:2:2], e.vars[3:]...)
-	cmd.Env = append(cmd.Env, "PATH="+bin+":"+strings.TrimPrefix(e.vars[2], "PATH="), "NO_COLOR=1")
+	cmd.Env = append(cmd.Env, e.pathWith(bin), "NO_COLOR=1")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)

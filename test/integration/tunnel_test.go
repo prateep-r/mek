@@ -27,10 +27,8 @@ func tunnelSetup(t *testing.T) (*env, func(string) string) {
 	t.Helper()
 	ports := testkit.FreePorts(t, "35432", "35433", "35434", "38080")
 	e := setup(t, ports.Replace(tunnelConfig))
-	stubs := strings.SplitN(strings.TrimPrefix(e.vars[2], "PATH="), ":", 2)[0]
-	b, _ := os.ReadFile(filepath.Join(stubs, "aws"))
 	for _, p := range []string{"session-manager-plugin", "cloud-sql-proxy"} {
-		os.WriteFile(filepath.Join(stubs, p), b, 0o755)
+		e.copyStub("aws", p)
 	}
 	return e, ports.Replace
 }
