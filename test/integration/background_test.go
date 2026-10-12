@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -40,6 +41,15 @@ func bgSetup(t *testing.T) (*env, int) {
 	}
 	t.Cleanup(func() { e.run("tunnel", "stop", "--all") }) // no stray processes
 	return e, port
+}
+
+// stoppedCode is a stopped tunnel's exit code: SIGTERM's 143, or Windows'
+// Job Object termination code 1.
+func stoppedCode() int {
+	if runtime.GOOS == "windows" {
+		return 1
+	}
+	return 143
 }
 
 func listening(port int) bool {
@@ -93,7 +103,7 @@ func TestBackgroundTunnel(t *testing.T) {
 		t.Error("port still open after stop")
 	}
 	a = e.audit()
-	if len(a) != 2 || a[1]["event"] != "end" || a[1]["exit_code"] != float64(143) || a[1]["session"] != a[0]["session"] {
+	if len(a) != 2 || a[1]["event"] != "end" || a[1]["exit_code"] != float64(stoppedCode()) || a[1]["session"] != a[0]["session"] {
 		t.Errorf("audit after stop: %v", a)
 	}
 	if r := e.run("tunnel", "ls"); !strings.Contains(r.Stderr, "no tunnels") {
@@ -119,7 +129,9 @@ func TestBackgroundDeadSupervisor(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	r := e.run("tunnel", "stop", "db")
-	if r.Code != 0 || !strings.Contains(r.Stderr, fmt.Sprintf("localhost:%d is still in use", port)) {
+	// On Unix the tunnel's process outlives its killed supervisor; on Windows
+	// its Job Object ends with the supervisor, so the port is free.
+	if outlived := strings.Contains(r.Stderr, fmt.Sprintf("localhost:%d is still in use", port)); r.Code != 0 || outlived != (runtime.GOOS != "windows") {
 		t.Errorf("stop of a dead tunnel: %+v", r)
 	}
 }
@@ -200,8 +212,8 @@ func TestForegroundTunnelListedAndStopped(t *testing.T) {
 	}
 	select {
 	case <-exited:
-		if code := cmd.ProcessState.ExitCode(); code != 143 {
-			t.Errorf("foreground mek exit %d, want the tunnel's 143", code)
+		if code := cmd.ProcessState.ExitCode(); code != stoppedCode() {
+			t.Errorf("foreground mek exit %d, want the tunnel's %d", code, stoppedCode())
 		}
 	case <-time.After(10 * time.Second):
 		cmd.Process.Kill()

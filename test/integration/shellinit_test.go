@@ -3,10 +3,10 @@
 package integration
 
 import (
-	"runtime"
 	"github.com/prateep-r/mek/test/testkit"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
