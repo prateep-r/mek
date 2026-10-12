@@ -10,6 +10,7 @@
 package contract
 
 import (
+	"runtime"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -61,8 +62,12 @@ func newUser(t *testing.T, config string, clis []string, extra ...string) *user 
 		path = append(path, filepath.Dir(cli))
 	}
 	os.WriteFile(filepath.Join(u.mekHome, "config.yaml"), []byte(config), 0o600)
-	u.vars = append([]string{"MEK_HOME=" + u.mekHome, "HOME=" + u.home,
-		"PATH=" + strings.Join(append(path, "/usr/bin", "/bin"), ":")}, extra...)
+	system := []string{"/usr/bin", "/bin"}
+	if runtime.GOOS == "windows" {
+		system = []string{filepath.Join(os.Getenv("SystemRoot"), "System32")}
+	}
+	u.vars = append([]string{"MEK_HOME=" + u.mekHome, "HOME=" + u.home, "USERPROFILE=" + u.home, // Windows' home
+		"PATH=" + strings.Join(append(path, system...), string(os.PathListSeparator))}, extra...)
 	return u
 }
 
