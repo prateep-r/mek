@@ -2,6 +2,7 @@ package selfupdate
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
@@ -44,7 +45,7 @@ func release(t *testing.T, tag string, assets map[string][]byte) {
 // installed fakes the running executable at a path inside dir.
 func installed(t *testing.T, dir string) string {
 	t.Helper()
-	exe := filepath.Join(dir, "mek")
+	exe := filepath.Join(dir, binaryName)
 	os.WriteFile(exe, []byte("OLD"), 0o755)
 	old := executable
 	executable = func() (string, error) { return exe, nil }
@@ -53,10 +54,10 @@ func installed(t *testing.T, dir string) string {
 }
 
 func goodAssets(bin string) map[string][]byte {
-	tgz := makeTGZ(nil, "mek", []byte(bin))
-	sum := sha256.Sum256(tgz)
+	archive := makeArchive([]byte(bin))
+	sum := sha256.Sum256(archive)
 	return map[string][]byte{
-		assetName():     tgz,
+		assetName():     archive,
 		"checksums.txt": []byte(hex.EncodeToString(sum[:]) + "  " + assetName() + "\n"),
 	}
 }
@@ -141,7 +142,7 @@ func TestUpdateRefuses(t *testing.T) {
 			body := []byte("this is definitely not gzip data")
 			sum := sha256.Sum256(body)
 			return map[string][]byte{assetName(): body, "checksums.txt": []byte(hex.EncodeToString(sum[:]) + "  " + assetName())}
-		}(), "gzip"},
+		}(), "zip"}, // gzip: … or zip: …
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -196,7 +197,7 @@ func TestExtractCorruptTar(t *testing.T) {
 	gz := gzip.NewWriter(&buf)
 	gz.Write([]byte("this is not a tar header, just junk that is long enough to read"))
 	gz.Close()
-	if _, err := extract(buf.Bytes(), "mek"); err == nil {
+	if _, err := extractTGZ(buf.Bytes(), "mek"); err == nil {
 		t.Error("corrupt tar must fail")
 	}
 	// a tar without the binary
@@ -206,7 +207,22 @@ func TestExtractCorruptTar(t *testing.T) {
 	tw.WriteHeader(&tar.Header{Name: "README.md", Mode: 0o644, Size: 0, Typeflag: tar.TypeReg})
 	tw.Close()
 	gz.Close()
-	if _, err := extract(tbuf.Bytes(), "mek"); err == nil || !strings.Contains(err.Error(), "not found") {
+	if _, err := extractTGZ(tbuf.Bytes(), "mek"); err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("missing binary: %v", err)
 	}
+}
+
+// makeArchive is a release archive for this OS holding the binary.
+func makeArchive(bin []byte) []byte {
+	if runtime.GOOS != "windows" {
+		return makeTGZ(nil, binaryName, bin)
+	}
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, _ := zw.Create("README.md")
+	w.Write([]byte("hi"))
+	w, _ = zw.Create(binaryName)
+	w.Write(bin)
+	zw.Close()
+	return buf.Bytes()
 }

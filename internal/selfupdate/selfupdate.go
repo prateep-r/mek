@@ -20,8 +20,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/prateep-r/mek/internal/fsutil"
 )
 
 var client = &http.Client{Timeout: 60 * time.Second}
@@ -54,7 +52,7 @@ func Latest(repo string) (string, error) {
 }
 
 // assetName matches the archive name_template in .goreleaser.yaml.
-func assetName() string { return fmt.Sprintf("mek_%s_%s.tar.gz", runtime.GOOS, runtime.GOARCH) }
+func assetName() string { return fmt.Sprintf("mek_%s_%s%s", runtime.GOOS, runtime.GOARCH, archiveExt) }
 
 var semver = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)(?:-(.+))?$`)
 
@@ -121,12 +119,12 @@ func Update(repo, tag string) (string, error) {
 	if err := verify(archive, sums, asset); err != nil {
 		return exe, err
 	}
-	bin, err := extract(archive, "mek")
+	bin, err := extract(archive, binaryName)
 	if err != nil {
 		return exe, err
 	}
 
-	if err := fsutil.WriteFileAtomic(exe, bin, 0o755); err != nil {
+	if err := replace(exe, bin); err != nil {
 		return exe, fmt.Errorf("cannot replace %s: %w", exe, err)
 	}
 	return exe, nil
@@ -160,7 +158,8 @@ func verify(data, sums []byte, name string) error {
 	return fmt.Errorf("%s not listed in checksums.txt", name)
 }
 
-func extract(tgz []byte, name string) ([]byte, error) {
+// extractTGZ finds the regular file name in a .tar.gz archive.
+func extractTGZ(tgz []byte, name string) ([]byte, error) {
 	gz, err := gzip.NewReader(bytes.NewReader(tgz))
 	if err != nil {
 		return nil, err
