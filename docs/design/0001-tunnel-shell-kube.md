@@ -186,6 +186,12 @@ cloud registry hook (every cloud mek has implements them all).
 ## Open questions
 
 1. GKE private/DNS-based endpoints in `mek kube`.
-2. Restarting a background tunnel when the cloud closes its session (SSM's idle timeout).
+2. ~~Restarting a background tunnel when the cloud closes its session~~ — done in v0.14.0:
+   the supervisor starts the process again when it ends on its own after running at least
+   10 s (a run that worked), with a doubling wait (1 s → 30 s) between quick failures and
+   giving up after 5 minutes of them. The first run is never retried: `-b` reports its
+   failure. The record gains `restart`/`restarts` and a `reconnecting` phase (a State, like
+   `starting`); the audit keeps one start and one end for the whole tunnel. `--no-restart`
+   opts out; foreground tunnels don't reconnect (Ctrl-C and a closed session look alike).
 3. When Azure and Huawei Cloud return (`keep/azure-huawei`): Huawei CCE only offers static
    client certificates — a long-lived credential — for kubeconfigs.

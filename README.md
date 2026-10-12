@@ -714,7 +714,7 @@ $ mek -c prod tunnel db -b
 
 $ mek tunnel ls
 ID        CONTEXT  NAME   LOCAL  STATE                 AGE  TARGET
-16f87092  prod     db     15432  running               2m   localhost:15432 → prod-db…:5432 via bastion → i-0abc…
+16f87092  prod     db     15432  running ↻2            3h   localhost:15432 → prod-db…:5432 via bastion → i-0abc…
 3b1c9e04  dev      -      18080  running (foreground)  5m   localhost:18080 → port 8080 on the instance via i-0def…
 
 $ mek tunnel logs db -f          # the tunnel's output, as it happens
@@ -724,8 +724,17 @@ $ mek -c prod tunnel stop --all  # every tunnel of one context
 
 `-b` returns once the local port accepts connections (`--wait 30s` by default) and shows the
 log if it doesn't. `mek tunnel ls` covers every context — foreground tunnels too — and shows
-`exited (code)` when the cloud closed the session, or `dead` if its supervisor was killed.
-Two tunnels can't use the same local port.
+`exited (code)` when the tunnel ended, or `dead` if its supervisor was killed. Two tunnels
+can't use the same local port.
+
+**Reconnecting** — when a background tunnel's session ends on its own (SSM closes idle
+sessions after 20 minutes; Wi-Fi drops; the laptop sleeps), mek starts it again, keeping the
+same local port: connections open at that moment break, new ones work. `ls` shows
+`reconnecting` while it waits and `↻N` for how many times it reconnected; the log has each
+attempt. When it keeps failing straight away, mek waits longer each time (1 s, 2 s, 4 s… up
+to 30 s) and gives up after 5 minutes of that — usually an expired login: `mek login`, then
+start the tunnel again. A tunnel whose first attempt fails isn't retried (`-b` shows why).
+`--no-restart` turns reconnecting off; foreground tunnels never reconnect.
 
 ## 8. Command reference
 
@@ -762,7 +771,7 @@ current context). For mek's own description of those commands, use `mek help aws
 | `eval "$(mek env [ctx])"` | export a context into this shell (bypasses the guard and audit); fish: `mek env --syntax fish \| source` |
 | **Access (shells, tunnels, Kubernetes)** | |
 | `mek shell <target> [--zone Z] [--user U]` | a shell on an instance (SSM / IAP) |
-| `mek tunnel [name] [--via T] [--to host:port] [--cloudsql C] [--private-ip] [--local N] [-b] [--wait D]` | forward a local port |
+| `mek tunnel [name] [--via T] [--to host:port] [--cloudsql C] [--private-ip] [--local N] [-b [--no-restart] [--wait D]]` | forward a local port |
 | `mek tunnel ls` / `stop <name\|id>… \| --all` / `logs <name\|id> [-f]` | list, stop or read tunnels |
 | `mek kube [cluster] [--name N --region R \| --location L]` | write the context's kubeconfig |
 | **Setup** | |
@@ -827,7 +836,7 @@ belongs in IAM roles, SCPs and org policies.
 - Every kubectl request through mek's kubeconfig fetches a fresh token (about 0.5–1 s); mek never caches tokens.
 - The kubeconfig records mek's path and `PATH` when it is written; run `mek kube` again after moving mek or the cloud CLIs.
 - `mek shell` on GCP runs ssh with the context's own home directory, so your `~/.ssh/config` doesn't apply to it.
-- A session that the cloud closes (SSM's idle timeout is 20 minutes by default) ends its tunnel; `mek tunnel ls` shows it as exited. There is no auto-restart.
+- A foreground tunnel ends when the cloud closes its session (SSM's idle timeout is 20 minutes by default); use `-b`, which reconnects. A reconnect breaks the connections open at that moment.
 - If a tunnel's supervisor is killed with `kill -9`, `ls` shows it as dead; on macOS the tunnel's own process can outlive it (`stop` warns when the port is still taken).
 - The Homebrew cask is macOS-only; use `install.sh` or `go install` on Linux.
 - Windows is not supported yet.
@@ -878,7 +887,7 @@ Tests come in five layers, all run by CI (integration and e2e on Linux and macOS
 | Layer | Where | What it covers |
 |---|---|---|
 | Unit | `*_test.go` next to the code | every package, with fakes for processes, prompts, HTTP and the filesystem |
-| Integration (`-tags integration`) | `test/integration` | the real binary against recording stub CLIs: env per cloud, leaked credentials removed, guard + audit, exit codes, signal forwarding, concurrent runs, login flows, kube/shell/tunnel commands, and background tunnels with a stub that really listens (start → ls → stop, a `kill -9`ed supervisor, ten simultaneous starts) |
+| Integration (`-tags integration`) | `test/integration` | the real binary against recording stub CLIs: env per cloud, leaked credentials removed, guard + audit, exit codes, signal forwarding, concurrent runs, login flows, kube/shell/tunnel commands, and background tunnels with a stub that really listens (start → ls → stop, reconnecting, a `kill -9`ed supervisor, ten simultaneous starts) |
 | E2E (`-tags e2e`) | `test/e2e` | release archives served over HTTP, installed by the real `install.sh` (including tampered / unlisted archives being refused), a new user's first session on both clouds, the confirmation prompts (including shells and tunnels) answered on a real pseudo-terminal, and a background tunnel outliving the terminal that started it |
 | Contract (`-tags contract`) | `test/contract` | mek with the **real** `aws`, `gcloud`, `gke-gcloud-auth-plugin` and `kubectl`, offline: each CLI reads the config, directories, kubeconfigs and session commands mek hands it, against local fake APIs where one is needed. A missing CLI is skipped; `MEK_CONTRACT_REQUIRE=1` makes it fail. `sh test/contract/install-clis.sh` installs the CLIs on Debian/Ubuntu |
 | Emulator (`-tags emulator`) | `test/emulator` | the **full AWS IAM Identity Center login** with the real `aws` against the [Floci](https://floci.io) emulator in docker — `mek login` → `aws sso login` (device code) → approval → role credentials through the profile mek generates — then a real call, a readonly block and a confirmed delete with them. It starts its own container on a random local port (never an emulator you already run); a small test proxy adds the `x-amzn-ErrorType` header Floci 2.1.0 leaves out of pending-token responses |

@@ -24,6 +24,8 @@ func stateOf(r Record) State {
 	switch {
 	case alive && r.Phase == phaseStarting:
 		return starting{}
+	case alive && r.Phase == phaseReconnecting:
+		return reconnecting{}
 	case alive:
 		return running{}
 	case r.Phase == phaseExited:
@@ -81,6 +83,12 @@ func (running) Stop(r Record) error {
 type starting struct{ running }
 
 func (starting) Name() string { return "starting" }
+
+// reconnecting: the process ended on its own and its supervisor will start
+// it again. Stopping it is stopping the supervisor, like running.
+type reconnecting struct{ running }
+
+func (reconnecting) Name() string { return "reconnecting" }
 
 type exited struct{ code int }
 

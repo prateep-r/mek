@@ -29,9 +29,11 @@ type Record struct {
 	Decision   string    `json:"decision"`
 	Command    []string  `json:"command"`
 	Background bool      `json:"background"`
-	Phase      string    `json:"phase"`     // starting | running | exited, as last written
-	Owner      int       `json:"owner_pid"` // holds the lock: the supervisor, or mek in the foreground
-	Child      int       `json:"child_pid"` // the tunnel's process (its own process group)
+	Restart    bool      `json:"restart,omitempty"`  // background: start the process again when it ends on its own
+	Restarts   int       `json:"restarts,omitempty"` // how many times it was started again
+	Phase      string    `json:"phase"`              // starting | running | reconnecting | exited, as last written
+	Owner      int       `json:"owner_pid"`          // holds the lock: the supervisor, or mek in the foreground
+	Child      int       `json:"child_pid"`          // the tunnel's process (its own process group)
 	ExitCode   int       `json:"exit_code"`
 	Started    time.Time `json:"started"`
 	Ended      time.Time `json:"ended,omitzero"`
@@ -39,9 +41,10 @@ type Record struct {
 
 // Phases a record is written with; State adds "dead" for owners that vanished.
 const (
-	phaseStarting = "starting"
-	phaseRunning  = "running"
-	phaseExited   = "exited"
+	phaseStarting     = "starting"
+	phaseRunning      = "running"
+	phaseReconnecting = "reconnecting"
+	phaseExited       = "exited"
 )
 
 // Dir holds the tunnels' records, locks and logs.

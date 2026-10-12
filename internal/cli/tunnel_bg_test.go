@@ -53,7 +53,7 @@ func TestTunnelBackground(t *testing.T) {
 	h.mustRun("-c", "prod", "-y", "tunnel", "db", "-b", "--wait", "5s")
 	if got.Name != "db" || got.Context != "prod" || got.Local != h.port("25432") || got.ID == "" || got.Decision != "confirmed" ||
 		got.Class != "tunnel" || !strings.HasPrefix(strings.Join(got.Command, " "), "aws ssm start-session --target i-0bastion0") ||
-		len(got.Env) == 0 || len(h.exec.invs) != 1 { // only the lookup ran here; the supervisor runs the session
+		len(got.Env) == 0 || len(h.exec.invs) != 1 || !got.Restart { // only the lookup ran here; the supervisor runs the session
 		t.Errorf("spec: %+v, calls %q", got, h.exec.argv())
 	}
 	// The supervisor writes the end entry: here only the lookup and the start.
@@ -61,11 +61,17 @@ func TestTunnelBackground(t *testing.T) {
 		t.Errorf("audit: %+v", es)
 	}
 
+	h.mustRun("-c", "prod", "-y", "tunnel", "db", "-b", "--no-restart", "--wait", "5s")
+	if got.Restart {
+		t.Error("--no-restart: the supervisor would reconnect")
+	}
+	readAudit(t) // 4 entries so far
+
 	// It failed after the supervisor ran: still its end entry, not ours.
 	startTunnel = func(s tunnel.Spec, _ time.Duration) (tunnel.Record, error) { return s.Record, errors.New("not ready") }
 	_, err := h.run("-c", "prod", "-y", "tunnel", "db", "-b")
 	wantErr(t, err, "not ready")
-	if es := readAudit(t); len(es) != 4 {
+	if es := readAudit(t); len(es) != 6 {
 		t.Errorf("audit after a late failure: %+v", es)
 	}
 	// It failed before: mek ends the session it started.
@@ -74,7 +80,7 @@ func TestTunnelBackground(t *testing.T) {
 	}
 	_, err = h.run("-c", "prod", "-y", "tunnel", "db", "-b")
 	wantErr(t, err, "no supervisor")
-	if es := readAudit(t); len(es) != 7 || es[6].Event != "end" || es[6].ExitCode != 1 {
+	if es := readAudit(t); len(es) != 9 || es[8].Event != "end" || es[8].ExitCode != 1 {
 		t.Errorf("audit after an early failure: %+v", es)
 	}
 }
@@ -105,9 +111,11 @@ func TestTunnelLsStopLogs(t *testing.T) {
 	writeRecord(t, tunnel.Record{ID: "bbbb2222bbbb2222", Context: "gcp", Local: 28080, Background: true, Phase: "exited", ExitCode: 255,
 		Target: "localhost:28080 → port 8080", Started: time.Now().Add(-90 * time.Minute)})
 	os.WriteFile(filepath.Join(tunnel.Dir(), "bbbb2222bbbb2222.log"), []byte("session closed\n"), 0o600)
+	writeRecord(t, tunnel.Record{ID: "cccc3333cccc3333", Context: "prod", Local: 25433, Background: true, Phase: "exited", Restarts: 2,
+		Target: "localhost:25433 → db:5432", Started: time.Now()})
 
 	out := h.mustRun("tunnel", "ls")
-	for _, want := range []string{"ID", "aaaa1111", "running (foreground)", "db", "bbbb2222", "exited (255)", "1h", "-  ", "localhost:28080 → port 8080"} {
+	for _, want := range []string{"ID", "aaaa1111", "running (foreground)", "db", "bbbb2222", "exited (255)", "exited (0) ↻2", "1h", "-  ", "localhost:28080 → port 8080"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("ls missing %q:\n%s", want, out)
 		}

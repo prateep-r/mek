@@ -29,6 +29,7 @@ type tunnelOpts struct {
 	local             int
 	target            provider.TargetOptions // --zone, --user of the hop
 	background        bool
+	noRestart         bool
 	wait              time.Duration
 }
 
@@ -47,10 +48,14 @@ cloud's own session service. It stays in the foreground; Ctrl-C closes it.
   mek -c prod tunnel --via i-0abc1234def567890 --to :8080   # a port on the instance itself
   mek -c gcp tunnel --cloudsql my-project:asia-southeast1:db --local 15432
 
-  mek -c prod tunnel db -b                                  # in the background
+  mek -c prod tunnel db -b                                  # in the background, reconnecting
   mek tunnel ls                                             # every context's tunnels
   mek tunnel stop db                                        # or an id, or --all
   mek tunnel logs db [-f]
+
+A background tunnel starts again when its session ends on its own (SSM closes
+idle sessions after 20 minutes; networks drop), waiting longer between quick
+failures and giving up after 5 minutes of them. --no-restart turns that off.
 
 The local port defaults to the remote port + 10000. A tunnel only moves bytes,
 so readonly contexts allow it; protected contexts ask first. GCP tunnels to
@@ -74,6 +79,7 @@ another host log in to the VM over SSH, so they count as a shell.`,
 	f.StringVar(&o.target.Zone, "zone", "", "gcp: the VM's zone (default: looked up)")
 	f.StringVar(&o.target.User, "user", "", "gcp: SSH user for tunnels to another host")
 	f.BoolVarP(&o.background, "background", "b", false, "run in the background (see mek tunnel ls / stop / logs)")
+	f.BoolVar(&o.noRestart, "no-restart", false, "with --background: don't reconnect when the session ends")
 	f.DurationVar(&o.wait, "wait", 30*time.Second, "with --background: how long to wait for the local port")
 	cmd.AddCommand(a.newTunnelLsCmd(), a.newTunnelStopCmd(), a.newTunnelLogsCmd(), newSuperviseCmd())
 	return cmd
@@ -112,7 +118,7 @@ func (a *app) tunnel(name string, o tunnelOpts) error {
 	}
 	terminal := runner.Chain(a.exec, foreground(name, spec.Local()))
 	if o.background {
-		terminal = background(name, spec.Local(), o.wait)
+		terminal = background(name, spec.Local(), o.wait, !o.noRestart)
 	} else {
 		ui.Info("%s %s %s", ui.Green("⇄"), target, ui.Dim("(Ctrl-C to close)"))
 	}
@@ -143,9 +149,11 @@ func foreground(name string, local int) runner.Decorator {
 
 // background is the pipeline's terminal for -b: it hands the tunnel to a
 // supervisor, which also writes the audit end entry once it really ends.
-func background(name string, local int, wait time.Duration) runner.Runner {
+func background(name string, local int, wait time.Duration, restart bool) runner.Runner {
 	return runner.Func(func(inv *runner.Invocation) error {
-		r, err := startTunnel(tunnel.Spec{Record: tunnelRecord(inv, name, local), Env: inv.Env}, wait)
+		rec := tunnelRecord(inv, name, local)
+		rec.Restart = restart
+		r, err := startTunnel(tunnel.Spec{Record: rec, Env: inv.Env}, wait)
 		if r.ID != "" {
 			inv.Detached = true // the supervisor ran: the end entry is its job
 		}
@@ -183,6 +191,9 @@ func (a *app) newTunnelLsCmd() *cobra.Command {
 				mode := ""
 				if !i.Background {
 					mode = " (foreground)"
+				}
+				if i.Restarts > 0 {
+					mode += fmt.Sprintf(" ↻%d", i.Restarts)
 				}
 				fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s%s\t%s\t%s\n", i.ShortID(), i.Context, orDash(i.Name), i.Local,
 					i.State.Name(), mode, age(i.Started), i.Target)

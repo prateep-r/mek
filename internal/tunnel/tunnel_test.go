@@ -50,6 +50,15 @@ func TestMain(m *testing.M) {
 			fmt.Println("helper: stubborn")
 			time.Sleep(time.Minute)
 			os.Exit(0)
+		case "helper-once": // works for a while the first time, then fails at once
+			if _, err := os.Stat(os.Args[2]); err != nil {
+				os.WriteFile(os.Args[2], nil, 0o600)
+				fmt.Println("helper: up")
+				time.Sleep(300 * time.Millisecond)
+				os.Exit(0)
+			}
+			fmt.Println("helper: failing")
+			os.Exit(3)
 		case "helper-exit":
 			fmt.Println("helper: failing")
 			code, _ := strconv.Atoi(os.Args[2])
@@ -584,5 +593,70 @@ func TestHeldAndStopDedupe(t *testing.T) {
 	go func() { time.Sleep(50 * time.Millisecond); lock.Close() }()
 	if _, err := Stop([]string{"db"}, true, ""); err != nil || len(stops) != 1 {
 		t.Errorf("stop db --all: %v, SIGTERMs %v", err, stops)
+	}
+}
+
+// A background tunnel whose process ends on its own is started again: with
+// a growing wait while it keeps failing, giving up after a while of that,
+// and never when its first run didn't work.
+func TestSuperviseReconnects(t *testing.T) {
+	setup(t)
+	old := retry
+	t.Cleanup(func() { retry = old })
+	run := func(s Spec, sigs <-chan os.Signal) int {
+		t.Helper()
+		life, _ := tryLock(file(s.ID, ".lock"))
+		port, _ := tryLock(portLockPath(1))
+		log, _ := os.OpenFile(LogPath(s.ID), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		s.Path, s.Restart = s.Command[0], true
+		b, _ := json.Marshal(s)
+		return Supervise(bytes.NewReader(b), life, port, log, sigs)
+	}
+	logOf := func(id string) string { b, _ := os.ReadFile(LogPath(id)); return string(b) }
+
+	// Up once, then failing: waits 10ms, 20ms, 40ms, 40ms… and gives up.
+	retry = backoff{first: 10 * time.Millisecond, most: 40 * time.Millisecond, stable: 200 * time.Millisecond, giveUp: 500 * time.Millisecond}
+	if code := run(spec("rc", "db", 0, "helper-once", filepath.Join(t.TempDir(), "ran")), nil); code != 3 {
+		t.Errorf("gave up: exit %d", code)
+	}
+	r, _ := load("rc")
+	log := logOf("rc")
+	if r.Phase != phaseExited || r.Restarts < 3 || r.ExitCode != 3 || !strings.Contains(log, "reconnecting in 10ms (restart 1)") ||
+		!strings.Contains(log, "reconnecting in 20ms (restart 2)") || !strings.Contains(log, "reconnecting in 40ms") ||
+		!strings.Contains(log, "gave up reconnecting after") || !strings.Contains(log, "mek login prod") {
+		t.Errorf("record %+v\nlog:\n%s", r, log)
+	}
+	if es := auditEntries(t); len(es) != 1 || es[0].Event != "end" || es[0].ExitCode != 3 {
+		t.Errorf("one end entry for the whole tunnel: %+v", es)
+	}
+
+	// The first run failed: Start reports it; no reconnecting.
+	if code := run(spec("first", "", 0, "helper-exit", "4"), nil); code != 4 {
+		t.Errorf("first run: exit %d", code)
+	}
+	if r, _ := load("first"); r.Restarts != 0 || strings.Contains(logOf("first"), "reconnecting") {
+		t.Errorf("reconnected a tunnel that never worked: %+v", r)
+	}
+
+	// Stopped while it waits to reconnect; ls shows it reconnecting.
+	retry = backoff{first: time.Hour, most: time.Hour, stable: 0, giveUp: time.Hour}
+	sigs := make(chan os.Signal, 1)
+	go func() {
+		for {
+			if is := List(""); len(is) > 0 && is[len(is)-1].ID == "wait" && is[len(is)-1].State.Name() == "reconnecting" {
+				if is[len(is)-1].Child != 0 {
+					t.Errorf("a reconnecting tunnel keeps its old pid %d", is[len(is)-1].Child)
+				}
+				sigs <- syscall.SIGTERM
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+	if code := run(spec("wait", "", 0, "helper-exit", "0"), sigs); code != 0 {
+		t.Errorf("stopped while waiting: exit %d", code)
+	}
+	if r, _ := load("wait"); r.Phase != phaseExited || r.Restarts != 1 {
+		t.Errorf("stopped while waiting: %+v", r)
 	}
 }

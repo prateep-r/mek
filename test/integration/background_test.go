@@ -213,3 +213,38 @@ func TestForegroundTunnelListedAndStopped(t *testing.T) {
 		t.Errorf("ls after: %+v", r)
 	}
 }
+
+// The cloud closes a session that has been up a while: the supervisor starts
+// it again on the same port, and the tunnel stays one session in the audit.
+func TestBackgroundTunnelReconnects(t *testing.T) {
+	t.Parallel() // waits out the 10s a run must last to count as working
+	e, port := bgSetup(t)
+	if r := e.run("-c", "dev", "tunnel", "db", "-b"); r.Code != 0 {
+		t.Fatalf("start: %+v", r)
+	}
+	first := int(record(t, e)["child_pid"].(float64))
+	time.Sleep(11 * time.Second)
+	syscall.Kill(first, syscall.SIGTERM) // as if SSM closed the idle session
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		rec := record(t, e)
+		if child := int(rec["child_pid"].(float64)); rec["phase"] == "running" && child != 0 && child != first && listening(port) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("not reconnected: %v\n%s", rec, e.run("tunnel", "logs", "db").Stdout)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if r := e.run("tunnel", "ls"); !strings.Contains(r.Stdout, "running ↻1") {
+		t.Errorf("ls: %+v", r)
+	}
+	if r := e.run("tunnel", "logs", "db"); !strings.Contains(r.Stdout, "reconnecting in 1s (restart 1)") {
+		t.Errorf("logs: %+v", r)
+	}
+	e.run("tunnel", "stop", "db")
+	if a := e.audit(); len(a) != 2 || a[0]["event"] != "start" || a[1]["event"] != "end" {
+		t.Errorf("audit: %v", a)
+	}
+}
