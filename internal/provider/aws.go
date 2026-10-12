@@ -24,13 +24,14 @@ var awsCloud = Cloud{
 	Classify:    guard.ClassifyAWS,
 	Validate:    validateAWS,
 	ValidateAll: validateSSOSessions,
-	Tool: Tool{VersionArgs: []string{"--version"}, Check: awsCLIv2, Brew: "brew install awscli",
+	Tool: Tool{VersionArgs: []string{"--version"}, Check: awsCLIv2, Brew: "brew install awscli", Winget: "winget install Amazon.AWSCLI",
 		URL: "https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"},
 	Plugins: []Plugin{{
 		Bin: "session-manager-plugin", Purpose: "SSM sessions (mek shell, mek tunnel)",
 		Needed: func(c *config.Context) bool { return hasTargets(c) || len(c.Tunnels) > 0 },
 		Tool: Tool{VersionArgs: []string{"--version"}, Brew: "brew install --cask session-manager-plugin",
-			URL: "https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html"},
+			Winget: "winget install Amazon.SessionManagerPlugin",
+			URL:    "https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html"},
 	}},
 }
 

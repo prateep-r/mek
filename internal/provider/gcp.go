@@ -43,12 +43,12 @@ var gcpCloud = Cloud{
 		}
 		return nil
 	},
-	Tool: Tool{VersionArgs: []string{"--version"}, URL: "https://cloud.google.com/sdk/docs/install"},
+	Tool: Tool{VersionArgs: []string{"--version"}, Winget: "winget install Google.CloudSDK", URL: "https://cloud.google.com/sdk/docs/install"},
 	Plugins: []Plugin{{
-		Bin: "ssh", Purpose: "GCP shells and tunnels to another host (gcloud compute ssh)", Needed: usesSSH,
+		Bin: "ssh", Purpose: "GCP shells and tunnels to another host (gcloud compute ssh)", Needed: needsOpenSSH,
 		Tool: Tool{VersionArgs: []string{"-V"}, URL: "https://www.openssh.com (Debian/Ubuntu: apt install openssh-client)"},
 	}, {
-		Bin: "ssh-keygen", Purpose: "the SSH key gcloud compute ssh creates", Needed: usesSSH,
+		Bin: "ssh-keygen", Purpose: "the SSH key gcloud compute ssh creates", Needed: needsOpenSSH,
 		Tool: Tool{URL: "https://www.openssh.com (Debian/Ubuntu: apt install openssh-client)"}, // no version flag: only found, never run
 	}, {
 		Bin: "cloud-sql-proxy", Purpose: "Cloud SQL tunnels (mek tunnel)", Needed: hasCloudSQL,
@@ -57,7 +57,8 @@ var gcpCloud = Cloud{
 	}, {
 		Bin: "gke-gcloud-auth-plugin", Purpose: "GKE credentials for kubectl (mek kube)", Needed: hasClusters,
 		Tool: Tool{VersionArgs: []string{"--version"}, Brew: "gcloud components install gke-gcloud-auth-plugin",
-			URL: "https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_plugin"},
+			Winget: "gcloud components install gke-gcloud-auth-plugin",
+			URL:    "https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_plugin"},
 	}},
 }
 

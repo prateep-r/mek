@@ -399,21 +399,29 @@ func TestUseShellShortFlagAndFish(t *testing.T) {
 	if out := h.mustRun("env", "ro", "--syntax", "fish"); !strings.Contains(out, "set -e GOOGLE_APPLICATION_CREDENTIALS\n") || !strings.Contains(out, "set -gx CLOUDSDK_CORE_PROJECT 'p'\n") {
 		t.Errorf("env --syntax fish: %q", out)
 	}
+	if out := h.mustRun("use", "-s", "prod", "--syntax", "powershell"); out != "$env:MEK_CONTEXT = 'prod'\n" {
+		t.Errorf("use -s --syntax powershell: %q", out)
+	}
+	if out := h.mustRun("env", "ro", "--syntax", "powershell"); !strings.Contains(out, "Remove-Item Env:GOOGLE_APPLICATION_CREDENTIALS -ErrorAction SilentlyContinue\n") ||
+		!strings.Contains(out, "$env:CLOUDSDK_CORE_PROJECT = 'p'\n") {
+		t.Errorf("env --syntax powershell: %q", out)
+	}
 	_, err := h.run("use", "-s", "prod", "--syntax", "tcsh")
-	wantErr(t, err, `--syntax "tcsh": want posix or fish`)
+	wantErr(t, err, `--syntax "tcsh": want posix, fish or powershell`)
 	_, err = h.run("env", "ro", "--syntax", "tcsh")
-	wantErr(t, err, "want posix or fish")
+	wantErr(t, err, "want posix, fish or powershell")
 }
 
 func TestShellInit(t *testing.T) {
 	h := newHarness(t, "")
-	for shell, want := range map[string]string{"zsh": "command mek \"$@\"", "bash": "eval \"$__mek_out\"", "fish": "--syntax fish"} {
+	for shell, want := range map[string]string{"zsh": "command mek \"$@\"", "bash": "eval \"$__mek_out\"", "fish": "--syntax fish",
+		"powershell": "--syntax powershell", "pwsh": "Invoke-Expression ($out -join \"`n\")"} {
 		if out := h.mustRun("shell-init", shell); !strings.Contains(out, want) {
 			t.Errorf("shell-init %s:\n%s", shell, out)
 		}
 	}
 	_, err := h.run("shell-init", "tcsh")
-	wantErr(t, err, "want zsh, bash or fish")
+	wantErr(t, err, "want zsh, bash, fish or powershell")
 }
 
 // `mek help` lists every command once, under its group.

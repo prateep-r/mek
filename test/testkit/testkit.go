@@ -42,7 +42,7 @@ func Build(dir, ldflags string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	bin := filepath.Join(dir, "mek")
+	bin := filepath.Join(dir, Exe("mek"))
 	args := []string{"build", "-trimpath", "-ldflags", ldflags, "-o", bin}
 	if CoverDir() != "" {
 		args = append(args, "-cover", "-coverpkg=./cmd/...,./internal/...")

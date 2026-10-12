@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -211,6 +212,9 @@ func TestExitCodes(t *testing.T) {
 // child directly) and forwards SIGTERM, so `timeout` or a CI cancel stops the
 // child too instead of orphaning it.
 func TestSignals(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX signals; Windows stops processes through Job Objects (internal/proc)")
+	}
 	e := setup(t, config)
 	cmd := testkit.Command(mek, e.vars, "-c", "uat", "exec", "--", "sh", "-c",
 		`trap "exit 9" TERM; while :; do sleep 0.05; done`)

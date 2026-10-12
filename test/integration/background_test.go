@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
+	"github.com/prateep-r/mek/internal/proc"
 	"github.com/prateep-r/mek/test/testkit"
 )
 
@@ -111,8 +111,8 @@ func TestBackgroundDeadSupervisor(t *testing.T) {
 	}
 	rec := record(t, e)
 	owner, child := int(rec["owner_pid"].(float64)), int(rec["child_pid"].(float64))
-	syscall.Kill(owner, syscall.SIGKILL)
-	t.Cleanup(func() { syscall.Kill(-child, syscall.SIGKILL) })
+	proc.Kill(owner)
+	t.Cleanup(func() { proc.KillGroup(child); proc.Kill(child) })
 	deadline := time.Now().Add(5 * time.Second)
 	for !strings.Contains(e.run("tunnel", "ls").Stdout, "dead") {
 		if time.Now().After(deadline) {
@@ -224,7 +224,7 @@ func TestBackgroundTunnelReconnects(t *testing.T) {
 	}
 	first := int(record(t, e)["child_pid"].(float64))
 	time.Sleep(11 * time.Second)
-	syscall.Kill(first, syscall.SIGTERM) // as if SSM closed the idle session
+	proc.Kill(first) // as if SSM closed the idle session
 
 	deadline := time.Now().Add(10 * time.Second)
 	for {

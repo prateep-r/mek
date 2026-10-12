@@ -15,16 +15,15 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/prateep-r/mek/internal/config"
+	"github.com/prateep-r/mek/internal/proc"
 	"github.com/prateep-r/mek/internal/provider"
 	"github.com/prateep-r/mek/internal/ui"
 )
 
 type tool struct {
-	bin, purpose string
-	versionArgs  []string                  // nil: only look it up, never run it
-	needed       func(*config.Config) bool // required by this config; nil = optional
-	brew, url    string
-	check        func(version string) error // nil: any version will do
+	bin, purpose  string
+	needed        func(*config.Config) bool // required by this config; nil = optional
+	provider.Tool                           // how to run, check and install it
 }
 
 // tools are every cloud's CLI and plugins (from the provider registry) plus
@@ -32,12 +31,12 @@ type tool struct {
 func tools() []tool {
 	var ts []tool
 	for _, c := range provider.Clouds() {
-		ts = append(ts, tool{c.CLI, c.Title, c.Tool.VersionArgs, anyContext(func(x *config.Context) bool { return x.Provider == c.Name }), c.Tool.Brew, c.Tool.URL, c.Tool.Check})
+		ts = append(ts, tool{c.CLI, c.Title, anyContext(func(x *config.Context) bool { return x.Provider == c.Name }), c.Tool})
 	}
 	for _, c := range provider.Clouds() {
 		for _, p := range c.Plugins {
 			uses := func(x *config.Context) bool { return x.Provider == c.Name && p.Needed(x) }
-			ts = append(ts, tool{p.Bin, p.Purpose, p.Tool.VersionArgs, anyContext(uses), p.Tool.Brew, p.Tool.URL, p.Tool.Check})
+			ts = append(ts, tool{p.Bin, p.Purpose, anyContext(uses), p.Tool})
 		}
 	}
 	return append(ts, extraTools...)
@@ -51,11 +50,11 @@ func anyContext(f func(*config.Context) bool) func(*config.Config) bool {
 }
 
 var extraTools = []tool{
-	{"kubectl", "Kubernetes CLI (mek kubectl)", []string{"version", "--client"},
-		anyContext(func(x *config.Context) bool { return len(x.Clusters) > 0 }),
-		"brew install kubectl", "https://kubernetes.io/docs/tasks/tools/", nil},
-	{"k9s", "Kubernetes TUI", []string{"version", "--short"}, nil,
-		"brew install k9s", "https://k9scli.io/topics/install/", nil},
+	{"kubectl", "Kubernetes CLI (mek kubectl)", anyContext(func(x *config.Context) bool { return len(x.Clusters) > 0 }),
+		provider.Tool{VersionArgs: []string{"version", "--client"}, Brew: "brew install kubectl",
+			Winget: "winget install Kubernetes.kubectl", URL: "https://kubernetes.io/docs/tasks/tools/"}},
+	{"k9s", "Kubernetes TUI", nil, provider.Tool{VersionArgs: []string{"version", "--short"}, Brew: "brew install k9s",
+		Winget: "winget install Derailed.k9s", URL: "https://k9scli.io/topics/install/"}},
 }
 
 func newDoctorCmd() *cobra.Command {
@@ -101,8 +100,8 @@ func newDoctorCmd() *cobra.Command {
 					fmt.Fprintf(out, "  %s %-24s not found (%s: %s)\n      install: %s\n", mark, t.bin, label, t.purpose, hint(p, t))
 					continue
 				}
-				if t.check != nil {
-					if err := t.check(pr.version); err != nil {
+				if t.Check != nil {
+					if err := t.Check(pr.version); err != nil {
 						mark := p.Yellow("!")
 						if cfg != nil && t.needed != nil && t.needed(cfg) {
 							mark = p.Red("✗")
@@ -140,8 +139,8 @@ func probeTools(ts []tool) []chan probe {
 				return
 			}
 			version := ""
-			if t.versionArgs != nil { // some tools (ssh-keygen) start working when run bare
-				version = firstLine(path, t.versionArgs)
+			if t.VersionArgs != nil { // some tools (ssh-keygen) start working when run bare
+				version = firstLine(path, t.VersionArgs)
 			}
 			ch <- probe{path: path, version: version}
 		}()
@@ -149,13 +148,14 @@ func probeTools(ts []tool) []chan probe {
 	return res
 }
 
-var goos = runtime.GOOS // test seam: install hints differ on macOS
+var goos = runtime.GOOS // test seam: install hints differ on macOS and Windows
 
 func hint(p ui.Palette, t tool) string {
-	if goos == "darwin" && t.brew != "" {
-		return t.brew + "  " + p.Dim("("+t.url+")")
+	cmd := map[string]string{"darwin": t.Brew, "windows": t.Winget}[goos]
+	if cmd == "" {
+		return t.URL
 	}
-	return t.url
+	return cmd + "  " + p.Dim("("+t.URL+")")
 }
 
 func firstLine(path string, args []string) string {
@@ -164,7 +164,7 @@ func firstLine(path string, args []string) string {
 	// stdout first: tools warn on stderr (kubectl about an expired login), but a
 	// few print their version only there (ssh -V).
 	var stdout, stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, path, args...)
+	cmd := proc.CommandContext(ctx, path, args...) // gcloud is a .cmd on Windows
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
 	text := strings.TrimSpace(stdout.String())

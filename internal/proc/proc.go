@@ -7,6 +7,7 @@
 package proc
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -33,3 +34,11 @@ func (g *Group) Wait() error {
 
 // Signal passes sig on to the first process (where the OS has signals).
 func (g *Group) Signal(sig os.Signal) { _ = g.cmd.Process.Signal(sig) }
+
+// CommandContext is Command, killed when ctx is done.
+func CommandContext(ctx context.Context, path string, args ...string) *exec.Cmd {
+	c := Command(path, args...)
+	cc := exec.CommandContext(ctx, c.Path)
+	cc.Args, cc.SysProcAttr, cc.Err = c.Args, c.SysProcAttr, c.Err
+	return cc
+}

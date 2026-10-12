@@ -65,7 +65,7 @@ func (a *app) session(l *loaded, c provider.Command, class guard.Class, target s
 		if _, err := lookPath(bin); err != nil {
 			how := "see `mek doctor`"
 			if p, ok := provider.FindPlugin(bin); ok {
-				how = "install: " + hint(ui.Palette{}, tool{bin: p.Bin, brew: p.Tool.Brew, url: p.Tool.URL})
+				how = "install: " + hint(ui.Palette{}, tool{bin: p.Bin, Tool: p.Tool})
 			}
 			return fmt.Errorf("%s is needed for this (%s)", bin, how)
 		}

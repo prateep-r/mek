@@ -36,11 +36,23 @@ function mek --wraps mek --description 'mek; mek use -s switches this shell'
     command mek $argv
 end
 `,
+	"powershell": `# mek shell integration — https://github.com/prateep-r/mek
+function mek {
+    $mek = (Get-Command mek -CommandType Application | Select-Object -First 1).Source
+    if ($args.Count -gt 0 -and $args[0] -eq 'use' -and ($args -contains '-s' -or $args -contains '--shell' -or $args -contains '--shell=true')) {
+        $out = & $mek @args --syntax powershell
+        if ($LASTEXITCODE -ne 0) { return }
+        Invoke-Expression ($out -join "` + "`" + `n")
+        return
+    }
+    & $mek @args
+}
+`,
 }
 
 func newShellInitCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "shell-init zsh|bash|fish",
+		Use:   "shell-init zsh|bash|fish|powershell",
 		Short: "Set up mek use -s to switch this shell: eval \"$(mek shell-init zsh)\"",
 		Long: `Print a shell function that makes "mek use -s <context>" switch the
 current shell by itself, without eval. Add one line to your shell's startup file:
@@ -48,14 +60,15 @@ current shell by itself, without eval. Add one line to your shell's startup file
   eval "$(mek shell-init zsh)"     # ~/.zshrc
   eval "$(mek shell-init bash)"    # ~/.bashrc
   mek shell-init fish | source     # ~/.config/fish/config.fish
+  mek shell-init powershell | Out-String | Invoke-Expression   # $PROFILE
 
 Every other mek command runs unchanged.`,
 		Args:      cobra.ExactArgs(1),
-		ValidArgs: []string{"zsh", "bash", "fish"},
+		ValidArgs: []string{"zsh", "bash", "fish", "powershell"},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			syntax := map[string]string{"zsh": "posix", "bash": "posix", "fish": "fish"}[args[0]]
+			syntax := map[string]string{"zsh": "posix", "bash": "posix", "fish": "fish", "powershell": "powershell", "pwsh": "powershell"}[args[0]]
 			if syntax == "" {
-				return fmt.Errorf("mek shell-init %s: want zsh, bash or fish", args[0])
+				return fmt.Errorf("mek shell-init %s: want zsh, bash, fish or powershell", args[0])
 			}
 			fmt.Fprint(cmd.OutOrStdout(), shellInit[syntax])
 			return nil
