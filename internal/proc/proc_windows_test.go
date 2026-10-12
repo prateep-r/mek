@@ -185,6 +185,18 @@ func TestJobErrors(t *testing.T) {
 	if err := defaultAssign(0, 0); err == nil {
 		t.Error("assigning a process that isn't there")
 	}
+
+	oldCreate, oldLimits := createJobObject, setJobLimits
+	t.Cleanup(func() { createJobObject, setJobLimits = oldCreate, oldLimits })
+	createJobObject = func(*windows.SecurityAttributes, *uint16) (windows.Handle, error) { return 0, boom }
+	if _, err := defaultNewJob(); !errors.Is(err, boom) {
+		t.Errorf("create: %v", err)
+	}
+	createJobObject = oldCreate
+	setJobLimits = func(windows.Handle, uint32, uintptr, uint32) (int, error) { return 0, boom }
+	if _, err := defaultNewJob(); !errors.Is(err, boom) {
+		t.Errorf("limits: %v", err)
+	}
 }
 
 func TestStopRequests(t *testing.T) {

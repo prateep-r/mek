@@ -100,19 +100,21 @@ func StartAttached(cmd *exec.Cmd) (*Group, error) { return startInJob(cmd) }
 // Test seams: making a Job Object that ends its processes when closed, and
 // putting a process in it.
 var (
-	newJob      = defaultNewJob
-	assignToJob = defaultAssign
+	newJob          = defaultNewJob
+	assignToJob     = defaultAssign
+	createJobObject = windows.CreateJobObject
+	setJobLimits    = windows.SetInformationJobObject
 )
 
 func defaultNewJob() (windows.Handle, error) {
-	job, err := windows.CreateJobObject(nil, nil)
+	job, err := createJobObject(nil, nil)
 	if err != nil {
 		return 0, err
 	}
 	info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{
 		BasicLimitInformation: windows.JOBOBJECT_BASIC_LIMIT_INFORMATION{LimitFlags: windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE},
 	}
-	if _, err := windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation,
+	if _, err := setJobLimits(job, windows.JobObjectExtendedLimitInformation,
 		uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info))); err != nil {
 		windows.CloseHandle(job)
 		return 0, err
