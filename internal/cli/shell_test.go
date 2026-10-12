@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -98,7 +99,8 @@ func TestShellGCP(t *testing.T) {
 	ssh := filepath.Join(h.home, "ssh", "gcp")
 	inv := h.exec.invs[0]
 	if strings.Join(inv.Argv, " ") != "gcloud compute ssh web-1 --zone asia-southeast1-b --tunnel-through-iap --ssh-key-file "+filepath.Join(ssh, "google_compute_engine") ||
-		!slices.Contains(inv.Env, "HOME="+ssh) || slices.Contains(inv.Env, "HOME="+os.Getenv("HOME")) {
+		slices.Contains(inv.Env, "HOME="+ssh) == (runtime.GOOS == "windows") || // Windows: gcloud's PuTTY, HOME stays
+		runtime.GOOS != "windows" && slices.Contains(inv.Env, "HOME="+os.Getenv("HOME")) {
 		t.Errorf("gcp shell: %q %q", inv.Argv, inv.Env)
 	}
 	if !slices.Contains(inv.Env, "CLOUDSDK_CONFIG="+filepath.Join(h.home, "gcloud", "gcp")) {
