@@ -11,9 +11,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/prateep-r/mek/test/testkit"
 )
 
 // freePort picks a local port nothing listens on.
@@ -27,12 +30,26 @@ func freePort(t *testing.T) int {
 	return ln.Addr().(*net.TCPAddr).Port
 }
 
-// recorder writes a script that logs its arguments to a file and exits 0.
-func recorder(t *testing.T, dir, name, extra string) (log string) {
+// recorder installs a fake CLI (testkit's recordstub, on every OS) that
+// prints out and exits 0; pass STUB_LOG=log to the user, and it logs its
+// arguments there, one per line in the order given.
+func recorder(t *testing.T, dir, name, out string) (log string) {
 	t.Helper()
-	log = filepath.Join(t.TempDir(), name+".log")
-	os.WriteFile(filepath.Join(dir, name), []byte(fmt.Sprintf("#!/bin/sh\n%s\nprintf '%%s\\n' \"$@\" >> %q\n", extra, log)), 0o755)
-	return log
+	exe := filepath.Join(dir, testkit.Exe(name))
+	if err := testkit.Install(testkit.Tool(t, "recordstub"), exe); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(exe+".stdout", []byte(out), 0o600)
+	return filepath.Join(t.TempDir(), name+".log")
+}
+
+// recorded is the arguments a recorder got, one per line.
+func recorded(t *testing.T, log string) string {
+	var lines []string
+	for _, c := range testkit.Calls(t, log) {
+		lines = append(lines, c.Args...)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // The real aws CLI sends the StartSession mek asked for, then hands the
@@ -55,13 +72,13 @@ func TestTunnelWithRealAWS(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	bin := t.TempDir()
-	plugin := recorder(t, bin, "session-manager-plugin", `[ "$1" = --version ] && { echo 1.2.835.0; exit 0; }`)
+	plugin := recorder(t, bin, "session-manager-plugin", "1.2.835.0")
 	local := freePort(t)
 	u := newUser(t, fmt.Sprintf(`contexts:
   prod: {provider: aws, aws_profile: fake, region: us-east-1,
          tunnels: {db: {via: i-0123abcd, host: db.internal, port: 5432, local_port: %d}}}
 `, local), []string{filepath.Join(bin, "session-manager-plugin"), aws}, // the recorder first: runners may have the real plugin next to aws
-		"AWS_ENDPOINT_URL_SSM="+srv.URL)
+		"AWS_ENDPOINT_URL_SSM="+srv.URL, "STUB_LOG="+plugin)
 	os.MkdirAll(filepath.Join(u.home, ".aws"), 0o700)
 	os.WriteFile(filepath.Join(u.home, ".aws", "credentials"),
 		[]byte("[fake]\naws_access_key_id = AKIAFAKEFAKEFAKEFAKE\naws_secret_access_key = fake\n"), 0o600)
@@ -78,10 +95,10 @@ func TestTunnelWithRealAWS(t *testing.T) {
 	}
 	// aws hands over the session (in AWS_SSM_START_SESSION_RESPONSE, or as an
 	// argument in older versions), the region and the forwarding parameters.
-	b, err := os.ReadFile(plugin)
+	b := recorded(t, plugin)
 	for _, want := range []string{"us-east-1", "StartSession", fmt.Sprintf(`"localPortNumber": ["%d"]`, local)} {
-		if err != nil || !strings.Contains(string(b), want) {
-			t.Errorf("plugin args missing %q (%v):\n%s", want, err, b)
+		if !strings.Contains(b, want) {
+			t.Errorf("plugin args missing %q:\n%s", want, b)
 		}
 	}
 }
@@ -89,6 +106,9 @@ func TestTunnelWithRealAWS(t *testing.T) {
 // A GCP tunnel to another host: the real gcloud runs ssh -N -L through IAP,
 // with the context's key and known hosts.
 func TestTunnelWithRealGcloudSSH(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("gcloud uses its own PuTTY on Windows, not ssh")
+	}
 	gcloud := realCLI(t, "gcloud")
 	srv, _ := fakeCompute(t)
 	bin := t.TempDir()
@@ -99,14 +119,14 @@ func TestTunnelWithRealGcloudSSH(t *testing.T) {
 `, []string{filepath.Join(bin, "ssh"), gcloud}, append(gcloudPython(t),
 		"CLOUDSDK_AUTH_ACCESS_TOKEN=ya29.fake", "CLOUDSDK_CORE_ACCOUNT=me@example.com",
 		"CLOUDSDK_API_ENDPOINT_OVERRIDES_COMPUTE="+srv.URL+"/compute/v1/",
-		"CLOUDSDK_CORE_DISABLE_PROMPTS=1", "CLOUDSDK_COMPONENT_MANAGER_DISABLE_UPDATE_CHECK=1")...)
+		"CLOUDSDK_CORE_DISABLE_PROMPTS=1", "CLOUDSDK_COMPONENT_MANAGER_DISABLE_UPDATE_CHECK=1", "STUB_LOG="+sshLog)...)
 
 	if out, code := u.run("-c", "gcp", "tunnel", "--via", "web", "--to", "10.0.0.9:5432", "--local", fmt.Sprint(local)); code != 0 {
 		t.Fatalf("mek tunnel (exit %d):\n%s", code, out)
 	}
-	b, _ := os.ReadFile(sshLog)
-	args := strings.Split(strings.TrimSpace(string(b)), "\n")
-	if !strings.Contains(string(b), "start-iap-tunnel web-1") ||
+	b := recorded(t, sshLog)
+	args := strings.Split(strings.TrimSpace(b), "\n")
+	if !strings.Contains(b, "start-iap-tunnel web-1") ||
 		!strings.HasSuffix(strings.Join(args, " "), fmt.Sprintf("-N -L 127.0.0.1:%d:10.0.0.9:5432", local)) {
 		t.Errorf("ssh args:\n%s", b)
 	}
