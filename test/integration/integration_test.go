@@ -8,6 +8,7 @@ package integration
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -38,6 +39,28 @@ type env struct {
 	t                  *testing.T
 	mekHome, home, log string
 	vars               []string
+	stubs              string // the fake CLIs' directory, first on PATH
+}
+
+// systemPath is what PATH keeps besides the stubs: the OS's own tools.
+func systemPath() string {
+	if runtime.GOOS == "windows" {
+		return filepath.Join(os.Getenv("SystemRoot"), "System32")
+	}
+	return "/usr/bin:/bin"
+}
+
+// pathWith puts dirs before the test's PATH.
+func (e *env) pathWith(dirs ...string) string {
+	return "PATH=" + strings.Join(append(dirs, strings.TrimPrefix(e.vars[2], "PATH=")), string(os.PathListSeparator))
+}
+
+// copyStub installs the stub from (aws, gcloud) as another program too.
+func (e *env) copyStub(from, to string) {
+	e.t.Helper()
+	if err := testkit.Install(filepath.Join(e.stubs, testkit.Exe(from)), filepath.Join(e.stubs, testkit.Exe(to))); err != nil {
+		e.t.Fatal(err)
+	}
 }
 
 func setup(t *testing.T, cfg string) *env {
@@ -49,8 +72,8 @@ func setup(t *testing.T, cfg string) *env {
 		}
 	}
 	stubs, log := testkit.Stubs(t, "aws", "gcloud")
-	e.log = log
-	e.vars = []string{"MEK_HOME=" + e.mekHome, "HOME=" + e.home, "PATH=" + stubs + ":/usr/bin:/bin", "STUB_LOG=" + log}
+	e.log, e.stubs = log, stubs
+	e.vars = []string{"MEK_HOME=" + e.mekHome, "HOME=" + e.home, "PATH=" + stubs + string(os.PathListSeparator) + systemPath(), "STUB_LOG=" + log}
 	return e
 }
 
@@ -270,6 +293,9 @@ func TestConcurrentInvocations(t *testing.T) {
 }
 
 func TestShellIntegration(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell; TestPowerShell covers Windows")
+	}
 	e := setup(t, config)
 	script := `eval "$("$MEK" env uat)"; printf '%s %s' "$AWS_PROFILE" "$MEK_CONTEXT"`
 	r := testkit.Run(t, "/bin/sh", append(e.vars, "MEK="+mek), "-c", script)
@@ -348,6 +374,9 @@ func TestDoctor(t *testing.T) {
 
 // Each terminal can pin its own context without touching the saved one.
 func TestUseShellPerTerminal(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell; TestPowerShell covers Windows")
+	}
 	e := setup(t, config)
 	ok(t, e.run("use", "uat"))
 	script := `eval "$("$MEK" use --shell gcp)" && "$MEK" ctx --short && "$MEK" -c gcp gcloud config list`
@@ -385,5 +414,27 @@ func TestUINeedsATerminal(t *testing.T) {
 	e := setup(t, "contexts:\n  dev: {provider: aws, aws_profile: dev}\n")
 	if r := e.run("ui"); r.Code == 0 || !strings.Contains(r.Stderr, "mek ui needs a terminal") {
 		t.Errorf("ui without a terminal: %+v", r)
+	}
+}
+
+// PowerShell (Windows, or pwsh anywhere): mek env and, through
+// shell-init, mek use -s switch the session.
+func TestPowerShell(t *testing.T) {
+	pwsh, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh is not installed")
+	}
+	e := setup(t, config)
+	script := `$ErrorActionPreference = 'Stop'
+& $env:MEK env uat --syntax powershell | Out-String | Invoke-Expression
+Write-Output "env=$env:AWS_PROFILE/$env:MEK_CONTEXT"
+& $env:MEK shell-init powershell | Out-String | Invoke-Expression
+mek use -s gcp
+Write-Output "use=$env:MEK_CONTEXT/$env:CLOUDSDK_CORE_PROJECT/$env:AWS_PROFILE"`
+	vars := append(e.vars[:2:2], e.vars[3:]...)
+	r := testkit.Run(t, pwsh, append(vars, e.pathWith(filepath.Dir(mek)), "MEK="+mek), "-NoProfile", "-NonInteractive", "-Command", script)
+	if r.Code != 0 || !strings.Contains(r.Stdout, "env=mek-uat/uat") || !strings.Contains(r.Stdout, "use=gcp/my-project/\n") &&
+		!strings.Contains(r.Stdout, "use=gcp/my-project/\r\n") {
+		t.Errorf("pwsh: %+v", r)
 	}
 }

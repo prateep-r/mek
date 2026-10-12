@@ -3,7 +3,6 @@
 package integration
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,9 +18,7 @@ const shellConfig = `contexts:
 func shellSetup(t *testing.T) *env {
 	t.Helper()
 	e := setup(t, shellConfig)
-	stubs := strings.SplitN(strings.TrimPrefix(e.vars[2], "PATH="), ":", 2)[0]
-	b, _ := os.ReadFile(filepath.Join(stubs, "aws"))
-	os.WriteFile(filepath.Join(stubs, "session-manager-plugin"), b, 0o755)
+	e.copyStub("aws", "session-manager-plugin")
 	return e
 }
 
