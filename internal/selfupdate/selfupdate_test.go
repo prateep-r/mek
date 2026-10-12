@@ -36,7 +36,7 @@ func TestVerifyAndExtract(t *testing.T) {
 	if err := verify(tgz, sums, "mek_linux_amd64.tar.gz"); err == nil {
 		t.Fatal("missing asset must fail")
 	}
-	bin, err := extract(tgz, "mek")
+	bin, err := extractTGZ(tgz, "mek")
 	if err != nil || string(bin) != "BINARY" {
 		t.Fatalf("extract: %q %v", bin, err)
 	}

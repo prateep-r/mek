@@ -14,7 +14,7 @@ builds:
     main: ./cmd/mek
     binary: mek
     env: [CGO_ENABLED=0]
-    goos: [darwin, linux]
+    goos: [darwin, linux, windows]
     goarch: [amd64, arm64]
     flags: [-trimpath]
     ldflags:
@@ -25,8 +25,12 @@ builds:
 
 archives:
   - formats: [tar.gz]
-    # No version in the name, so install.sh / self-update can use
-    # https://github.com/<repo>/releases/latest/download/mek_<os>_<arch>.tar.gz
+    # Windows gets a .zip (install.ps1, self-update; Expand-Archive reads it).
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    # No version in the name, so install.sh / install.ps1 / self-update can use
+    # https://github.com/<repo>/releases/latest/download/mek_<os>_<arch>.<tar.gz|zip>
     name_template: "mek_{{ .Os }}_{{ .Arch }}"
     files: [README.md]
 
