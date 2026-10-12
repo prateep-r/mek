@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -53,6 +54,9 @@ func fakeCompute(t *testing.T) (srv *httptest.Server, keyAdded func() bool) {
 }
 
 func TestShellWithRealGcloud(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("gcloud uses its own PuTTY on Windows, not ssh")
+	}
 	gcloud := realCLI(t, "gcloud")
 	srv, keyAdded := fakeCompute(t)
 	// A fake ssh records how gcloud runs it (the real one would connect).

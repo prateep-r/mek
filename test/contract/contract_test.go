@@ -10,10 +10,10 @@
 package contract
 
 import (
-	"runtime"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
