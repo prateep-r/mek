@@ -166,19 +166,34 @@ func newSessionID() string {
 // through the same pipeline as a read, with their output captured.
 func (a *app) query(l *loaded) provider.Query {
 	return func(argv []string) ([]byte, error) {
-		var out bytes.Buffer
+		var out, stderr bytes.Buffer
 		inv := &runner.Invocation{Context: l.ctx, Argv: argv, Env: l.env.Apply(os.Environ()), Class: guard.Read, Stdout: &out}
+		if l.draft {
+			inv.Stderr = &stderr
+		}
 		if err := inv.Err(a.pipeline().Run(inv)); err != nil {
 			what := strings.Join(argv[:min(3, len(argv))], " ")
 			var exit *runner.ExitError
 			if !errors.As(err, &exit) { // it never ran (not installed…): logging in won't help
 				return nil, fmt.Errorf("%s: %w", what, err)
 			}
+			if l.draft {
+				return nil, fmt.Errorf("%s: %v%s", what, err, lastLine(stderr.String()))
+			}
 			// Not %w: an *ExitError would make main exit quietly, without the hint.
 			return nil, fmt.Errorf("%s: %v (logged in? try: mek -c %s login)", what, err, l.ctx.Name)
 		}
 		return out.Bytes(), nil
 	}
+}
+
+// lastLine is a CLI's last line of stderr, as ": line" ("" when silent).
+func lastLine(s string) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	if l := strings.TrimSpace(lines[len(lines)-1]); l != "" {
+		return ": " + l
+	}
+	return ""
 }
 
 func warnAudit(err error) { ui.Info("%s audit log: %v", ui.Yellow("warning:"), err) }

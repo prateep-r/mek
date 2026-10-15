@@ -79,10 +79,13 @@ type Form struct {
 	canceled bool
 	done     bool
 	width    int
+	// execute runs an Exec step's command with the terminal handed over
+	// (Play runs it in place).
+	execute func(run func() error) tea.Cmd
 }
 
 // New starts a form.
-func New(title string) *Form { return &Form{title: title, answers: Answers{}} }
+func New(title string) *Form { return &Form{title: title, answers: Answers{}, execute: handOver} }
 
 // Prefill sets answers before the form runs (editing: today's values).
 func (f *Form) Prefill(a Answers) *Form {

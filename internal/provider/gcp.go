@@ -72,32 +72,44 @@ type GCP struct {
 
 func (g *GCP) configDir() string { return filepath.Join(g.dir, "gcloud", g.ctx.Key()) }
 
+// GCloudDir is a context's own gcloud config directory: its login.
+func GCloudDir(c *config.Context) string { return (&GCP{ctx: c, dir: config.Dir()}).configDir() }
+
+// GCloudWizardDir is where mek ctx add logs in before the new context has a
+// key; saving moves it to the context's GCloudDir.
+func GCloudWizardDir() string { return filepath.Join(config.Dir(), "gcloud", ".wizard") }
+
 func (g *GCP) Prepare() (Env, error) {
 	dir := g.configDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return Env{}, err
 	}
+	return GCloudEnv(g.ctx, dir), nil
+}
+
+// GCloudEnv is a context's environment for gcloud, its config in dir.
+func GCloudEnv(c *config.Context, dir string) Env {
 	env := Env{Set: map[string]string{
 		"CLOUDSDK_CONFIG":       dir,
-		"CLOUDSDK_CORE_PROJECT": g.ctx.Project,
-		"GOOGLE_CLOUD_PROJECT":  g.ctx.Project,
+		"CLOUDSDK_CORE_PROJECT": c.Project,
+		"GOOGLE_CLOUD_PROJECT":  c.Project,
 	}, Unset: []string{"GOOGLE_APPLICATION_CREDENTIALS", "CLOUDSDK_ACTIVE_CONFIG_NAME"}}
 	// Unset what this context doesn't set, so another context's `mek env`
 	// can't leak its account or region in.
-	if g.ctx.Account != "" {
-		env.Set["CLOUDSDK_CORE_ACCOUNT"] = g.ctx.Account
+	if c.Account != "" {
+		env.Set["CLOUDSDK_CORE_ACCOUNT"] = c.Account
 	} else {
 		env.Unset = append(env.Unset, "CLOUDSDK_CORE_ACCOUNT")
 	}
-	if g.ctx.Region != "" {
-		env.Set["CLOUDSDK_COMPUTE_REGION"] = g.ctx.Region
+	if c.Region != "" {
+		env.Set["CLOUDSDK_COMPUTE_REGION"] = c.Region
 	} else {
 		env.Unset = append(env.Unset, "CLOUDSDK_COMPUTE_REGION")
 	}
 	// On a GCP VM (or a network with a metadata server) gcloud would quietly
 	// act as the machine's service account in a context that isn't logged
 	// in. Only contexts that ask for it get that identity.
-	if g.ctx.UseMetadata {
+	if c.UseMetadata {
 		env.Unset = append(env.Unset, "CLOUDSDK_CORE_CHECK_GCE_METADATA")
 	} else {
 		env.Set["CLOUDSDK_CORE_CHECK_GCE_METADATA"] = "false"
@@ -107,15 +119,26 @@ func (g *GCP) Prepare() (Env, error) {
 	if _, err := os.Stat(adc); err == nil {
 		env.Set["GOOGLE_APPLICATION_CREDENTIALS"] = adc
 	}
-	return env, nil
+	return env
+}
+
+// GCloudLoggedIn reports whether a gcloud config directory has a login.
+func GCloudLoggedIn(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, "credentials.db"))
+	return err == nil
+}
+
+// GCloudLoginCommand logs in to Google, as account when it is given.
+func GCloudLoginCommand(account string) []string {
+	login := []string{"gcloud", "auth", "login"}
+	if account != "" {
+		login = append(login, account)
+	}
+	return login
 }
 
 func (g *GCP) LoginCommands(adc bool) [][]string {
-	login := []string{"gcloud", "auth", "login"}
-	if g.ctx.Account != "" {
-		login = append(login, g.ctx.Account)
-	}
-	cmds := [][]string{login}
+	cmds := [][]string{GCloudLoginCommand(g.ctx.Account)}
 	if adc {
 		cmds = append(cmds, []string{"gcloud", "auth", "application-default", "login"})
 	}

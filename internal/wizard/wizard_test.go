@@ -329,3 +329,47 @@ func TestPlayAndCheck(t *testing.T) {
 		t.Errorf("keys ran out: %v", err)
 	}
 }
+
+func TestExec(t *testing.T) {
+	runs, fail := 0, true
+	login := func() *Form {
+		return New("x").Input("portal", "Portal", nil, nil).
+			Exec("login", "Log in", func(a Answers) string { return "aws sso login " + a["portal"] }, func(Answers) error {
+				runs++
+				if fail {
+					return errors.New("login failed")
+				}
+				return nil
+			}).Input("account", "Account", nil, nil)
+	}
+	f := login()
+	Play(f, "type:acme", "enter", "enter")
+	if s := screen(f); runs != 1 || !strings.Contains(s, "runs: aws sso login acme") || !strings.Contains(s, "login failed") || !strings.Contains(s, "[Run it]") {
+		t.Errorf("failed run (%d):\n%s", runs, s)
+	}
+	fail = false
+	press(f, key("enter"))
+	if s := screen(f); runs != 2 || !strings.Contains(s, "✓ Log in: done") || !strings.Contains(s, "? Account") {
+		t.Errorf("run:\n%s", s)
+	}
+	f = login()
+	a, _ := Play(f, "type:acme", "enter", "down", "up", "tab", "enter", "type:1", "enter")
+	if a["login"] != "skipped" || runs != 2 {
+		t.Errorf("skip: %v (%d runs)", a, runs)
+	}
+	f = login()
+	Play(f, "type:acme", "enter", "esc")
+	f.Update("noise")
+	if f.cur != 0 {
+		t.Errorf("esc: %d", f.cur)
+	}
+
+	// For real: Bubble Tea hands the terminal over and back.
+	old := programOptions
+	t.Cleanup(func() { programOptions = old })
+	programOptions = []tea.ProgramOption{tea.WithInput(strings.NewReader("acme\r\r")), tea.WithOutput(io.Discard)}
+	f = New("x").Input("portal", "Portal", nil, nil).Exec("login", "Log in", func(Answers) string { return "" }, func(Answers) error { runs++; return nil })
+	if a, err := f.Run(); err != nil || a["login"] != "done" || runs != 3 {
+		t.Errorf("handed over: %v %v (%d runs)", a, err, runs)
+	}
+}

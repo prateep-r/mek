@@ -91,6 +91,9 @@ type loaded struct {
 	ctx  *config.Context
 	prov provider.Provider
 	env  provider.Env
+	// draft: a context the wizard is making, not in any file yet; its
+	// lookups keep the CLI's stderr off the form and give no login hint.
+	draft bool
 }
 
 // resolve loads the config and picks the context (explicit name > --context >

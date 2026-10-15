@@ -10,9 +10,10 @@ import (
 // it presses keys in order, running each command to the end first (so a
 // Load has its options before the next key). A key is a name — "enter",
 // "esc", "up", "down", "left", "right", "tab", "backspace", "ctrl+c",
-// "ctrl+u" — or "type:text" for text. Keys left over once the form is done
+// "ctrl+u" — or "type:text" for text. An Exec step's command runs in place. Keys left over once the form is done
 // are ignored; a form still asking when they run out is canceled.
 func Play(f *Form, keys ...string) (Answers, error) {
+	f.execute = func(run func() error) tea.Cmd { return func() tea.Msg { return ran{run()} } }
 	play(f, f.Init())
 	f.Update(tea.WindowSizeMsg{Width: 100})
 	for _, k := range keys {
