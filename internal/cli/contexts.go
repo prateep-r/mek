@@ -41,10 +41,7 @@ file. See: mek help config`,
 				ui.Info("edit it, then run: mek ctx ls && mek login <context>")
 				return nil
 			}
-			cwd, err := os.Getwd()
-			if err != nil {
-				return err
-			}
+			cwd, _ := os.Getwd() // "": relative to wherever this is, if the directory is gone
 			file, ignore, err := config.InitProject(cwd, local, force)
 			if err != nil {
 				return err
@@ -126,8 +123,9 @@ mek use -s does that by itself.`,
 func (a *app) newCtxCmd() *cobra.Command {
 	var short bool
 	cmd := &cobra.Command{
-		Use:   "ctx",
-		Short: "Show the current context (use `mek ctx ls` to list all)",
+		Use:     "ctx",
+		Aliases: []string{"context"},
+		Short:   "Show the current context (use `mek ctx ls` to list all)",
 		Long: `Show the current context; mek ctx ls lists them all (* marks the current one).
 
 A context from a project's files is shown with its file:
@@ -151,6 +149,7 @@ Contexts from ~/.mek/config.yaml show none. See: mek help config
 		},
 	}
 	cmd.Flags().BoolVar(&short, "short", false, "print only the context name")
+	cmd.AddCommand(a.newCtxRmCmd())
 
 	cmd.AddCommand(&cobra.Command{
 		Use:     "ls",

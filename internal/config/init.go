@@ -56,25 +56,32 @@ func InitProject(dir string, local, force bool) (file, ignore string, err error)
 	if !local {
 		return file, "", nil
 	}
+	ignore, err = IgnoreLocal(dir)
+	return file, ignore, err
+}
+
+// IgnoreLocal lists mek.local.yaml in the .gitignore of the git repository
+// dir is in, unless it is there already; ignore is the file it changed.
+func IgnoreLocal(dir string) (ignore string, err error) {
 	root := gitRoot(dir)
 	if root == "" {
-		return file, "", nil
+		return "", nil
 	}
 	ignore = filepath.Join(root, ".gitignore")
 	b, err := os.ReadFile(ignore)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return file, "", err
+		return "", err
 	}
 	for _, line := range strings.Split(string(b), "\n") {
 		if l := strings.TrimSpace(line); l == LocalFile || l == "/"+LocalFile || l == "**/"+LocalFile {
-			return file, "", nil // ignored already
+			return "", nil // ignored already
 		}
 	}
 	if len(b) > 0 && !bytes.HasSuffix(b, []byte("\n")) {
 		b = append(b, '\n')
 	}
 	b = append(b, []byte("# personal mek contexts (mek init --local)\n"+LocalFile+"\n")...)
-	return file, ignore, os.WriteFile(ignore, b, 0o644)
+	return ignore, os.WriteFile(ignore, b, 0o644)
 }
 
 // gitRoot is the git repository dir is in ("" for none).
