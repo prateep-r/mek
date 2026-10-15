@@ -93,3 +93,12 @@ func TestCtxRmKeepsComments(t *testing.T) {
 		t.Errorf("config:\n%s", b)
 	}
 }
+
+func TestCtxAddNeedsATerminal(t *testing.T) {
+	e := setup(t, "contexts:\n  dev: {provider: aws, aws_profile: dev}\n")
+	for _, args := range [][]string{{"ctx", "add", "x"}, {"context", "edit", "dev"}} {
+		if r := e.run(args...); r.Code == 0 || !strings.Contains(r.Stderr, "needs a terminal") || !strings.Contains(r.Stderr, "mek help config") {
+			t.Errorf("%v: %+v", args, r)
+		}
+	}
+}

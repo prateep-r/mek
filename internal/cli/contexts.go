@@ -132,7 +132,13 @@ A context from a project's files is shown with its file:
   orders-dev (./mek.yaml)  aws 111122223333 / Developer
 Contexts from ~/.mek/config.yaml show none. See: mek help config
 
-  mek ctx --short     just the name, for a shell prompt`,
+  mek ctx --short       just the name, for a shell prompt
+  mek ctx ls            every context
+  mek ctx add [name]    add one, a question at a time
+  mek ctx edit [name]   change one (no name: pick it from a list)
+  mek ctx rm <name>     remove one (--yes: don't ask)
+
+mek context is the same command: mek context add, mek context ls, …`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			l, err := a.resolve("") // runs on every prompt: no disk writes
@@ -149,7 +155,7 @@ Contexts from ~/.mek/config.yaml show none. See: mek help config
 		},
 	}
 	cmd.Flags().BoolVar(&short, "short", false, "print only the context name")
-	cmd.AddCommand(a.newCtxRmCmd())
+	cmd.AddCommand(a.newCtxAddCmd(), a.newCtxEditCmd(), a.newCtxRmCmd())
 
 	cmd.AddCommand(&cobra.Command{
 		Use:     "ls",

@@ -13,12 +13,7 @@ import (
 )
 
 func key(s string) tea.KeyPressMsg {
-	special := map[string]tea.KeyPressMsg{
-		"enter": {Code: tea.KeyEnter}, "esc": {Code: tea.KeyEscape}, "up": {Code: tea.KeyUp}, "down": {Code: tea.KeyDown},
-		"left": {Code: tea.KeyLeft}, "right": {Code: tea.KeyRight}, "tab": {Code: tea.KeyTab},
-		"backspace": {Code: tea.KeyBackspace}, "ctrl+c": {Code: 'c', Mod: tea.ModCtrl}, "ctrl+u": {Code: 'u', Mod: tea.ModCtrl},
-	}
-	if k, ok := special[s]; ok {
+	if k, ok := named[s]; ok {
 		return k
 	}
 	return tea.KeyPressMsg{Code: []rune(s)[0], Text: s}
@@ -45,15 +40,7 @@ func drive(t *testing.T, f *Form, keys ...string) {
 	}
 }
 
-func run(f *Form, cmd tea.Cmd) {
-	for cmd != nil {
-		msg := cmd()
-		if _, ok := msg.(tea.QuitMsg); ok {
-			return
-		}
-		_, cmd = f.Update(msg)
-	}
-}
+func run(f *Form, cmd tea.Cmd) { play(f, cmd) }
 
 func screen(f *Form) string { return ansi.Strip(f.render()) }
 
@@ -181,8 +168,8 @@ func TestSelectFilterAndOther(t *testing.T) {
 		t.Errorf("prefill cursor: %v", f.answers)
 	}
 	f = New("r").Prefill(Answers{"region": "custom-9"}).Select("region", "Region", Options(regions()...), true)
-	drive(t, f, "enter")
-	if s := screen(f); !strings.Contains(s, "custom-9▏") { // a value from outside the list: offered typed
+	drive(t, f)
+	if s := screen(f); !strings.Contains(s, "custom-9▏") { // a value from outside the list: there to edit
 		t.Errorf("outside value:\n%s", s)
 	}
 	drive(t, f, "enter")
@@ -311,5 +298,34 @@ func TestRun(t *testing.T) {
 	programOptions = []tea.ProgramOption{tea.WithInput(strings.NewReader("\x03")), tea.WithOutput(io.Discard)}
 	if _, err := New("run").Input("name", "Name", nil, nil).Run(); !errors.Is(err, ErrCanceled) {
 		t.Errorf("ctrl-c: %v", err)
+	}
+}
+
+func TestPlayAndCheck(t *testing.T) {
+	portal := func() *Form {
+		return New("p").Select("url", "Portal", Options(Option{Value: "https://a.awsapps.com/start"}), true).
+			Check(func(v string, _ Answers) error {
+				if !strings.HasPrefix(v, "https://") {
+					return errors.New("starts with https://")
+				}
+				return nil
+			})
+	}
+	f := portal()
+	a, err := Play(f, "down", "enter", "type:acme", "enter")
+	if err == nil || !strings.Contains(screen(f), "starts with https://") {
+		t.Errorf("refused: %v %v\n%s", a, err, screen(f))
+	}
+	Play(f, "esc") // the error goes with the typing
+	if strings.Contains(screen(f), "starts with") {
+		t.Errorf("error kept:\n%s", screen(f))
+	}
+	f = portal()
+	a, err = Play(f, "down", "enter", "type:x", "enter", "backspace", "type:https://b", "enter", "enter")
+	if err != nil || a["url"] != "https://b" {
+		t.Errorf("typed: %v %v", a, err)
+	}
+	if _, err := Play(portal()); !errors.Is(err, ErrCanceled) {
+		t.Errorf("keys ran out: %v", err)
 	}
 }

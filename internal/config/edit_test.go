@@ -193,3 +193,21 @@ func TestPreview(t *testing.T) {
 		t.Error("unrelated path")
 	}
 }
+
+func TestTemplateAndSnippet(t *testing.T) {
+	for path, want := range map[string]string{
+		filepath.Join("p", TeamFile): "shared by the team", filepath.Join("p", LocalFile): "your own mek contexts",
+		Path(): "# Reference: mek help config\ncontexts:\n",
+	} {
+		if got := string(Template(path)); !strings.Contains(got, want) {
+			t.Errorf("Template(%s) = %q", path, got)
+		}
+		if _, err := Parse(Template(path)); err != nil {
+			t.Errorf("Template(%s): %v", path, err)
+		}
+	}
+	got := Snippet("dev", &Context{Provider: "aws", AccountID: "011122223333", Role: "Dev"})
+	if got != "dev:\n  provider: aws\n  account_id: \"011122223333\"\n  role: Dev" {
+		t.Errorf("snippet:\n%s", got)
+	}
+}
