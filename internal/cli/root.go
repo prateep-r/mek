@@ -91,8 +91,11 @@ type loaded struct {
 	ctx  *config.Context
 	prov provider.Provider
 	env  provider.Env
-	// draft: a context the wizard is making, not in any file yet; its
-	// lookups keep the CLI's stderr off the form and give no login hint.
+	// quiet: lookups for a wizard, whose form is on the screen — the CLI's
+	// stderr is kept, and its last line goes in the error.
+	quiet bool
+	// draft: a context the wizard is making, in no file yet (quiet, and no
+	// "mek login" hint: there is nothing to log in to yet).
 	draft bool
 }
 

@@ -22,6 +22,14 @@ func TestDiscoveryCommands(t *testing.T) {
 		{ListAccountsCommand("/t/sso-1.json", "ap-southeast-1"), "aws sso list-accounts --cli-input-json file:///t/sso-1.json --region ap-southeast-1 --output json"},
 		{ListAccountRolesCommand("/t/sso-1.json", "ap-southeast-1", "111122223333"), "aws sso list-account-roles --cli-input-json file:///t/sso-1.json --account-id 111122223333 --region ap-southeast-1 --output json"},
 		{ListProjectsCommand(), "gcloud projects list --format=json(projectId,name)"},
+		{EC2InstancesCommand(), "aws ec2 describe-instances --filters Name=instance-state-name,Values=running --query Reservations[].Instances[].{id:InstanceId,name:Tags[?Key=='Name']|[0].Value,ip:PrivateIpAddress} --output json"},
+		{RDSInstancesCommand(), "aws rds describe-db-instances --query DBInstances[].{id:DBInstanceIdentifier,host:Endpoint.Address,port:Endpoint.Port,engine:Engine} --output json"},
+		{RDSClustersCommand(), "aws rds describe-db-clusters --query DBClusters[].{id:DBClusterIdentifier,host:Endpoint,port:Port,engine:Engine} --output json"},
+		{EKSClustersCommand("us-east-1"), "aws eks list-clusters --region us-east-1 --output json"},
+		{EKSClustersCommand(""), "aws eks list-clusters --output json"},
+		{GCEInstancesCommand(), "gcloud compute instances list --filter=status=RUNNING --format=json(name,zone.basename(),networkInterfaces[0].networkIP)"},
+		{CloudSQLInstancesCommand(), "gcloud sql instances list --format=json(connectionName,databaseVersion)"},
+		{GKEClustersCommand(), "gcloud container clusters list --format=json(name,location)"},
 	} {
 		if got := strings.Join(c.got, " "); got != c.want {
 			t.Errorf("got  %s\nwant %s", got, c.want)
@@ -39,7 +47,7 @@ func TestDiscoveryCommands(t *testing.T) {
 
 func TestParseDiscoveries(t *testing.T) {
 	accts, err := ParseAccounts([]byte(`{"accountList":[{"accountId":"444455556666","accountName":"prod","emailAddress":"p@x"},{"accountId":"111122223333","accountName":"dev","emailAddress":"d@x"}]}`))
-	if err != nil || !reflect.DeepEqual(accts, []Found{{"111122223333", "dev", "111122223333"}, {"444455556666", "prod", "444455556666"}}) {
+	if err != nil || !reflect.DeepEqual(accts, []Found{{Value: "111122223333", Label: "dev", Hint: "111122223333"}, {Value: "444455556666", Label: "prod", Hint: "444455556666"}}) {
 		t.Errorf("accounts: %v %v", accts, err)
 	}
 	roles, err := ParseRoles([]byte(`{"roleList":[{"roleName":"ReadOnly","accountId":"1"},{"roleName":"Admin","accountId":"1"}]}`))
@@ -50,7 +58,31 @@ func TestParseDiscoveries(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(projects, []Found{{Value: "a-1"}, {Value: "b-2", Hint: "Billing"}}) {
 		t.Errorf("projects: %v %v", projects, err)
 	}
-	for _, f := range []func([]byte) ([]Found, error){ParseAccounts, ParseRoles, ParseProjects} {
+	ec2, err := ParseEC2Instances([]byte(`[{"id":"i-2","name":"bastion","ip":"10.0.0.2"},{"id":"i-1","name":null,"ip":"10.0.0.1"}]`))
+	if err != nil || !reflect.DeepEqual(ec2, []Found{{Value: "i-1", Hint: "i-1 10.0.0.1"}, {Value: "i-2", Label: "bastion", Hint: "i-2 10.0.0.2", Extra: "bastion"}}) {
+		t.Errorf("ec2: %v %v", ec2, err)
+	}
+	rds, err := ParseRDS([]byte(`[{"id":"orders","host":"orders.x.rds.amazonaws.com","port":5432,"engine":"postgres"},{"id":"new","host":null,"port":null,"engine":"mysql"}]`))
+	if err != nil || !reflect.DeepEqual(rds, []Found{{Value: "orders.x.rds.amazonaws.com", Label: "orders", Hint: "postgres:5432", Extra: "5432"}}) {
+		t.Errorf("rds: %v %v", rds, err)
+	}
+	eks, err := ParseEKSClusters([]byte(`{"clusters":["b","a"]}`))
+	if err != nil || !reflect.DeepEqual(eks, []Found{{Value: "a"}, {Value: "b"}}) {
+		t.Errorf("eks: %v %v", eks, err)
+	}
+	vms, err := ParseGCEInstances([]byte(`[{"name":"vm-1","zone":"asia-southeast1-a","networkInterfaces":[{"networkIP":"10.1.0.2"}]},{"name":"bare","zone":"us-central1-b"}]`))
+	if err != nil || !reflect.DeepEqual(vms, []Found{{Value: "bare", Hint: "us-central1-b", Extra: "us-central1-b"}, {Value: "vm-1", Hint: "asia-southeast1-a 10.1.0.2", Extra: "asia-southeast1-a"}}) {
+		t.Errorf("vms: %v %v", vms, err)
+	}
+	sql, err := ParseCloudSQL([]byte(`[{"connectionName":"p:asia-southeast1:db","databaseVersion":"POSTGRES_16"}]`))
+	if err != nil || !reflect.DeepEqual(sql, []Found{{Value: "p:asia-southeast1:db", Hint: "POSTGRES_16", Extra: "POSTGRES_16"}}) {
+		t.Errorf("cloud sql: %v %v", sql, err)
+	}
+	gke, err := ParseGKEClusters([]byte(`[{"name":"main","location":"asia-southeast1"}]`))
+	if err != nil || !reflect.DeepEqual(gke, []Found{{Value: "main", Hint: "asia-southeast1", Extra: "asia-southeast1"}}) {
+		t.Errorf("gke: %v %v", gke, err)
+	}
+	for _, f := range []func([]byte) ([]Found, error){ParseAccounts, ParseRoles, ParseProjects, ParseEC2Instances, ParseRDS, ParseEKSClusters, ParseGCEInstances, ParseCloudSQL, ParseGKEClusters} {
 		if _, err := f([]byte("<html>")); err == nil || !strings.Contains(err.Error(), "unexpected output") {
 			t.Errorf("bad output: %v", err)
 		}

@@ -168,7 +168,7 @@ func (a *app) query(l *loaded) provider.Query {
 	return func(argv []string) ([]byte, error) {
 		var out, stderr bytes.Buffer
 		inv := &runner.Invocation{Context: l.ctx, Argv: argv, Env: l.env.Apply(os.Environ()), Class: guard.Read, Stdout: &out}
-		if l.draft {
+		if l.quiet || l.draft {
 			inv.Stderr = &stderr
 		}
 		if err := inv.Err(a.pipeline().Run(inv)); err != nil {
@@ -181,7 +181,7 @@ func (a *app) query(l *loaded) provider.Query {
 				return nil, fmt.Errorf("%s: %v%s", what, err, lastLine(stderr.String()))
 			}
 			// Not %w: an *ExitError would make main exit quietly, without the hint.
-			return nil, fmt.Errorf("%s: %v (logged in? try: mek -c %s login)", what, err, l.ctx.Name)
+			return nil, fmt.Errorf("%s: %v%s (logged in? try: mek -c %s login)", what, err, lastLine(stderr.String()), l.ctx.Name)
 		}
 		return out.Bytes(), nil
 	}

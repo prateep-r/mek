@@ -138,6 +138,12 @@ func trimBack(lines []string, first, last int) int {
 }
 
 // render writes one context as YAML lines, indented.
+// SnippetOf is any value as YAML, the way Set writes it (for a preview).
+func SnippetOf(v any) string {
+	b, _ := yaml.MarshalWithOptions(v, yaml.Indent(2)) // config types always marshal
+	return strings.TrimRight(string(b), "\n")
+}
+
 // Snippet is a context as Set writes it, unindented (for a preview).
 func Snippet(name string, c *Context) string { return strings.Join(render(name, c, 0), "\n") }
 

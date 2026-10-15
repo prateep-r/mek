@@ -137,6 +137,9 @@ Contexts from ~/.mek/config.yaml show none. See: mek help config
   mek ctx add [name]    add one, a question at a time
   mek ctx edit [name]   change one (no name: pick it from a list)
   mek ctx rm <name>     remove one (--yes: don't ask)
+  mek ctx target  add|edit|rm [name]   a context's hosts for mek shell
+  mek ctx cluster add|edit|rm [name]   its Kubernetes clusters for mek kube
+  mek ctx tunnel  add|edit|rm [name]   its port forwards for mek tunnel
 
 mek context is the same command: mek context add, mek context ls, …`,
 		Args: cobra.NoArgs,
@@ -155,7 +158,10 @@ mek context is the same command: mek context add, mek context ls, …`,
 		},
 	}
 	cmd.Flags().BoolVar(&short, "short", false, "print only the context name")
-	cmd.AddCommand(a.newCtxAddCmd(), a.newCtxEditCmd(), a.newCtxRmCmd())
+	cmd.AddCommand(a.newCtxAddCmd(), a.newCtxEditCmd(), a.newCtxRmCmd(),
+		a.newEntryCmd(targetKind{}, "Add, change or remove a context's targets (hosts for mek shell)", targetHelp),
+		a.newEntryCmd(clusterKind{}, "Add, change or remove a context's clusters (for mek kube)", clusterHelp),
+		a.newEntryCmd(tunnelKind{}, "Add, change or remove a context's tunnels (for mek tunnel)", tunnelHelp))
 
 	cmd.AddCommand(&cobra.Command{
 		Use:     "ls",

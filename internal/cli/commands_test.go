@@ -88,6 +88,7 @@ func newHarness(t *testing.T, cfg string) *harness {
 	home := t.TempDir()
 	t.Setenv("MEK_HOME", home)
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME")) // Windows' home
 	t.Setenv("MEK_CONTEXT", "")
 	if cfg != "" {
 		if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte(cfg), 0o600); err != nil {
