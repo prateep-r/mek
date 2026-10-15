@@ -12,16 +12,14 @@ import (
 
 type input struct {
 	common
-	def      func(Answers) string
-	validate func(string, Answers) error
-	value    string
-	err      string
+	def   func(Answers) string
+	value string
 }
 
 // Input asks for a line of text; def is its starting value (nil: none, or
 // the answer given before), validate checks it (nil: anything goes).
 func (f *Form) Input(key, title string, def func(Answers) string, validate func(string, Answers) error) *Form {
-	return f.add(&input{common: common{key: key, title: title}, def: def, validate: validate})
+	return f.add(&input{common: common{key: key, title: title, validate: validate}, def: def})
 }
 
 func (s *input) enter(f *Form) tea.Cmd {
@@ -62,14 +60,10 @@ func (s *input) update(f *Form, msg tea.Msg) tea.Cmd {
 	}
 	switch k.String() {
 	case "enter":
-		v := strings.TrimSpace(s.value)
-		if s.validate != nil {
-			if err := s.validate(v, f.answers); err != nil {
-				s.err = err.Error()
-				return nil
-			}
+		if v := strings.TrimSpace(s.value); s.check(v, f.answers) {
+			return f.answer(v)
 		}
-		return f.answer(v)
+		return nil
 	case "esc":
 		return f.back()
 	}
@@ -123,7 +117,7 @@ func (f *Form) Select(key, title string, options func(Answers) []Option, other b
 func Options(opts ...Option) func(Answers) []Option { return func(Answers) []Option { return opts } }
 
 func (s *choice) enter(f *Form) tea.Cmd {
-	s.filter, s.typing, s.typed = "", false, ""
+	s.filter, s.typing, s.typed, s.err = "", false, "", ""
 	s.load(s.options(f.answers), f.answers[s.key])
 	return nil
 }
@@ -140,8 +134,8 @@ func (s *choice) load(opts []Option, cur string) {
 			s.cursor, found = i, true
 		}
 	}
-	if cur != "" && !found && s.other { // a value from outside the list: offer it typed
-		s.cursor, s.typed = len(s.shown)-1, cur
+	if cur != "" && !found && s.other { // a value from outside the list: there to edit
+		s.cursor, s.typed, s.typing = len(s.shown)-1, cur, true
 	}
 }
 
@@ -164,13 +158,15 @@ func (s *choice) update(f *Form, msg tea.Msg) tea.Cmd {
 	if s.typing {
 		switch k.String() {
 		case "enter":
-			if v := strings.TrimSpace(s.typed); v != "" {
+			if v := strings.TrimSpace(s.typed); v != "" && s.check(v, f.answers) {
 				return f.answer(v)
 			}
 		case "esc":
-			s.typing = false
+			s.typing, s.err = false, ""
 		default:
-			edit(&s.typed, k)
+			if edit(&s.typed, k) {
+				s.err = ""
+			}
 		}
 		return nil
 	}
@@ -223,7 +219,11 @@ func (s *choice) view(f *Form) string {
 		out = append(out, "  "+red.Render(s.note))
 	}
 	if s.typing {
-		return strings.Join(append(out, "  "+s.typed+"▏", dim.Render("  esc: back to the list")), "\n")
+		out = append(out, "  "+s.typed+"▏")
+		if s.err != "" {
+			out = append(out, "  "+red.Render(s.err))
+		}
+		return strings.Join(append(out, dim.Render("  esc: back to the list")), "\n")
 	}
 	vis := s.visible()
 	start := 0
@@ -298,7 +298,7 @@ func (f *Form) Load(key, title string, fetch func(Answers) ([]Option, error)) *F
 }
 
 func (s *loader) enter(f *Form) tea.Cmd {
-	s.filter, s.typing, s.typed, s.note = "", false, "", ""
+	s.filter, s.typing, s.typed, s.note, s.err = "", false, "", "", ""
 	s.loading = true
 	s.seq++
 	seq, a := s.seq, Answers{}

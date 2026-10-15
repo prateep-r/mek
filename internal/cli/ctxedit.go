@@ -17,12 +17,8 @@ import (
 // layer, every cloud's rules — and only then writes the file. A new
 // mek.local.yaml goes into the repository's .gitignore.
 func saveEdit(e *config.Editor) error {
-	cfg, err := config.Preview(e.Path, e.Bytes())
-	if err == nil {
-		err = provider.Validate(cfg)
-	}
-	if err != nil {
-		return fmt.Errorf("not saved — %s would be invalid: %w", config.Show(e.Path), err)
+	if err := checkEdit(e); err != nil {
+		return fmt.Errorf("not saved — %w", err)
 	}
 	isNew := e.IsNew()
 	if err := e.Save(); err != nil {
@@ -40,14 +36,32 @@ func saveEdit(e *config.Editor) error {
 	return nil
 }
 
+// checkEdit is why the config would be invalid with the edit (nil: it
+// wouldn't).
+func checkEdit(e *config.Editor) error {
+	cfg, err := config.Preview(e.Path, e.Bytes())
+	if err == nil {
+		err = provider.Validate(cfg)
+	}
+	if err != nil {
+		return fmt.Errorf("%s would be invalid: %w", config.Show(e.Path), err)
+	}
+	return nil
+}
+
+// filePerm: a project's files are for a repository; ~/.mek/config.yaml is
+// yours alone.
+func filePerm(path string) os.FileMode {
+	if filepath.Base(path) == config.TeamFile || filepath.Base(path) == config.LocalFile {
+		return 0o644
+	}
+	return 0o600
+}
+
 // editConfig opens a config file (a missing one starts from template),
 // changes it and saves it through saveEdit.
 func editConfig(path string, template []byte, change func(*config.Editor) error) error {
-	perm := os.FileMode(0o600)
-	if filepath.Base(path) == config.TeamFile || filepath.Base(path) == config.LocalFile {
-		perm = 0o644 // a project's files are for a repository
-	}
-	e, err := config.Open(path, template, perm)
+	e, err := config.Open(path, template, filePerm(path))
 	if err == nil {
 		err = change(e)
 	}

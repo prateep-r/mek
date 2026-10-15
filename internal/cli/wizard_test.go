@@ -1,0 +1,362 @@
+package cli
+
+import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/prateep-r/mek/internal/config"
+	"github.com/prateep-r/mek/internal/wizard"
+)
+
+// answering runs the wizard's forms on keys instead of a terminal, one key
+// list per form; screens gets each form's last screen.
+func answering(t *testing.T, forms ...[]string) (screens *[]string) {
+	t.Helper()
+	oldRun, oldTerm := runForm, isTerminal
+	t.Cleanup(func() { runForm, isTerminal = oldRun, oldTerm })
+	isTerminal = func() bool { return true }
+	screens = &[]string{}
+	runForm = func(f *wizard.Form) (wizard.Answers, error) {
+		if len(forms) == 0 {
+			t.Fatal("a form nobody answers")
+		}
+		keys := forms[0]
+		forms = forms[1:]
+		a, err := wizard.Play(f, keys...)
+		*screens = append(*screens, ansi.Strip(f.View().Content))
+		return a, err
+	}
+	return screens
+}
+
+func TestCtxAddNeedsATerminal(t *testing.T) {
+	h := newHarness(t, testConfig)
+	for _, verb := range []string{"add", "edit"} {
+		_, err := h.run("ctx", verb)
+		wantErr(t, err, "mek ctx "+verb+" asks questions and needs a terminal")
+	}
+}
+
+func TestCtxAddSSO(t *testing.T) {
+	h := newHarness(t, "# my contexts\n"+testConfig)
+	screens := answering(t, []string{
+		"type:uat", "enter", "ctrl+u", // taken
+		"type:dev", "enter",
+		"enter", // AWS
+		"enter", // IAM Identity Center
+		"enter", // the portal uat uses: its region is known
+		"type:12", "enter", "ctrl+u", "type:222233334444", "enter",
+		"type:Admin", "enter",
+		"type:southeast-1", "enter", // filtered to ap-southeast-1
+		"down", "enter", // protected
+	})
+	h.run("ctx", "add") // stops at the review: nothing written
+	s := (*screens)[0]
+	for _, want := range []string{"✓ Name: dev", "✓ Access portal: https://o.awsapps.com/start", "✓ Region: ap-southeast-1",
+		"✓ Guard: protected", "in " + config.Show(config.Path()) + ":", "  sso_region: ap-southeast-1", `  account_id: "222233334444"`, "[Save]"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("review lacks %q:\n%s", want, s)
+		}
+	}
+	if strings.Contains(readFile(t, config.Path()), "dev:") {
+		t.Fatal("written before Save")
+	}
+}
+
+func TestCtxAddSaves(t *testing.T) {
+	h := newHarness(t, "# my contexts\n"+testConfig)
+	answering(t, []string{"enter", "enter", "enter", "enter", "type:222233334444", "enter", "type:Admin", "enter", "enter", "enter", "enter"})
+	out := stderr(t, func() { h.mustRun("ctx", "add", "dev") })
+	for _, want := range []string{"✓ added dev to " + config.Show(config.Path()), "next: mek login dev"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q: %s", want, out)
+		}
+	}
+	got := readFile(t, config.Path())
+	if !strings.HasPrefix(got, "# my contexts\n") || !strings.Contains(got, "  dev:\n    provider: aws\n    sso_start_url: https://o.awsapps.com/start\n    sso_region: ap-southeast-1\n") {
+		t.Errorf("file:\n%s", got)
+	}
+	if out := h.mustRun("ctx", "ls"); !strings.Contains(out, "dev") {
+		t.Errorf("ls: %s", out)
+	}
+}
+
+func TestCtxAddFirstContext(t *testing.T) {
+	h := newHarness(t, "") // no config yet
+	answering(t, []string{"type:me", "enter", "down", "enter", "enter", "type:my-proj", "enter", "type:asia-southeast1", "enter", "enter", "enter"})
+	h.mustRun("context", "add")
+	got := readFile(t, config.Path())
+	if !strings.Contains(got, "# Reference: mek help config\ncontexts:\n  me:\n    provider: gcp\n    region: asia-southeast1\n    project: my-proj\n") {
+		t.Errorf("new file:\n%s", got)
+	}
+}
+
+func TestCtxAddProfileAndAccounts(t *testing.T) {
+	h := newHarness(t, testConfig)
+	home, _ := os.UserHomeDir()
+	os.MkdirAll(filepath.Join(home, ".aws"), 0o700)
+	os.WriteFile(filepath.Join(home, ".aws", "config"), []byte("[default]\nregion = x\n[profile team-a]\n[sso-session s]\n[ profile  team-b ]\nnot a section\n"), 0o600)
+	t.Setenv("AWS_CONFIG_FILE", filepath.Join(config.Dir(), "aws", "config")) // mek's own, from mek env: not this one
+	screens := answering(t,
+		[]string{"type:p", "enter", "enter", "down", "enter", "down", "enter", "enter", "enter"},                                     // team-a
+		[]string{"type:g", "enter", "down", "enter", "down", "enter", "type:x", "enter", "enter", "type:readonly", "enter", "enter"}, // me@example.com
+	)
+	h.run("ctx", "add") // stops at the review
+	s := (*screens)[0]
+	for _, want := range []string{"✓ Profile: team-a", "aws_profile: team-a"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("profile review lacks %q:\n%s", want, s)
+		}
+	}
+	h.mustRun("ctx", "add")
+	got := readFile(t, config.Path())
+	if strings.Contains(got, "  p:") || !strings.Contains(got, "  g:\n    provider: gcp\n    readonly: true\n    project: x\n    account: me@example.com\n") {
+		t.Errorf("file:\n%s", got)
+	}
+	if got := awsProfiles(); len(got) != 3 || got[2].Value != "team-b" {
+		t.Errorf("profiles: %v", got)
+	}
+}
+
+func TestCtxAddInProject(t *testing.T) {
+	h, repo := projectHarness(t)
+	local, team := filepath.Join(repo, config.LocalFile), filepath.Join(repo, config.TeamFile)
+
+	// prod is in mek.yaml and ~/.mek/config.yaml: only mek.local.yaml is free, so it isn't asked.
+	answering(t, []string{"type:prod", "enter", "down", "enter", "enter", "type:mine", "enter", "enter", "enter", "enter"})
+	out := stderr(t, func() { h.mustRun("ctx", "add") })
+	if !strings.Contains(out, osPath("added prod to ./mek.local.yaml")) || !strings.Contains(out, osPath("in this project it replaces prod from ./mek.yaml")) {
+		t.Errorf("output: %s", out)
+	}
+	if !strings.Contains(readFile(t, local), "  prod:\n") {
+		t.Errorf("local:\n%s", readFile(t, local))
+	}
+
+	// A new name: all three files, with what each means.
+	screens := answering(t, []string{"type:extra", "enter"})
+	h.run("ctx", "add")
+	for _, want := range []string{"▸ " + osPath("./mek.local.yaml") + "  yours, this project only (not committed)", osPath("./mek.yaml") + "  the team's — commit it", config.Show(config.Path())} {
+		if !strings.Contains((*screens)[0], want) {
+			t.Errorf("files lack %q:\n%s", want, (*screens)[0])
+		}
+	}
+
+	// gcp is in mek.local.yaml and ~/.mek/config.yaml already: mek.yaml it is.
+	answering(t, []string{"type:gcp", "enter", "down", "enter", "enter", "type:shared", "enter", "enter", "enter", "enter"})
+	h.mustRun("ctx", "add")
+	if got := readFile(t, team); !strings.Contains(got, "  gcp:\n    provider: gcp\n    project: shared\n") {
+		t.Errorf("team:\n%s", got)
+	}
+
+	// A new mek.local.yaml goes into .gitignore.
+	os.Remove(local)
+	answering(t, []string{"type:solo", "enter", "enter", "down", "enter", "enter", "type:s", "enter", "enter", "enter", "enter"})
+	if out := stderr(t, func() { h.mustRun("ctx", "add") }); !strings.Contains(out, "added mek.local.yaml to") {
+		t.Errorf("gitignore: %s", out)
+	}
+	if !strings.HasPrefix(readFile(t, local), "# mek.local.yaml") {
+		t.Errorf("template:\n%s", readFile(t, local))
+	}
+}
+
+func TestCtxEdit(t *testing.T) {
+	h := newHarness(t, "# keep me\n"+testConfig)
+	answering(t, []string{
+		"enter", "enter", "enter", "enter", // name, cloud, sign-in, portal
+		"enter", "enter", // its region (only uat uses the portal: asked, filled in), account
+		"ctrl+u", "type:Admin", "enter",
+		"enter", "down", "enter", "enter", // region, protected, Save
+	})
+	out := stderr(t, func() { h.mustRun("ctx", "edit", "uat") })
+	if !strings.Contains(out, "✓ saved uat in "+config.Show(config.Path())) {
+		t.Errorf("output: %s", out)
+	}
+	got := readFile(t, config.Path())
+	if !strings.HasPrefix(got, "# keep me\n") || !strings.Contains(got, "role: Admin") || !strings.Contains(got, "protected: true") ||
+		!strings.Contains(got, "prod: {provider: aws, aws_profile: prod-admin, protected: true}") {
+		t.Errorf("file:\n%s", got)
+	}
+
+	// Renamed: the current context follows. Picked from the list.
+	h.mustRun("use", "gcp")
+	answering(t, []string{"enter"}, []string{"ctrl+u", "type:gcp2", "enter", "enter", "enter", "enter", "enter", "enter", "enter"})
+	out = stderr(t, func() { h.mustRun("ctx", "edit") })
+	if !strings.Contains(out, "renamed gcp to gcp2") || !strings.Contains(out, "the current context is now gcp2") || config.Current() != "gcp2" {
+		t.Errorf("rename: %s", out)
+	}
+	if got := readFile(t, config.Path()); strings.Contains(got, "  gcp:") || !strings.Contains(got, "account: me@example.com") {
+		t.Errorf("renamed file:\n%s", got)
+	}
+	answering(t, []string{"ctrl+u", "type:gcp3", "enter", "enter", "enter", "enter", "enter", "enter", "enter"})
+	if out := stderr(t, func() { h.mustRun("ctx", "edit", "ro") }); strings.Contains(out, "current context") {
+		t.Errorf("not the current one: %s", out)
+	}
+
+	answering(t, []string{"ctrl+c"})
+	_, err := h.run("ctx", "edit")
+	wantErr(t, err, "canceled — nothing was changed")
+	_, err = h.run("ctx", "edit", "nope")
+	wantErr(t, err, "unknown context")
+}
+
+func TestCtxEditTeamContext(t *testing.T) {
+	h, repo := projectHarness(t)
+	screens := answering(t, []string{"enter"})
+	h.run("ctx", "edit", "orders-dev")
+	for _, want := range []string{osPath("./mek.yaml") + "  the team's — commit the change", osPath("./mek.local.yaml") + "  your own copy — the team's stays as it is"} {
+		if !strings.Contains((*screens)[0], want) {
+			t.Errorf("choices lack %q:\n%s", want, (*screens)[0])
+		}
+	}
+	answering(t, []string{"enter", "down", "enter", "enter", "enter", "enter", "enter", "enter", "enter"})
+	out := stderr(t, func() { h.mustRun("ctx", "edit", "orders-dev") })
+	if !strings.Contains(out, osPath("copied orders-dev to ./mek.local.yaml")) {
+		t.Errorf("output: %s", out)
+	}
+	if got := readFile(t, filepath.Join(repo, config.LocalFile)); !strings.Contains(got, "  orders-dev:\n    provider: gcp\n    project: orders-dev\n") {
+		t.Errorf("local:\n%s", got)
+	}
+	if got := readFile(t, filepath.Join(repo, config.TeamFile)); !strings.Contains(got, "orders-dev: {provider: gcp, project: orders-dev}") {
+		t.Errorf("team changed:\n%s", got)
+	}
+
+	// mek.local.yaml's own: no choice of file.
+	screens = answering(t, []string{"enter", "enter", "enter", "enter", "enter", "enter"})
+	h.run("ctx", "edit", "gcp")
+	if strings.Contains((*screens)[0], "Save it in") || !strings.Contains((*screens)[0], osPath("in ./mek.local.yaml:")) {
+		t.Errorf("own file:\n%s", (*screens)[0])
+	}
+}
+
+func TestCtxEditInvalid(t *testing.T) {
+	h := newHarness(t, `contexts:
+  k: {provider: gcp, project: p, use_metadata: true, clusters: {main: {name: m, location: us-central1}}}
+`)
+	// To AWS: its clusters take a region, not a location — shown, and not saved.
+	screens := answering(t, []string{"enter", "up", "enter", "enter", "enter", "type:https://n.awsapps.com/start", "enter",
+		"type:us-east-1", "enter", "type:111122223333", "enter", "type:R", "enter", "enter", "enter"})
+	_, err := h.run("ctx", "edit", "k")
+	wantErr(t, err, "canceled")
+	if s := (*screens)[0]; !strings.Contains(s, "would be invalid") || !strings.Contains(s, "aws clusters use region, not location") {
+		t.Errorf("review:\n%s", s)
+	}
+
+	// The file turned into something unreadable while the wizard asked.
+	screens = answering(t, []string{"enter", "enter", "enter", "enter", "enter", "enter"})
+	play := runForm
+	runForm = func(f *wizard.Form) (wizard.Answers, error) {
+		os.Remove(config.Path())
+		os.Mkdir(config.Path(), 0o700)
+		return play(f)
+	}
+	_, err = h.run("ctx", "edit", "k")
+	wantErr(t, err, "canceled")
+	if s := (*screens)[0]; !strings.Contains(s, "[Back]") {
+		t.Errorf("review of an unreadable file:\n%s", s)
+	}
+}
+
+func TestCtxWizardErrors(t *testing.T) {
+	h := newHarness(t, "contexts: {}\n")
+	answering(t)
+	_, err := h.run("ctx", "edit")
+	wantErr(t, err, "no contexts yet — add one: mek ctx add")
+
+	h = newHarness(t, "contexts: [\n")
+	_, err = h.run("ctx", "add")
+	wantErr(t, err, "parse")
+
+	// Saved after the form, but the file went away under it.
+	h = newHarness(t, testConfig)
+	answering(t, []string{"type:x", "enter", "down", "enter", "enter", "type:p", "enter", "enter", "enter", "enter"})
+	play := runForm
+	runForm = func(f *wizard.Form) (wizard.Answers, error) {
+		a, err := play(f)
+		os.Remove(config.Path())
+		os.Mkdir(config.Path(), 0o700)
+		return a, err
+	}
+	_, err = h.run("ctx", "add")
+	if err == nil {
+		t.Error("saved into a directory")
+	}
+
+	if flowFor("azure") != nil {
+		t.Error("a flow for a cloud mek doesn't have")
+	}
+	if ownContexts(t.TempDir()) != nil {
+		t.Error("contexts from a directory")
+	}
+}
+
+func TestCtxRenameCurrentUnsaved(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Getuid() == 0 {
+		t.Skip("needs a directory this user can't write")
+	}
+	h, _ := projectHarness(t)
+	h.mustRun("use", "gcp")
+	answering(t, []string{"ctrl+u", "type:mine", "enter", "enter", "enter", "enter", "enter", "enter", "enter"})
+	os.Chmod(config.Dir(), 0o500)
+	t.Cleanup(func() { os.Chmod(config.Dir(), 0o700) })
+	_, err := h.run("ctx", "edit", "gcp")
+	if err == nil {
+		t.Error("the current context couldn't be saved, and nobody heard")
+	}
+}
+
+func TestCtxWizardDetails(t *testing.T) {
+	h := newHarness(t, `contexts:
+  a: {provider: aws, sso_start_url: "https://o.awsapps.com/start", region: ap-southeast-1, account_id: "111122223333", role: Dev}
+  b: {provider: aws, sso_start_url: "https://o.awsapps.com/start", region: ap-southeast-1, account_id: "444455556666", role: Dev}
+  prod: {provider: aws, aws_profile: prod-admin, protected: true}
+`)
+	screens := answering(t, []string{
+		"type:bad name", "enter", "ctrl+u", "type:c", "enter", "enter", "enter",
+		"down", "enter", "type:http://x", "enter", "esc", "up", "enter", // typed: refused; back to the list
+		"type:999988887777", "enter", "enter", "type:R", "enter", "enter", "enter",
+	})
+	h.run("ctx", "add")
+	for _, want := range []string{"✓ Access portal: https://o.awsapps.com/start", "sso_region: ap-southeast-1", "✓ Role: R"} {
+		if !strings.Contains((*screens)[0], want) {
+			t.Errorf("review lacks %q:\n%s", want, (*screens)[0])
+		}
+	}
+	for _, keys := range [][]string{
+		{"type:bad name", "enter"}, {"type:c", "enter", "enter", "enter", "down", "enter", "type:http://x", "enter"},
+		{"type:c", "enter", "enter", "enter", "enter", "type:999988887777", "enter", "enter"},
+		{"type:c", "enter", "enter", "enter"},
+	} {
+		screens := answering(t, keys)
+		h.run("ctx", "add")
+		if s := (*screens)[0]; !strings.Contains(s, "name may only contain") && !strings.Contains(s, "starts with https://") &&
+			!strings.Contains(s, "a role, please") && !strings.Contains(s, "used by a, b") {
+			t.Errorf("no reason shown:\n%s", s)
+		}
+	}
+
+	// A profile context, protected: both kept.
+	answering(t, []string{"enter", "enter", "enter", "enter", "enter", "enter", "enter"})
+	h.mustRun("ctx", "edit", "prod")
+	if got := readFile(t, config.Path()); !strings.Contains(got, "  prod:\n    provider: aws\n    protected: true\n    aws_profile: prod-admin\n") {
+		t.Errorf("prod:\n%s", got)
+	}
+
+	h = newHarness(t, "contexts: [\n")
+	answering(t)
+	_, err := h.run("ctx", "edit")
+	wantErr(t, err, "parse")
+}
+
+func TestCtxEditPickInProject(t *testing.T) {
+	h, _ := projectHarness(t)
+	screens := answering(t, []string{"type:orders"}, nil)
+	h.run("ctx", "edit")
+	if s := (*screens)[0]; !strings.Contains(s, "· "+osPath("./mek.yaml")) {
+		t.Errorf("pick:\n%s", s)
+	}
+}

@@ -52,7 +52,20 @@ type step interface {
 // common is what every step has.
 type common struct {
 	key, title, help string
-	when             func(Answers) bool // nil: always asked
+	when             func(Answers) bool          // nil: always asked
+	validate         func(string, Answers) error // nil: anything goes
+	err              string                      // why the last value was refused
+}
+
+// check runs the step's validation, keeping the error to show.
+func (c *common) check(v string, a Answers) bool {
+	c.err = ""
+	if c.validate != nil {
+		if err := c.validate(v, a); err != nil {
+			c.err = err.Error()
+		}
+	}
+	return c.err == ""
 }
 
 func (c *common) base() *common { return c }
@@ -82,6 +95,13 @@ func (f *Form) Prefill(a Answers) *Form {
 // When makes the step added last asked only when cond holds.
 func (f *Form) When(cond func(Answers) bool) *Form {
 	f.steps[len(f.steps)-1].base().when = cond
+	return f
+}
+
+// Check validates the step added last: an Input's value, or a value typed
+// into a Select or Load.
+func (f *Form) Check(validate func(string, Answers) error) *Form {
+	f.steps[len(f.steps)-1].base().validate = validate
 	return f
 }
 

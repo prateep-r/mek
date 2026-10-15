@@ -21,6 +21,26 @@ var (
 	localTemplate []byte
 )
 
+// globalTemplate starts a ~/.mek/config.yaml that mek ctx add creates:
+// the example's contexts would be in the way there.
+const globalTemplate = `# mek configuration — https://github.com/prateep-r/mek
+# Each context is one cloud target. Switch with ` + "`mek use <name>`" + `.
+# Reference: mek help config
+contexts:
+`
+
+// Template is what a missing config file starts as when mek ctx add
+// creates it: a project's file as mek init writes it, else a short header.
+func Template(path string) []byte {
+	switch filepath.Base(path) {
+	case TeamFile:
+		return projectTemplate
+	case LocalFile:
+		return localTemplate
+	}
+	return []byte(globalTemplate)
+}
+
 // Example returns the commented example config.
 func Example() []byte { return exampleConfig }
 

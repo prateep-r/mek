@@ -138,6 +138,9 @@ func trimBack(lines []string, first, last int) int {
 }
 
 // render writes one context as YAML lines, indented.
+// Snippet is a context as Set writes it, unindented (for a preview).
+func Snippet(name string, c *Context) string { return strings.Join(render(name, c, 0), "\n") }
+
 func render(name string, c *Context, indent int) []string {
 	b, _ := yaml.MarshalWithOptions(map[string]*Context{name: c}, yaml.Indent(2)) // a Context always marshals
 	out := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
