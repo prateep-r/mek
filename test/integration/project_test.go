@@ -79,3 +79,17 @@ func TestProjectConfig(t *testing.T) {
 		t.Errorf("--no-local: %s", c.Env["AWS_PROFILE"])
 	}
 }
+
+// mek ctx rm takes the context out of its file and leaves the rest as it was.
+func TestCtxRmKeepsComments(t *testing.T) {
+	body := "# my contexts\ncontexts:\n  # dev: mine\n  dev: {provider: aws, aws_profile: dev}\n  # old: going\n  old: {provider: aws, aws_profile: old}\n# end\n"
+	e := setup(t, body)
+	if r := e.run("ctx", "rm", "old"); r.Code == 0 || !strings.Contains(r.Stderr, "pass --yes") { // no terminal to ask on
+		t.Fatalf("no tty: %+v", r)
+	}
+	ok(t, e.run("context", "rm", "old", "--yes"))
+	b, _ := os.ReadFile(filepath.Join(e.mekHome, "config.yaml"))
+	if string(b) != "# my contexts\ncontexts:\n  # dev: mine\n  dev: {provider: aws, aws_profile: dev}\n# end\n" {
+		t.Errorf("config:\n%s", b)
+	}
+}

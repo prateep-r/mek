@@ -1,12 +1,15 @@
 package cli
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/prateep-r/mek/internal/config"
+	"github.com/prateep-r/mek/internal/ui"
 )
 
 // osPath writes ./x with this OS's separator, as mek shows paths.
@@ -115,4 +118,114 @@ func TestDoctorProjectFiles(t *testing.T) {
 	if gitTracked = old; old("/nonexistent", config.LocalFile) { // the real one, outside any repository
 		t.Error("tracked outside a repository")
 	}
+}
+
+func TestCtxRm(t *testing.T) {
+	h, repo := projectHarness(t)
+	old := confirm
+	t.Cleanup(func() { confirm = old })
+	answers := []bool{false, true}
+	confirm = func(q string) (bool, error) {
+		if !strings.Contains(q, "Remove context gcp from ") {
+			t.Errorf("question: %s", q)
+		}
+		a := answers[0]
+		answers = answers[1:]
+		return a, nil
+	}
+	h.mustRun("ctx", "rm", "gcp") // declined: kept
+	if b, _ := os.ReadFile(filepath.Join(repo, config.LocalFile)); !strings.Contains(string(b), "gcp:") {
+		t.Error("removed though declined")
+	}
+	out := stderr(t, func() { h.mustRun("context", "rm", "gcp") }) // "context" is ctx too
+	if !strings.Contains(out, osPath("removed gcp from ./mek.local.yaml")) || !strings.Contains(out, "is used again") {
+		t.Errorf("rm: %s", out)
+	}
+	if out := h.mustRun("-c", "gcp", "ctx"); strings.Contains(out, "my-sandbox") || !strings.Contains(out, "acme-dev") {
+		t.Errorf("after: %s", out) // yours from ~/.mek/config.yaml again
+	}
+
+	confirm = func(string) (bool, error) { return false, ui.ErrNoTTY }
+	_, err := h.run("ctx", "rm", "orders-dev")
+	wantErr(t, err, "pass --yes")
+	out = stderr(t, func() { h.mustRun("ctx", "rm", "orders-dev", "--yes") })
+	if !strings.Contains(out, osPath("removed orders-dev from ./mek.yaml")) {
+		t.Errorf("--yes: %s", out)
+	}
+	h.mustRun("use", "uat")
+	if out := stderr(t, func() { h.mustRun("ctx", "rm", "uat", "--yes") }); !strings.Contains(out, "it was the current context") {
+		t.Errorf("current: %s", out)
+	}
+	_, err = h.run("ctx", "rm", "nope", "--yes")
+	wantErr(t, err, "unknown context")
+
+}
+
+func TestSaveEdit(t *testing.T) {
+	_, repo := projectHarness(t)
+	os.Remove(filepath.Join(repo, config.LocalFile))
+	local := filepath.Join(repo, config.LocalFile)
+
+	// Invalid as a whole: nothing written.
+	e, _ := config.Open(local, nil, 0o644)
+	e.Set("bad", &config.Context{Provider: "aws"}) // no profile, no SSO
+	if err := saveEdit(e); err == nil || !strings.Contains(err.Error(), "not saved") {
+		t.Errorf("invalid: %v", err)
+	}
+	if _, err := os.Stat(local); err == nil {
+		t.Error("written anyway")
+	}
+
+	// A new mek.local.yaml goes into .gitignore.
+	e, _ = config.Open(local, nil, 0o644)
+	e.Set("mine", &config.Context{Provider: "gcp", Project: "m"})
+	out := stderr(t, func() {
+		if err := saveEdit(e); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if !strings.Contains(out, "added mek.local.yaml to") {
+		t.Errorf("gitignore: %q", out)
+	}
+	e.Set("more", &config.Context{Provider: "gcp", Project: "n"}) // not new any more: .gitignore alone
+	if out := stderr(t, func() { saveEdit(e) }); out != "" {
+		t.Errorf("second save: %q", out)
+	}
+
+	// A .gitignore that can't be read is reported.
+	os.Remove(local)
+	os.Remove(filepath.Join(repo, ".gitignore"))
+	os.Mkdir(filepath.Join(repo, ".gitignore"), 0o700)
+	e, _ = config.Open(local, nil, 0o644)
+	e.Set("mine", &config.Context{Provider: "gcp", Project: "m"})
+	if err := saveEdit(e); err == nil {
+		t.Error(".gitignore error")
+	}
+	// And a file that can't be written (a read-only directory: not on Windows).
+	if runtime.GOOS != "windows" {
+		ro := t.TempDir()
+		os.Chmod(ro, 0o500)
+		t.Cleanup(func() { os.Chmod(ro, 0o700) })
+		e, _ = config.Open(filepath.Join(ro, "other.yaml"), nil, 0o644)
+		if err := saveEdit(e); err == nil {
+			t.Error("unwritable")
+		}
+	}
+}
+
+func TestEditConfig(t *testing.T) {
+	_, repo := projectHarness(t)
+	boom := errors.New("boom")
+	dir := filepath.Join(repo, "adir")
+	os.Mkdir(dir, 0o700)
+	if err := editConfig(dir, nil, func(*config.Editor) error { return nil }); err == nil { // can't be read
+		t.Error("open error")
+	}
+	if err := editConfig(filepath.Join(repo, config.TeamFile), nil, func(*config.Editor) error { return boom }); !errors.Is(err, boom) {
+		t.Errorf("change error: %v", err)
+	}
+	h, _ := projectHarness(t) // a broken config: rm can't load it
+	os.WriteFile(config.Path(), []byte("contexts: ["), 0o600)
+	_, err := h.run("ctx", "rm", "uat", "--yes")
+	wantErr(t, err, "parse")
 }
