@@ -1,5 +1,5 @@
 // Package audit appends one JSON line per command mek runs, to
-// ~/.config/mek/audit.jsonl. Secret-looking flag values are masked.
+// ~/.mek/audit.jsonl. Secret-looking flag values are masked.
 package audit
 
 import (
