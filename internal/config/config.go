@@ -26,6 +26,11 @@ type Context struct {
 	Name     string `yaml:"-"`
 	Provider string `yaml:"provider"`
 
+	// Where it was read from (set by Load, never in YAML).
+	Source    string `yaml:"-"` // the file
+	InProject bool   `yaml:"-"` // from a project's mek.yaml / mek.local.yaml
+	Shadowed  string `yaml:"-"` // the file of a same-named context it replaces
+
 	// Safety
 	Protected bool `yaml:"protected,omitempty"` // confirm write/destructive operations
 	ReadOnly  bool `yaml:"readonly,omitempty"`  // block write/destructive operations
@@ -56,6 +61,9 @@ type Context struct {
 
 type Config struct {
 	Contexts map[string]*Context `yaml:"contexts"`
+
+	Files   []string `yaml:"-"` // the files read, top layer first
+	Project string   `yaml:"-"` // the project directory ("" outside a project)
 }
 
 type state struct {
@@ -84,41 +92,63 @@ func statePath() string { return filepath.Join(Dir(), "state.yaml") }
 
 var ErrNoConfig = errors.New("no config found — run `mek init` first")
 
-// Load reads and validates the config file.
+// Load reads every layer (Sources: the project's mek.local.yaml and
+// mek.yaml over ~/.mek/config.yaml), merges them and validates the result —
+// a GoF Facade over the files, the layering and the guard rule.
 func Load() (*Config, error) {
-	b, err := os.ReadFile(Path())
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, ErrNoConfig
-	}
+	src, project := Sources()
+	c, err := src.Read()
 	if err != nil {
 		return nil, err
 	}
-	return Parse(b)
+	if len(c.Files) == 0 {
+		return nil, ErrNoConfig
+	}
+	c.Project = project
+	return c, c.validate()
 }
 
-// Parse decodes and validates config bytes.
+// Parse decodes and validates the bytes of one config file (the global one).
 func Parse(b []byte) (*Config, error) {
+	c, err := decode(b, Path(), false)
+	if err != nil {
+		return nil, err
+	}
+	return c, c.validate()
+}
+
+// decode reads one file's contexts. Unknown keys are errors: a typo such as
+// `protcted: true` must not leave a context silently unprotected.
+func decode(b []byte, source string, inProject bool) (*Config, error) {
 	var c Config
-	// Unknown keys are errors: a typo such as `protcted: true` must not leave a
-	// context silently unprotected.
 	if err := yaml.UnmarshalWithOptions(b, &c, yaml.DisallowUnknownField()); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", Path(), err)
+		return nil, fmt.Errorf("parse %s: %w", Show(source), err)
 	}
 	if c.Contexts == nil {
 		c.Contexts = map[string]*Context{}
 	}
-	// Generic rules only; each cloud's rules live with it (provider.Validate).
-	for _, name := range c.Names() {
-		ctx := c.Contexts[name]
+	for name, ctx := range c.Contexts {
 		if ctx == nil {
-			return nil, fmt.Errorf("context %q is empty", name)
+			return nil, fmt.Errorf("%s: context %q is empty", Show(source), name)
 		}
-		ctx.Name = name
-		if err := ctx.Validate(); err != nil {
-			return nil, fmt.Errorf("context %q: %w", name, err)
-		}
+		ctx.Name, ctx.Source, ctx.InProject = name, source, inProject
 	}
 	return &c, nil
+}
+
+// validate applies the rules every context shares; each cloud's own rules
+// live with it (provider.Validate).
+func (c *Config) validate() error {
+	for _, name := range c.Names() {
+		ctx := c.Contexts[name]
+		if err := ctx.Validate(); err != nil {
+			if ctx.InProject {
+				return fmt.Errorf("context %q (%s): %w", name, Show(ctx.Source), err)
+			}
+			return fmt.Errorf("context %q: %w", name, err)
+		}
+	}
+	return nil
 }
 
 var validName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
@@ -166,7 +196,11 @@ func (c *Config) Resolve(flag string) (*Context, error) {
 	if name == "" {
 		return nil, errors.New("no context selected — run `mek use <context>` or pass --context")
 	}
-	return c.Get(name)
+	ctx, err := c.Get(name)
+	if err != nil && flag == "" { // chosen earlier, maybe in a project: say where to look
+		return nil, fmt.Errorf("context %q isn't defined here — it may be a project's (%s); mek use <context>, or -c <context>", name, TeamFile)
+	}
+	return ctx, err
 }
 
 // Current returns the saved current context name ("" if none).
