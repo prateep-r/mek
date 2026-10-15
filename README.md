@@ -1136,6 +1136,9 @@ sent, instead of the cloud refusing afterwards.
 - A foreground tunnel ends when the cloud closes its session (SSM's idle timeout is 20 minutes by default); use `-b`, which reconnects. A reconnect breaks the connections open at that moment.
 - If a tunnel's supervisor is killed with `kill -9`, `ls` shows it as dead; on macOS the tunnel's own process can outlive it (`stop` warns when the port is still taken).
 - The Homebrew cask is macOS-only; use `install.sh` or `go install` on Linux, `install.ps1` on Windows.
+- Windows support is new in v0.16 and tested on CI (unit, integration, contract with the real
+  `aws`, `gcloud.cmd` and `kubectl`, `install.ps1`); GCP shells through gcloud's PuTTY haven't
+  been tried on a real Windows machine yet — please report what you find.
 - Windows: stopping a tunnel ends it at once (Windows has no SIGTERM to let it clean up), and a
   killed supervisor takes its tunnel with it.
 - Windows: `gcloud` is a `.cmd`, so an argument for it with `%` or `"` is refused (cmd.exe would
