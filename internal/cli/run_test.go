@@ -3,6 +3,8 @@ package cli
 import (
 	"strings"
 	"testing"
+
+	"github.com/prateep-r/mek/internal/config"
 )
 
 func TestTakeGlobalFlags(t *testing.T) {
@@ -28,5 +30,12 @@ func TestTakeGlobalFlags(t *testing.T) {
 	}
 	if _, err := (&app{}).takeGlobalFlags([]string{"-c"}); err == nil {
 		t.Error("expected error for -c without value")
+	}
+
+	// The project flags reach config, for `mek aws --project ~/work/x s3 ls`.
+	t.Cleanup(func() { config.ProjectFlag, config.NoProject = "", false })
+	rest, err := (&app{}).takeGlobalFlags([]string{"--project", "/work/x", "--no-local", "s3", "ls"})
+	if err != nil || strings.Join(rest, " ") != "s3 ls" || config.ProjectFlag != "/work/x" || !config.NoProject {
+		t.Errorf("project flags: %v %v %q %v", rest, err, config.ProjectFlag, config.NoProject)
 	}
 }

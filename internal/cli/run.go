@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/prateep-r/mek/internal/audit"
+	"github.com/prateep-r/mek/internal/config"
 	"github.com/prateep-r/mek/internal/guard"
 	"github.com/prateep-r/mek/internal/provider"
 	"github.com/prateep-r/mek/internal/runner"
@@ -247,20 +248,25 @@ func (a *app) takeGlobalFlags(args []string) ([]string, error) {
 	for len(args) > 0 {
 		name, val, hasVal := strings.Cut(args[0], "=")
 		switch name {
-		case "-c", "--context", "--confirm":
+		case "-c", "--context", "--confirm", "--project":
 			if !hasVal {
 				if len(args) < 2 {
 					return nil, fmt.Errorf("%s needs a value", name)
 				}
 				val, args = args[1], args[1:]
 			}
-			if name == "--confirm" {
+			switch name {
+			case "--confirm":
 				a.opts.confirm = val
-			} else {
+			case "--project":
+				config.ProjectFlag = val
+			default:
 				a.opts.context = val
 			}
 		case "-y", "--yes":
 			a.opts.yes = true
+		case "--no-local":
+			config.NoProject = true
 		default:
 			return args, nil
 		}

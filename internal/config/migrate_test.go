@@ -124,6 +124,7 @@ func TestMigrateFailures(t *testing.T) {
 	}
 	rename = oldRename
 
+	goos = "linux" // a link is left on Unix
 	symlink = func(string, string) error { return errors.New("not permitted") }
 	var out bytes.Buffer
 	if err := Migrate(&out); err != nil || !strings.Contains(out.String(), "couldn't leave a link") {
