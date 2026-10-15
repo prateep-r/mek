@@ -139,7 +139,7 @@ func validateSSOSessions(cfg *config.Config) error {
 // AWS wraps the aws CLI v2.
 //
 // For SSO contexts mek generates its own AWS config file
-// (~/.config/mek/aws/config) and points AWS_CONFIG_FILE at it, so the user's
+// (~/.mek/aws/config) and points AWS_CONFIG_FILE at it, so the user's
 // ~/.aws/config is never modified. Credentials stay in the AWS CLI's own SSO
 // token cache (~/.aws/sso/cache) — mek never stores access keys.
 type AWS struct {

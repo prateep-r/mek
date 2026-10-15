@@ -62,16 +62,21 @@ type state struct {
 	Current string `yaml:"current"`
 }
 
-// Dir returns the mek config directory ($MEK_HOME, $XDG_CONFIG_HOME/mek or ~/.config/mek).
+// Dir is where mek keeps everything: $MEK_HOME, else ~/.mek (or, while
+// Migrate can't move it yet, the old ~/.config/mek).
 func Dir() string {
 	if d := os.Getenv("MEK_HOME"); d != "" {
 		return d
 	}
-	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
-		return filepath.Join(x, "mek")
+	if oldDir != "" {
+		return oldDir
 	}
+	return defaultDir()
+}
+
+func defaultDir() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "mek")
+	return filepath.Join(home, ".mek")
 }
 
 func Path() string      { return filepath.Join(Dir(), "config.yaml") }

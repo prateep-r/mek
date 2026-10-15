@@ -15,7 +15,7 @@ func newInitCmd() *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Create ~/.config/mek/config.yaml from a commented example",
+		Short: "Create ~/.mek/config.yaml from a commented example",
 		Args:  cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			p, err := config.Init(force)
