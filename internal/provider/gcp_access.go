@@ -59,7 +59,7 @@ func (g *GCP) vmLookup(name string, o TargetOptions, q Query) (Instance, error) 
 
 // sshDir is the context's own SSH home: gcloud's key and known_hosts live
 // there instead of ~/.ssh.
-func (g *GCP) sshDir() string { return filepath.Join(g.dir, "ssh", g.ctx.Name) }
+func (g *GCP) sshDir() string { return filepath.Join(g.dir, "ssh", g.ctx.Key()) }
 
 // ShellCommand runs gcloud compute ssh through IAP. HOME points at the
 // context's SSH dir, because gcloud always tells ssh to keep known hosts in

@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"maps"
@@ -154,15 +156,26 @@ var awsUnset = []string{
 	"AWS_SECURITY_TOKEN", "AWS_DEFAULT_PROFILE",
 }
 
-func profileName(ctx string) string { return "mek-" + ctx }
+// profileName is a context's generated AWS profile, by its Key: project
+// contexts that share a name with another stay apart.
+func profileName(c *config.Context) string { return "mek-" + c.Key() }
 
-func (a *AWS) configPath() string { return filepath.Join(a.dir, "aws", "config") }
+// configPath is the generated AWS config: one per project (its contexts plus
+// ~/.mek/config.yaml's), so terminals in two projects never rewrite each
+// other's profiles.
+func (a *AWS) configPath() string {
+	if a.cfg.Project == "" {
+		return filepath.Join(a.dir, "aws", "config")
+	}
+	sum := sha256.Sum256([]byte(a.cfg.Project))
+	return filepath.Join(a.dir, "aws", "config-"+hex.EncodeToString(sum[:4]))
+}
 
 func (a *AWS) profile() string {
 	if a.ctx.AWSProfile != "" {
 		return a.ctx.AWSProfile
 	}
-	return profileName(a.ctx.Name)
+	return profileName(a.ctx)
 }
 
 func (a *AWS) Prepare() (Env, error) {
@@ -201,7 +214,7 @@ func writeAWSConfig(path string, cfg *config.Config) error {
 		s := sessionName(c.SSOStartURL)
 		sessions[s] = c
 		fmt.Fprintf(&b, "\n[profile %s]\nsso_session = %s\nsso_account_id = %s\nsso_role_name = %s\n",
-			profileName(name), s, c.AccountID, c.Role)
+			profileName(c), s, c.AccountID, c.Role)
 		if c.Region != "" {
 			fmt.Fprintf(&b, "region = %s\n", c.Region)
 		}

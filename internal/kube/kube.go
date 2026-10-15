@@ -23,13 +23,31 @@ import (
 // Dir holds mek's kubeconfig files.
 func Dir() string { return filepath.Join(config.Dir(), "kube") }
 
-// Path is the kubeconfig file of one context.
-func Path(ctx string) string { return filepath.Join(Dir(), ctx+".yaml") }
+// Path is the kubeconfig file of one context, by its Key.
+func Path(key string) string { return filepath.Join(Dir(), key+".yaml") }
+
+// For is who a kubeconfig is for: the context's name (kube contexts are
+// <name>/<cluster>), its Key (the file) and the mek flags that bring the
+// context back when kubectl runs `mek kube token` from any directory.
+type For struct {
+	Name, Key string
+	Flags     []string
+}
+
+// ForContext is For a context; project is the directory of the project
+// config it came from ("" for ~/.mek/config.yaml).
+func ForContext(ctx *config.Context, project string) For {
+	f := For{Name: ctx.Name, Key: ctx.Key(), Flags: []string{"--context", ctx.Name}}
+	if ctx.InProject {
+		f.Flags = append([]string{"--project", project}, f.Flags...)
+	}
+	return f
+}
 
 // Env returns the KUBECONFIG a context's commands get: its mek kubeconfig,
 // when the context has clusters or the file was generated before.
 func Env(ctx *config.Context) (string, bool) {
-	p := Path(ctx.Name)
+	p := Path(ctx.Key())
 	if len(ctx.Clusters) > 0 {
 		return p, true
 	}
@@ -88,8 +106,8 @@ func (e Entry) Name(ctx string) string { return ctx + "/" + e.Alias }
 
 // tokenArgs are the exec plugin arguments: the cluster's real identity, so
 // ad-hoc clusters work and renaming an alias doesn't break a file.
-func (e Entry) tokenArgs(ctx string) []string {
-	return []string{"--context", ctx, "kube", "token", "--name", e.Cluster.Name, "--location", e.Info.Location}
+func (e Entry) tokenArgs(f For) []string {
+	return append(slices.Clone(f.Flags), "kube", "token", "--name", e.Cluster.Name, "--location", e.Info.Location)
 }
 
 // Describe looks up every cluster (sorted by alias) through the provider.
@@ -108,17 +126,18 @@ func Describe(kp provider.KubeProvider, clusters map[string]*config.Cluster, q p
 // Write renders entries into the context's kubeconfig — the fixed skeleton of
 // the Template Method; Describe's provider supplied the cloud-specific parts.
 // current selects current-context (default: the first entry).
-func Write(ctx string, entries []Entry, current, mek, pathEnv string) (string, error) {
-	b, err := Render(ctx, entries, current, mek, pathEnv)
+func Write(f For, entries []Entry, current, mek, pathEnv string) (string, error) {
+	b, err := Render(f, entries, current, mek, pathEnv)
 	if err != nil {
 		return "", err
 	}
-	p := Path(ctx)
+	p := Path(f.Key)
 	return p, fsutil.WriteFileAtomic(p, b, 0o600)
 }
 
 // Render produces the kubeconfig YAML.
-func Render(ctx string, entries []Entry, current, mek, pathEnv string) ([]byte, error) {
+func Render(f For, entries []Entry, current, mek, pathEnv string) ([]byte, error) {
+	ctx := f.Name
 	if len(entries) == 0 {
 		return nil, fmt.Errorf("no clusters to write")
 	}
@@ -130,7 +149,7 @@ func Render(ctx string, entries []Entry, current, mek, pathEnv string) ([]byte, 
 		}
 		cfg.Clusters = append(cfg.Clusters, namedCluster{name, clusterInfo{e.Info.Server, e.Info.CAData}})
 		cfg.Users = append(cfg.Users, namedUser{name, userInfo{execConfig{
-			APIVersion: "client.authentication.k8s.io/v1beta1", Command: mek, Args: e.tokenArgs(ctx),
+			APIVersion: "client.authentication.k8s.io/v1beta1", Command: mek, Args: e.tokenArgs(f),
 			Env: []execEnv{{"PATH", pathEnv}}, InteractiveMode: "Never",
 			InstallHint: "mek is needed for these credentials: https://github.com/prateep-r/mek",
 		}}})
