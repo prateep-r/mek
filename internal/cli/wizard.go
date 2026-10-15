@@ -3,6 +3,8 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"maps"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -47,6 +49,7 @@ func cloudIs(cloud string) func(wizard.Answers) bool {
 
 // ctxWizard is what the context wizard knows while it asks.
 type ctxWizard struct {
+	app    *app // runs the lookups and logins
 	cfg    *config.Config
 	files  []string                              // where a context can go, top layer first
 	layers map[string]map[string]*config.Context // each file's own contexts
@@ -54,7 +57,7 @@ type ctxWizard struct {
 	old    *config.Context                       // editing: the context as its file has it
 }
 
-func newCtxWizard() (*ctxWizard, error) {
+func newCtxWizard(app *app) (*ctxWizard, error) {
 	cfg, err := provider.Load()
 	if errors.Is(err, config.ErrNoConfig) { // the first context: the wizard creates the file
 		cfg, err = &config.Config{Contexts: map[string]*config.Context{}}, nil
@@ -63,7 +66,8 @@ func newCtxWizard() (*ctxWizard, error) {
 	if err != nil {
 		return nil, err
 	}
-	w := &ctxWizard{cfg: cfg, layers: map[string]map[string]*config.Context{}}
+	w := &ctxWizard{app: app, cfg: cfg, layers: map[string]map[string]*config.Context{}}
+	os.RemoveAll(provider.GCloudWizardDir()) // a login a canceled wizard left: whose, nobody knows
 	if cfg.Project != "" {
 		w.files = []string{filepath.Join(cfg.Project, config.LocalFile), filepath.Join(cfg.Project, config.TeamFile)}
 	}
@@ -274,7 +278,31 @@ func (w *ctxWizard) run(title string) error {
 	if err != nil {
 		return err
 	}
+	w.keepLogin(a, e.Path)
 	return w.report(a, e.Path)
+}
+
+// draftCtx is the context the answers make, as if saved already.
+func (w *ctxWizard) draftCtx(a wizard.Answers) *config.Context {
+	c := w.build(a)
+	c.Name, c.Source = a["name"], w.target(a)
+	c.InProject = c.Source != config.Path()
+	return c
+}
+
+// draftConfig is the config with the draft in it.
+func (w *ctxWizard) draftConfig(c *config.Context) *config.Config {
+	cfg := &config.Config{Contexts: maps.Clone(w.cfg.Contexts), Files: w.cfg.Files, Project: w.cfg.Project}
+	cfg.Contexts[c.Name] = c
+	return cfg
+}
+
+func toOptions(found []provider.Found) []wizard.Option {
+	out := make([]wizard.Option, len(found))
+	for i, f := range found {
+		out[i] = wizard.Option{Value: f.Value, Label: f.Label, Hint: f.Hint}
+	}
+	return out
 }
 
 func (w *ctxWizard) report(a wizard.Answers, path string) error {
@@ -319,16 +347,25 @@ It asks, in order:
                on every project). A file that has the name already isn't offered.
   Cloud        AWS or GCP
   AWS          IAM Identity Center: the access portal (portals your other
-               contexts use are listed), its region, the account id and role.
+               contexts use are listed) and its region; then, logged in to the
+               portal (it offers to log in first), the accounts you can reach
+               and your roles in the one you pick are listed.
                Or a profile from ~/.aws/config (listed).
                Then the region for commands.
   GCP          the Google account (accounts your other contexts use are
-               listed), the project id and a region
+               listed); logged in (it offers to), your projects are listed;
+               then a region
   Guard        normal, protected (changes ask; deletes need the name typed)
                or readonly (changes are blocked)
   Save?        the YAML it will write, and where: Save, Back or Cancel
 
 ` + wizardKeys + `
+
+Lists come from the cloud through mek like any command — read-only, in the
+audit log. When one can't be had (not logged in, no permission, no CLI) the
+step says why and you type the value. The portal's token is read from the
+AWS CLI's cache and handed over in a file only you can read, removed at
+once; it is never in argv or kept by mek. See: mek help wizard
 
 The rest of the file — comments, order, other contexts — stays as it was.
 A new mek.local.yaml is added to the repository's .gitignore.
@@ -344,7 +381,7 @@ See also: mek ctx edit, mek ctx rm, mek help config`,
 			if err := needTerminal("ctx add"); err != nil {
 				return err
 			}
-			w, err := newCtxWizard()
+			w, err := newCtxWizard(a)
 			if err != nil {
 				return err
 			}
@@ -385,7 +422,7 @@ See also: mek ctx add, mek ctx rm, mek help config`,
 			if err := needTerminal("ctx edit"); err != nil {
 				return err
 			}
-			w, err := newCtxWizard()
+			w, err := newCtxWizard(a)
 			if err != nil {
 				return err
 			}

@@ -17,6 +17,7 @@ type Invocation struct {
 	Env     []string
 	Class   guard.Class
 	Stdout  io.Writer // nil: the terminal
+	Stderr  io.Writer // nil: the terminal
 	Session string    // set for sessions (shell, tunnel): audited at start and end
 	Target  string    // what a session connects to, for the audit log
 	// Detached is set when a session was handed to a background supervisor,
@@ -71,7 +72,7 @@ var Exec Runner = Func(func(inv *Invocation) error {
 	if stdout == nil {
 		stdout = os.Stdout
 	}
-	code, err := RunStoppable(inv.Argv, inv.Env, stdout, inv.Stop)
+	code, err := RunStoppable(inv.Argv, inv.Env, stdout, inv.Stderr, inv.Stop)
 	inv.ExitCode, inv.Duration = code, time.Since(start)
 	return err
 })

@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"os"
 	"slices"
+	"strings"
 
 	"github.com/prateep-r/mek/internal/config"
+	"github.com/prateep-r/mek/internal/provider"
 	"github.com/prateep-r/mek/internal/wizard"
 )
 
@@ -31,7 +34,11 @@ func (gcpFlow) steps(f *wizard.Form, w *ctxWizard) {
 	on := cloudIs(config.ProviderGCP)
 	f.Select("gcp_account", "Google account", w.googleAccounts, true).When(on).
 		Help("who mek login signs in as")
-	f.Input("project", "Project", nil, required("a project id")).When(on).Help("the project id, e.g. acme-dev")
+	f.Exec("gcp_login", "Log in to Google", func(a wizard.Answers) string {
+		return strings.Join(provider.GCloudLoginCommand(a["gcp_account"]), " ") + "  (a browser opens)"
+	}, w.gcpLogin).When(func(a wizard.Answers) bool { return on(a) && !provider.GCloudLoggedIn(w.gcloudDir(a)) }).
+		Help("to list your projects — or skip, and type the project id")
+	f.Load("project", "Project", w.projects).When(on).Check(required("a project id")).Help("the projects your account can see")
 	f.Select("gcp_region", "Region", wizard.Options(regionOptions(gcpRegions, "gcloud's default")...), true).
 		When(on).Help("where commands go")
 }
@@ -55,4 +62,66 @@ func (gcpFlow) prefill(c *config.Context, a wizard.Answers) {
 
 func (gcpFlow) apply(_ *ctxWizard, a wizard.Answers, c *config.Context) {
 	c.Account, c.Project, c.Region = a["gcp_account"], a["project"], a["gcp_region"]
+}
+
+// gcloudDir is where the wizard's gcloud commands run: the edited context's
+// own login, another context's login of the same account, or a fresh one
+// (gcloud/.wizard) that becomes the new context's when it is saved.
+func (w *ctxWizard) gcloudDir(a wizard.Answers) string {
+	acct := a["gcp_account"]
+	if w.old != nil && w.old.Provider == config.ProviderGCP && (acct == "" || acct == w.old.Account) {
+		return provider.GCloudDir(w.old)
+	}
+	for _, n := range w.cfg.Names() {
+		if c := w.cfg.Contexts[n]; c.Provider == config.ProviderGCP && acct != "" && c.Account == acct {
+			return provider.GCloudDir(c)
+		}
+	}
+	return provider.GCloudWizardDir()
+}
+
+func (w *ctxWizard) gcpDraft(a wizard.Answers) *loaded {
+	c := w.draftCtx(a)
+	env := provider.GCloudEnv(c, w.gcloudDir(a))
+	if c.Project == "" { // not chosen yet: no project, not an empty one
+		delete(env.Set, "CLOUDSDK_CORE_PROJECT")
+		delete(env.Set, "GOOGLE_CLOUD_PROJECT")
+	}
+	return &loaded{cfg: w.cfg, ctx: c, env: env, draft: true}
+}
+
+func (w *ctxWizard) gcpLogin(a wizard.Answers) error {
+	return w.app.runPlain(provider.GCloudLoginCommand(a["gcp_account"]), w.gcpDraft(a).env.Apply(os.Environ()))
+}
+
+func (w *ctxWizard) projects(a wizard.Answers) ([]wizard.Option, error) {
+	out, err := w.app.query(w.gcpDraft(a))(provider.ListProjectsCommand())
+	if err != nil {
+		return nil, err
+	}
+	found, err := provider.ParseProjects(out)
+	return toOptions(found), err
+}
+
+// keepLogin moves the gcloud login the wizard used to the saved context's
+// own directory — from gcloud/.wizard, or from the edited context's old key
+// (renamed, or a project's context whose project changed) — so it needn't
+// log in again. Another context's login stays where it is. Best effort: at
+// worst, mek login.
+func (w *ctxWizard) keepLogin(a wizard.Answers, path string) {
+	if a["cloud"] != config.ProviderGCP {
+		return
+	}
+	from := w.gcloudDir(a)
+	own := w.old != nil && w.old.Provider == config.ProviderGCP && path == w.old.Source && from == provider.GCloudDir(w.old)
+	if from != provider.GCloudWizardDir() && !own {
+		return
+	}
+	c := w.draftCtx(a)
+	to := provider.GCloudDir(c)
+	if from == to {
+		return
+	}
+	os.Remove(to) // only when empty
+	os.Rename(from, to)
 }

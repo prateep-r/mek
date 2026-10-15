@@ -32,7 +32,8 @@ type recorder struct {
 	code int
 	// respond, when set, scripts a command's stdout and exit code.
 	respond func(argv []string) (stdout string, code int)
-	fail    error // returned as if the command couldn't start
+	fail    error  // returned as if the command couldn't start
+	stderr  string // written to a command's stderr, when mek captures it
 }
 
 func (r *recorder) Run(inv *runner.Invocation) error {
@@ -44,6 +45,9 @@ func (r *recorder) Run(inv *runner.Invocation) error {
 			io.WriteString(inv.Stdout, out)
 		}
 		inv.ExitCode = code
+	}
+	if inv.Stderr != nil {
+		io.WriteString(inv.Stderr, r.stderr)
 	}
 	return r.fail
 }

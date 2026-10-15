@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/prateep-r/mek/internal/config"
+	"github.com/prateep-r/mek/internal/provider"
 	"github.com/prateep-r/mek/internal/wizard"
 )
 
@@ -63,8 +65,12 @@ func (awsFlow) steps(f *wizard.Form, w *ctxWizard) {
 	f.Select("sso_region", "Portal region", wizard.Options(regionOptions(awsRegions, "")...), true).
 		When(func(a wizard.Answers) bool { return sso(a) && w.portalRegion(a["sso_start_url"]) == "" }).
 		Check(required("a region")).Help("the region IAM Identity Center runs in")
-	f.Input("account_id", "Account", nil, checkAccountID).When(sso).Help("the 12-digit account id")
-	f.Input("role", "Role", nil, required("a role")).When(sso).Help("the permission set's name, e.g. Developer")
+	f.Exec("sso_login", "Log in to the portal", func(a wizard.Answers) string {
+		return strings.Join(provider.SSOLoginCommand(a["sso_start_url"]), " ") + "  (a browser opens)"
+	}, w.ssoLogin).When(func(a wizard.Answers) bool { return sso(a) && provider.SSOToken(a["sso_start_url"]) == "" }).
+		Help("to list the portal's accounts and roles — or skip, and type them")
+	f.Load("account_id", "Account", w.accounts).When(sso).Check(checkAccountID).Help("the accounts your login can reach")
+	f.Load("role", "Role", w.roles).When(sso).Check(required("a role")).Help("your roles (permission sets) in that account")
 	f.Select("aws_region", "Region", wizard.Options(regionOptions(awsRegions, "the AWS CLI's default")...), true).
 		When(on).Help("where commands go")
 }
@@ -143,4 +149,61 @@ func (awsFlow) apply(w *ctxWizard, a wizard.Answers, c *config.Context) {
 	if r := w.portalRegion(c.SSOStartURL); r != "" {
 		c.SSORegion = r
 	}
+}
+
+// awsDraft loads the draft for the portal commands: mek's generated AWS
+// config gets its [sso-session]. Its profile isn't complete yet, and the
+// commands don't need one.
+func (w *ctxWizard) awsDraft(a wizard.Answers) (*loaded, error) {
+	c := w.draftCtx(a)
+	cfg := w.draftConfig(c)
+	env, err := provider.For(cfg, c).Prepare()
+	if err != nil {
+		return nil, err
+	}
+	delete(env.Set, "AWS_PROFILE")
+	env.Unset = append(env.Unset, "AWS_PROFILE")
+	return &loaded{cfg: cfg, ctx: c, env: env, draft: true}, nil
+}
+
+func (w *ctxWizard) ssoLogin(a wizard.Answers) error {
+	l, err := w.awsDraft(a)
+	if err != nil {
+		return err
+	}
+	return w.app.runPlain(provider.SSOLoginCommand(a["sso_start_url"]), l.env.Apply(os.Environ()))
+}
+
+// ssoList runs a portal command with the cached token in a file only you
+// can read, removed straight after.
+func (w *ctxWizard) ssoList(a wizard.Answers, argv func(input, region string) []string, parse func([]byte) ([]provider.Found, error)) ([]wizard.Option, error) {
+	token := provider.SSOToken(a["sso_start_url"])
+	if token == "" {
+		return nil, fmt.Errorf("not logged in to %s", a["sso_start_url"])
+	}
+	l, err := w.awsDraft(a)
+	if err != nil {
+		return nil, err
+	}
+	region := w.draftCtx(a).SSORegion
+	var out []byte
+	err = provider.WithTokenFile(config.Dir(), token, func(input string) error {
+		out, err = w.app.query(l)(argv(input, region))
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	found, err := parse(out)
+	return toOptions(found), err
+}
+
+func (w *ctxWizard) accounts(a wizard.Answers) ([]wizard.Option, error) {
+	return w.ssoList(a, provider.ListAccountsCommand, provider.ParseAccounts)
+}
+
+func (w *ctxWizard) roles(a wizard.Answers) ([]wizard.Option, error) {
+	return w.ssoList(a, func(input, region string) []string {
+		return provider.ListAccountRolesCommand(input, region, a["account_id"])
+	}, provider.ParseRoles)
 }

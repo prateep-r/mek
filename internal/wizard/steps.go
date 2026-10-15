@@ -2,6 +2,7 @@ package wizard
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -158,7 +159,7 @@ func (s *choice) update(f *Form, msg tea.Msg) tea.Cmd {
 	if s.typing {
 		switch k.String() {
 		case "enter":
-			if v := strings.TrimSpace(s.typed); v != "" && s.check(v, f.answers) {
+			if v := strings.TrimSpace(s.typed); s.check(v, f.answers) && v != "" {
 				return f.answer(v)
 			}
 		case "esc":
@@ -418,3 +419,94 @@ func (s *review) view(*Form) string {
 }
 
 func (s *review) summary(*Form) string { return "saved" }
+
+// ---------- Exec: a command that needs the terminal ----------
+
+type execStep struct {
+	common
+	show   func(Answers) string // what will run
+	run    func(Answers) error
+	cursor int
+}
+
+// ran carries an Exec step's result back.
+type ran struct{ err error }
+
+var execChoices = []string{"Run it", "Skip"}
+
+// Exec offers to run a command that needs the terminal — a login that opens
+// a browser — and runs it with the form put away until it ends. Skip moves
+// on without it (the answer is "skipped"; after a run, "done"). Make it
+// conditional with When, e.g. on not being logged in yet.
+func (f *Form) Exec(key, title string, show func(Answers) string, run func(Answers) error) *Form {
+	return f.add(&execStep{common: common{key: key, title: title}, show: show, run: run})
+}
+
+func (s *execStep) enter(*Form) tea.Cmd {
+	s.cursor, s.err = 0, ""
+	return nil
+}
+
+func (s *execStep) update(f *Form, msg tea.Msg) tea.Cmd {
+	if m, ok := msg.(ran); ok {
+		if m.err != nil {
+			s.err = m.err.Error()
+			return nil
+		}
+		return f.answer("done")
+	}
+	k, ok := msg.(tea.KeyPressMsg)
+	if !ok {
+		return nil
+	}
+	switch k.String() {
+	case "left", "up":
+		s.cursor = 0
+	case "right", "down", "tab":
+		s.cursor = 1
+	case "esc":
+		return f.back()
+	case "enter":
+		if s.cursor == 1 {
+			return f.answer("skipped")
+		}
+		s.err = ""
+		a := f.answers
+		return f.execute(func() error { return s.run(a) })
+	}
+	return nil
+}
+
+func (s *execStep) view(f *Form) string {
+	out := []string{"  " + dim.Render("runs: ") + s.show(f.answers)}
+	if s.err != "" {
+		out = append(out, "  "+red.Render(s.err))
+	}
+	var row []string
+	for i, c := range execChoices {
+		if i == s.cursor {
+			c = accent.Render("[" + c + "]")
+		} else {
+			c = " " + c + " "
+		}
+		row = append(row, c)
+	}
+	return strings.Join(append(out, "  "+strings.Join(row, " ")), "\n")
+}
+
+func (s *execStep) summary(f *Form) string { return f.answers[s.key] }
+
+// handOver runs a command with the terminal: Bubble Tea puts the form away
+// and brings it back when the command ends.
+func handOver(run func() error) tea.Cmd {
+	return tea.Exec(&execCommand{run: run}, func(err error) tea.Msg { return ran{err} })
+}
+
+// execCommand is a tea.ExecCommand around a function that uses the terminal
+// itself (mek's runner attaches it to the child).
+type execCommand struct{ run func() error }
+
+func (c *execCommand) Run() error          { return c.run() }
+func (c *execCommand) SetStdin(io.Reader)  {}
+func (c *execCommand) SetStdout(io.Writer) {}
+func (c *execCommand) SetStderr(io.Writer) {}
