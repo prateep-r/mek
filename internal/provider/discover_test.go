@@ -59,7 +59,7 @@ func TestParseDiscoveries(t *testing.T) {
 		t.Errorf("projects: %v %v", projects, err)
 	}
 	ec2, err := ParseEC2Instances([]byte(`[{"id":"i-2","name":"bastion","ip":"10.0.0.2"},{"id":"i-1","name":null,"ip":"10.0.0.1"}]`))
-	if err != nil || !reflect.DeepEqual(ec2, []Found{{Value: "i-1", Hint: "i-1 10.0.0.1"}, {Value: "i-2", Label: "bastion", Hint: "i-2 10.0.0.2", Extra: "bastion"}}) {
+	if err != nil || !reflect.DeepEqual(ec2, []Found{{Value: "i-1", Hint: "10.0.0.1"}, {Value: "i-2", Label: "bastion", Hint: "i-2 10.0.0.2", Extra: "bastion"}}) {
 		t.Errorf("ec2: %v %v", ec2, err)
 	}
 	rds, err := ParseRDS([]byte(`[{"id":"orders","host":"orders.x.rds.amazonaws.com","port":5432,"engine":"postgres"},{"id":"new","host":null,"port":null,"engine":"mysql"}]`))

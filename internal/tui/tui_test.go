@@ -174,6 +174,16 @@ func TestContextsTab(t *testing.T) {
 	if len(h.runs) != 2 {
 		t.Errorf("runs: %v", h.runs)
 	}
+	h.want("a add · e edit · d remove")
+	h.press("a")
+	h.wantRun(true, "ctx", "add")
+	h.press("e")
+	h.wantRun(true, "ctx", "edit", "gcp")
+	h.press("d")
+	h.want("Remove context gcp from its file? [y/N]")
+	h.press("y")
+	h.wantRun(false, "--yes", "ctx", "rm", "gcp", "--yes")
+	h.runs = h.runs[:2]
 
 	h.fail, h.out = errors.New("exit status 1"), "mek: no SSO session\n"
 	h.press("enter")
@@ -183,12 +193,14 @@ func TestContextsTab(t *testing.T) {
 	h.want("✗ use gcp: exit status 1")
 
 	empty := newHarness(t, &fakeSource{}, "")
-	empty.press("enter", "down", "l", "3", "enter", "k")
+	empty.press("enter", "down", "l", "e", "d", "3", "enter", "k")
 	empty.want("no contexts")
-	empty.press("2", "enter", "x", "4", "enter", "/")
+	empty.press("2", "enter", "x", "a", "4", "enter", "/")
 	if len(empty.runs) != 0 {
 		t.Errorf("acted with no contexts: %v", empty.runs)
 	}
+	empty.press("esc", "1", "a") // the first one
+	empty.wantRun(true, "ctx", "add")
 }
 
 func TestSelection(t *testing.T) {
@@ -320,6 +332,9 @@ func TestTunnelsTab(t *testing.T) {
 	if len(h.runs) != n || h.m.overlay != nil {
 		t.Errorf("acted on a not-running tunnel: %v %v", h.runs[n:], h.m.overlay)
 	}
+	h.want("a add (to the chosen context)")
+	h.press("a")
+	h.wantRun(true, "-c", "dev", "ctx", "tunnel", "add")
 
 	none := newHarness(t, &fakeSource{}, "")
 	none.press("2", "enter", "x")

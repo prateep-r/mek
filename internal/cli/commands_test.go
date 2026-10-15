@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/prateep-r/mek/internal/config"
+	"github.com/prateep-r/mek/internal/provider"
 	"github.com/prateep-r/mek/internal/runner"
 	"github.com/prateep-r/mek/internal/selfupdate"
 	"github.com/prateep-r/mek/internal/ui"
@@ -486,6 +487,21 @@ func TestHelpTopics(t *testing.T) {
 		if !strings.Contains(g, row) {
 			t.Errorf("help guard missing %q:\n%s", row, g)
 		}
+	}
+	wz := h.mustRun("help", "wizard")
+	for _, want := range []string{"mek ctx add [name]", "mek ctx tunnel  add|edit|rm", "mek context", "esc", "ctrl-c",
+		"~/.aws/sso/cache", "never in argv", "nothing is written", "mek.local.yaml", "a add · e edit · d remove", "--yes"} {
+		if !strings.Contains(wz, want) {
+			t.Errorf("help wizard missing %q", want)
+		}
+	}
+	for _, d := range provider.Discoveries() { // the table is the code's
+		if !strings.Contains(wz, strings.Join(d.Argv, " ")) || !strings.Contains(wz, d.Permission) {
+			t.Errorf("help wizard lacks %v", d.Argv)
+		}
+	}
+	if !strings.Contains(out, "mek wizard") {
+		t.Errorf("help lists no wizard topic:\n%s", out)
 	}
 	if out := h.mustRun("ctx", "--help"); !strings.Contains(out, "orders-dev (./mek.yaml)") {
 		t.Errorf("ctx --help:\n%s", out)

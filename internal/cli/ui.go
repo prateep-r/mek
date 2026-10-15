@@ -28,6 +28,10 @@ tunnels, open shells, write kubeconfigs or start k9s, and search the audit log.
 Everything it does runs mek itself, so protected contexts still ask, readonly
 ones still block, and the audit log records it as if typed.
 
+On the Contexts tab, a adds a context, e edits the chosen one and d removes
+it; on the Tunnels tab, a adds a tunnel to the chosen context (the mek ctx
+wizards; see: mek help wizard).
+
   mek ui              # starts on the current context
   mek -c prod ui      # starts on prod`,
 		Args: cobra.NoArgs,
