@@ -78,7 +78,7 @@ func (a *app) kube(out io.Writer, current string, o kubeOpts) error {
 		return err
 	}
 	pathEnv := os.Getenv("PATH")
-	path, err := kube.Write(l.ctx.Name, entries, current, mek, pathEnv)
+	path, err := kube.Write(kube.ForContext(l.ctx, l.cfg.Project), entries, current, mek, pathEnv)
 	if err != nil {
 		return err
 	}

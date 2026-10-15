@@ -70,7 +70,7 @@ type GCP struct {
 	dir string
 }
 
-func (g *GCP) configDir() string { return filepath.Join(g.dir, "gcloud", g.ctx.Name) }
+func (g *GCP) configDir() string { return filepath.Join(g.dir, "gcloud", g.ctx.Key()) }
 
 func (g *GCP) Prepare() (Env, error) {
 	dir := g.configDir()

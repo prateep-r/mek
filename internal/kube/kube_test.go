@@ -59,7 +59,7 @@ func TestDescribe(t *testing.T) {
 }
 
 func TestRenderGolden(t *testing.T) {
-	got, err := Render("prod", entries(t), "main", "/opt/homebrew/bin/mek", "/opt/homebrew/bin:/usr/bin")
+	got, err := Render(prodFor, entries(t), "main", "/opt/homebrew/bin/mek", "/opt/homebrew/bin:/usr/bin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,11 +75,11 @@ func TestRenderGolden(t *testing.T) {
 		t.Errorf("render differs from %s (go test ./internal/kube -update):\n%s", golden, got)
 	}
 	// Without a current cluster, the first one is current.
-	got, _ = Render("prod", entries(t), "", "mek", "")
+	got, _ = Render(prodFor, entries(t), "", "mek", "")
 	if !strings.Contains(string(got), "current-context: prod/data") {
 		t.Errorf("default current:\n%s", got)
 	}
-	if _, err := Render("prod", nil, "", "mek", ""); err == nil {
+	if _, err := Render(prodFor, nil, "", "mek", ""); err == nil {
 		t.Error("no entries must fail")
 	}
 }
@@ -95,7 +95,7 @@ func TestWriteAndEnv(t *testing.T) {
 	if _, ok := Env(ctx); !ok {
 		t.Error("Env with clusters")
 	}
-	p, err := Write("prod", entries(t), "", "mek", "")
+	p, err := Write(prodFor, entries(t), "", "mek", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestWriteAndEnv(t *testing.T) {
 	if got, ok := Env(ctx); !ok || got != p {
 		t.Errorf("Env with file: %s %v", got, ok)
 	}
-	if _, err := Write("prod", nil, "", "mek", ""); err == nil {
+	if _, err := Write(prodFor, nil, "", "mek", ""); err == nil {
 		t.Error("Write must report Render errors")
 	}
 }
@@ -156,5 +156,31 @@ func TestMekPath(t *testing.T) {
 	executable = func() (string, error) { return "", errors.New("boom") }
 	if _, err := MekPath(); err == nil {
 		t.Error("executable error")
+	}
+}
+
+var prodFor = ForContext(&config.Context{Name: "prod"}, "")
+
+// A project's context: its own file (by Key), and a token command that
+// finds the project from any directory kubectl runs in.
+func TestForProjectContext(t *testing.T) {
+	ctx := &config.Context{Name: "dev", Provider: "aws", AccountID: "111122223333", InProject: true}
+	f := ForContext(ctx, "/work/orders")
+	if f.Name != "dev" || f.Key != ctx.Key() || strings.Join(f.Flags, " ") != "--project /work/orders --context dev" {
+		t.Errorf("for: %+v", f)
+	}
+	got, err := Render(f, entries(t), "", "mek", "")
+	var args []string
+	for _, line := range strings.Split(string(got), "\n") {
+		if l := strings.TrimSpace(line); strings.HasPrefix(l, "- ") && !strings.Contains(l, ":") {
+			args = append(args, strings.TrimPrefix(l, "- "))
+		}
+	}
+	if err != nil || !strings.HasPrefix(strings.Join(args, " "), "--project /work/orders --context dev kube token") ||
+		!strings.Contains(string(got), "name: dev/main") {
+		t.Errorf("render: %v\n%s", err, got)
+	}
+	if p, _ := Env(ctx); p != Path(ctx.Key()) {
+		t.Errorf("env: %s", p)
 	}
 }

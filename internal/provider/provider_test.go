@@ -217,3 +217,33 @@ func TestEnvPowerShell(t *testing.T) {
 		t.Errorf("powershell: %q", got)
 	}
 }
+
+// Project contexts are stored by Key: two projects' "dev" on different
+// accounts get their own AWS profile, config file, gcloud login and SSH key.
+func TestProjectContextsKeepApart(t *testing.T) {
+	home := t.TempDir()
+	devA := &config.Context{Name: "dev", Provider: config.ProviderAWS, SSOStartURL: "https://o.awsapps.com/start",
+		SSORegion: "ap-southeast-1", AccountID: "111122223333", Role: "Dev", InProject: true}
+	devB := *devA
+	devB.AccountID = "444455556666"
+	a := &AWS{cfg: &config.Config{Contexts: map[string]*config.Context{"dev": devA}, Project: "/work/a"}, ctx: devA, dir: home}
+	b := &AWS{cfg: &config.Config{Contexts: map[string]*config.Context{"dev": &devB}, Project: "/work/b"}, ctx: &devB, dir: home}
+	envA, errA := a.Prepare()
+	envB, errB := b.Prepare()
+	if errA != nil || errB != nil || envA.Set["AWS_PROFILE"] == envB.Set["AWS_PROFILE"] || envA.Set["AWS_CONFIG_FILE"] == envB.Set["AWS_CONFIG_FILE"] ||
+		envA.Set["AWS_PROFILE"] != "mek-"+devA.Key() || !strings.HasPrefix(filepath.Base(envA.Set["AWS_CONFIG_FILE"]), "config-") {
+		t.Errorf("aws: %v %v / %v %v", envA.Set, errA, envB.Set, errB)
+	}
+	if body, _ := os.ReadFile(envA.Set["AWS_CONFIG_FILE"]); !strings.Contains(string(body), "[profile mek-"+devA.Key()+"]") {
+		t.Errorf("config a:\n%s", body)
+	}
+	if got := fmt.Sprint(a.LoginCommands(false)); got != "[[aws sso login --profile mek-"+devA.Key()+"]]" {
+		t.Errorf("login: %s", got)
+	}
+
+	gA := &GCP{ctx: &config.Context{Name: "dev", Provider: config.ProviderGCP, Project: "a", InProject: true}, dir: home}
+	gB := &GCP{ctx: &config.Context{Name: "dev", Provider: config.ProviderGCP, Project: "b", InProject: true}, dir: home}
+	if gA.configDir() == gB.configDir() || gA.sshDir() == gB.sshDir() || filepath.Base(gA.configDir()) != gA.ctx.Key() {
+		t.Errorf("gcp: %s %s / %s %s", gA.configDir(), gA.sshDir(), gB.configDir(), gB.sshDir())
+	}
+}
