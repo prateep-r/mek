@@ -79,9 +79,9 @@ func (c *Context) Key() string {
 
 // Show is a path as messages show it: relative to the working directory
 // when it is close — ./mek.yaml, or ../../mek.yaml from inside a project —
-// else with ~ for the home directory.
+// else, and always for mek's own directory, with ~ for the home directory.
 func Show(path string) string {
-	if cwd, err := os.Getwd(); err == nil {
+	if cwd, err := os.Getwd(); err == nil && !strings.HasPrefix(path, Dir()+string(filepath.Separator)) { // mek's own: ~/.mek/…
 		if rel, err := filepath.Rel(cwd, path); err == nil {
 			up := strings.Count(rel+string(filepath.Separator), ".."+string(filepath.Separator))
 			switch {

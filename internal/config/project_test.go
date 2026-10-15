@@ -186,6 +186,10 @@ func TestShow(t *testing.T) {
 	if got := Show(filepath.Join(home, "a", "mek.yaml")); got != filepath.Join("..", "mek.yaml") { // inside a project
 		t.Errorf("up: %s", got)
 	}
+	t.Setenv("MEK_HOME", filepath.Join(home, ".mek"))
+	if got := Show(filepath.Join(home, ".mek", "config.yaml")); got != "~"+string(filepath.Separator)+filepath.Join(".mek", "config.yaml") {
+		t.Errorf("mek's own, close by: %s", got) // not ../../.mek/config.yaml
+	}
 	far := filepath.Join(t.TempDir(), "a", "b", "c", "d") // far from home: more than 3 levels up
 	os.MkdirAll(far, 0o700)
 	t.Chdir(far)
