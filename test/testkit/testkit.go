@@ -21,13 +21,14 @@ import (
 	"github.com/prateep-r/mek/internal/proc"
 )
 
-// ModuleRoot is the repository root (where go.mod lives).
+// ModuleRoot is the repository root (where go.mod lives), found from this
+// file, so it works whatever directory a test runs in.
 func ModuleRoot() (string, error) {
-	out, err := exec.Command("go", "env", "GOMOD").Output()
-	if err != nil {
-		return "", fmt.Errorf("go env GOMOD: %w", err)
+	_, file, _, ok := runtime.Caller(0) // .../test/testkit/testkit.go
+	if !ok {
+		return "", errors.New("can't locate testkit")
 	}
-	return filepath.Dir(strings.TrimSpace(string(out))), nil
+	return filepath.Dir(filepath.Dir(filepath.Dir(file))), nil
 }
 
 // CoverDir is where coverage-instrumented mek binaries write their data

@@ -181,7 +181,14 @@ func TestShow(t *testing.T) {
 	if got := Show(filepath.Join(home, "a", "mek.yaml")); got != "."+string(filepath.Separator)+filepath.Join("a", "mek.yaml") {
 		t.Errorf("under cwd: %s", got)
 	}
-	t.Chdir(t.TempDir())
+	os.MkdirAll(filepath.Join(home, "a", "b", "c"), 0o700)
+	t.Chdir(filepath.Join(home, "a", "b"))
+	if got := Show(filepath.Join(home, "a", "mek.yaml")); got != filepath.Join("..", "mek.yaml") { // inside a project
+		t.Errorf("up: %s", got)
+	}
+	far := filepath.Join(t.TempDir(), "a", "b", "c", "d") // far from home: more than 3 levels up
+	os.MkdirAll(far, 0o700)
+	t.Chdir(far)
 	if got := Show(filepath.Join(home, ".mek", "config.yaml")); got != "~"+string(filepath.Separator)+filepath.Join(".mek", "config.yaml") {
 		t.Errorf("home: %s", got)
 	}
@@ -199,5 +206,55 @@ func TestResolveOutsideTheProject(t *testing.T) {
 	}
 	if _, err := c.Resolve("nope"); err == nil || !strings.Contains(err.Error(), `unknown context "nope"`) {
 		t.Errorf("-c: %v", err)
+	}
+}
+
+func TestInitProject(t *testing.T) {
+	repo := t.TempDir()
+	os.Mkdir(filepath.Join(repo, ".git"), 0o700)
+	sub := filepath.Join(repo, "svc")
+	os.Mkdir(sub, 0o700)
+	t.Chdir(sub)
+
+	file, ignore, err := InitProject(sub, false, false)
+	if err != nil || file != filepath.Join(sub, TeamFile) || ignore != "" {
+		t.Fatalf("project: %s %s %v", file, ignore, err)
+	}
+	if _, err := Parse(projectTemplate); err != nil { // the template parses as it is
+		t.Errorf("project template: %v", err)
+	}
+	if _, _, err := InitProject(sub, false, false); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("again: %v", err)
+	}
+	if _, _, err := InitProject(sub, false, true); err != nil {
+		t.Errorf("--force: %v", err)
+	}
+
+	os.WriteFile(filepath.Join(repo, ".gitignore"), []byte("bin/"), 0o644) // no final newline
+	file, ignore, err = InitProject(sub, true, false)
+	if err != nil || file != filepath.Join(sub, LocalFile) || ignore != filepath.Join(repo, ".gitignore") {
+		t.Fatalf("local: %s %s %v", file, ignore, err)
+	}
+	if b, _ := os.ReadFile(ignore); string(b) != "bin/\n# personal mek contexts (mek init --local)\nmek.local.yaml\n" {
+		t.Errorf(".gitignore: %q", b)
+	}
+	if _, err := Parse(localTemplate); err != nil {
+		t.Errorf("local template: %v", err)
+	}
+	if _, ignore, _ := InitProject(sub, true, true); ignore != "" { // listed already: left alone
+		t.Errorf("listed twice: %s", ignore)
+	}
+
+	plain := t.TempDir() // not a repository: no .gitignore
+	if _, ignore, err := InitProject(plain, true, false); err != nil || ignore != "" {
+		t.Errorf("no repo: %s %v", ignore, err)
+	}
+	if _, _, err := InitProject(filepath.Join(plain, "missing"), false, false); err == nil {
+		t.Error("unwritable")
+	}
+	os.Remove(filepath.Join(repo, ".gitignore"))
+	os.Mkdir(filepath.Join(repo, ".gitignore"), 0o700) // can't be read
+	if _, _, err := InitProject(sub, true, true); err == nil {
+		t.Error(".gitignore unreadable")
 	}
 }

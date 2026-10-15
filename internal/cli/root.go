@@ -4,6 +4,8 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -145,10 +147,30 @@ func tags(p ui.Palette, c *config.Context) string {
 	return strings.Join(t, " ")
 }
 
-// banner warns on stderr when acting on a protected context.
+// from is where a project's context comes from, " (./mek.yaml)"; "" for
+// one from ~/.mek/config.yaml.
+func from(p ui.Palette, c *config.Context) string {
+	if !c.InProject {
+		return ""
+	}
+	return " " + p.Dim("("+config.Show(c.Source)+")")
+}
+
+// banner says on stderr which context a command acts on when it matters:
+// a guarded one, or one from a project's files (always, with the file) — and
+// warns when the team's mek.yaml replaces a context of your own.
 func banner(l *loaded) {
-	if !l.ctx.Protected && !l.ctx.ReadOnly {
+	c := l.ctx
+	if c.InProject && filepath.Base(c.Source) == config.TeamFile && c.Shadowed == config.Path() {
+		ui.Info("%s %s from %s replaces your %s in %s", ui.Yellow("⚠"), c.Name, config.Show(c.Source), c.Name, config.Show(c.Shadowed))
+	}
+	if !c.Protected && !c.ReadOnly && !c.InProject {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "%s %s %s %s\n", ui.Red("●"), ui.Bold(l.ctx.Name), tags(ui.Err(), l.ctx), ui.Dim(l.prov.Describe()))
+	dot := ui.Dim("●")
+	if c.Protected || c.ReadOnly {
+		dot = ui.Red("●")
+	}
+	parts := []string{dot, ui.Bold(c.Name) + from(ui.Err(), c), tags(ui.Err(), c), ui.Dim(l.prov.Describe())}
+	fmt.Fprintln(os.Stderr, strings.Join(slices.DeleteFunc(parts, func(s string) bool { return s == "" }), " "))
 }

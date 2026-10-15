@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -12,22 +13,57 @@ import (
 )
 
 func newInitCmd() *cobra.Command {
-	var force bool
+	var force, project, local bool
 	cmd := &cobra.Command{
-		Use:   "init",
-		Short: "Create ~/.mek/config.yaml from a commented example",
-		Args:  cobra.NoArgs,
+		Use:   "init [--project | --local]",
+		Short: "Create ~/.mek/config.yaml (or a project's mek.yaml / mek.local.yaml) from a commented example",
+		Long: `Create a config file from a commented example.
+
+  mek init             ~/.mek/config.yaml: your contexts, on every project
+  mek init --project   ./mek.yaml: this project's contexts, for the team — commit it
+  mek init --local     ./mek.local.yaml: your own changes for this project; inside a
+                       git repository it is added to .gitignore
+
+The three files have the same shape. Inside a project, mek.local.yaml wins over
+mek.yaml, which wins over ~/.mek/config.yaml, a context coming whole from one
+file. See: mek help config`,
+		Args: cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
-			p, err := config.Init(force)
+			if project && local {
+				return errors.New("--project and --local: pick one")
+			}
+			if !project && !local {
+				p, err := config.Init(force)
+				if err != nil {
+					return err
+				}
+				ui.Info("%s created %s", ui.Green("✓"), p)
+				ui.Info("edit it, then run: mek ctx ls && mek login <context>")
+				return nil
+			}
+			cwd, err := os.Getwd()
 			if err != nil {
 				return err
 			}
-			ui.Info("%s created %s", ui.Green("✓"), p)
-			ui.Info("edit it, then run: mek ctx ls && mek login <context>")
+			file, ignore, err := config.InitProject(cwd, local, force)
+			if err != nil {
+				return err
+			}
+			ui.Info("%s created %s", ui.Green("✓"), config.Show(file))
+			if ignore != "" {
+				ui.Info("%s added %s to %s", ui.Green("✓"), config.LocalFile, config.Show(ignore))
+			}
+			if project {
+				ui.Info("add the project's contexts, then commit it; teammates see them with: mek ctx ls")
+			} else {
+				ui.Info("copy a context from %s and change what is yours; check with: mek ctx ls", config.TeamFile)
+			}
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&force, "force", false, "overwrite an existing config")
+	cmd.Flags().BoolVar(&force, "force", false, "overwrite an existing file")
+	cmd.Flags().BoolVar(&project, "project", false, "create ./mek.yaml, the project's config for the team")
+	cmd.Flags().BoolVar(&local, "local", false, "create ./mek.local.yaml, your own config for the project (gitignored)")
 	return cmd
 }
 
@@ -103,7 +139,7 @@ func (a *app) newCtxCmd() *cobra.Command {
 				return nil
 			}
 			out := ui.Out()
-			fmt.Fprintf(cmd.OutOrStdout(), "%s  %s %s\n", out.Bold(l.ctx.Name), l.prov.Describe(), tags(out, l.ctx))
+			fmt.Fprintf(cmd.OutOrStdout(), "%s%s  %s %s\n", out.Bold(l.ctx.Name), from(out, l.ctx), l.prov.Describe(), tags(out, l.ctx))
 			return nil
 		},
 	}
@@ -126,7 +162,7 @@ func (a *app) newCtxCmd() *cobra.Command {
 				if n == cur {
 					mark = out.Green("*")
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "%s %-20s %-45s %s\n", mark, n, provider.For(cfg, c).Describe(), tags(out, c))
+				fmt.Fprintf(cmd.OutOrStdout(), "%s %-20s %-45s %s%s\n", mark, n, provider.For(cfg, c).Describe(), tags(out, c), from(out, c))
 			}
 			return nil
 		},

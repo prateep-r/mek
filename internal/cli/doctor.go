@@ -5,8 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -57,6 +59,46 @@ var extraTools = []tool{
 		Winget: "winget install Derailed.k9s", URL: "https://k9scli.io/topics/install/"}},
 }
 
+// gitTracked reports whether git tracks file in dir (false without git).
+var gitTracked = func(dir, file string) bool {
+	return exec.Command("git", "-C", dir, "ls-files", "--error-unmatch", file).Run() == nil
+}
+
+// configFiles lists the files the config came from, highest layer first,
+// with what each contributes, and returns the problems found.
+func configFiles(out io.Writer, p ui.Palette, cfg *config.Config) (problems int) {
+	for _, f := range cfg.Files {
+		n, replaced := 0, []string{}
+		for _, name := range cfg.Names() {
+			if c := cfg.Contexts[name]; c.Source == f {
+				n++
+				if c.Shadowed != "" {
+					replaced = append(replaced, name)
+				}
+			}
+		}
+		what := fmt.Sprintf("%d contexts", n)
+		if len(replaced) > 0 {
+			what += ", replacing " + strings.Join(replaced, ", ") + " from below"
+		}
+		fmt.Fprintf(out, "  %s %s — %s\n", p.Green("✓"), config.Show(f), what)
+	}
+	if !slices.Contains(cfg.Files, config.Path()) {
+		fmt.Fprintf(out, "  %s %s — none (the project's files have the contexts)\n", p.Dim("–"), config.Show(config.Path()))
+	}
+	cur := config.Current()
+	if cur == "" {
+		cur = p.Dim("(none — run `mek use <context>`)")
+	}
+	fmt.Fprintf(out, "  current: %s\n", cur)
+	if local := filepath.Join(cfg.Project, config.LocalFile); cfg.Project != "" && slices.Contains(cfg.Files, local) && gitTracked(cfg.Project, config.LocalFile) {
+		fmt.Fprintf(out, "  %s %s is committed — it's meant to be yours only: git rm --cached %s, and add it to .gitignore\n",
+			p.Red("✗"), config.Show(local), config.LocalFile)
+		problems++
+	}
+	return problems
+}
+
 func newDoctorCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
@@ -81,11 +123,7 @@ func newDoctorCmd() *cobra.Command {
 				fmt.Fprintf(out, "  %s %v\n", p.Red("✗"), err)
 				problems++
 			default:
-				cur := config.Current()
-				if cur == "" {
-					cur = p.Dim("(none — run `mek use <context>`)")
-				}
-				fmt.Fprintf(out, "  %s %s — %d contexts, current: %s\n", p.Green("✓"), config.Path(), len(cfg.Contexts), cur)
+				problems += configFiles(out, p, cfg)
 			}
 
 			fmt.Fprintln(out, p.Bold("\nTools"))

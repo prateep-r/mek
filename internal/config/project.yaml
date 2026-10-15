@@ -1,0 +1,25 @@
+# mek.yaml — this project's mek contexts, shared by the team (commit it).
+# Same shape as ~/.mek/config.yaml; a context here replaces one of the same
+# name there, except that protected / readonly you set stay on.
+# Personal changes go in mek.local.yaml (gitignored): mek init --local
+# Reference: mek help config, and the README's "Project config".
+contexts:
+  # orders-dev:
+  #   provider: aws
+  #   sso_start_url: https://acme.awsapps.com/start   # IAM Identity Center, not a local profile:
+  #   sso_region: ap-southeast-1                      # it works for everyone on the team
+  #   account_id: "111122223333"
+  #   role: Developer
+  #   region: ap-southeast-1
+  #   tunnels:
+  #     db: {via: "tag:Name=orders-bastion", host: orders-db.internal, port: 5432}
+  #   clusters:
+  #     orders: {name: orders-eks}
+  #
+  # orders-prod:
+  #   provider: aws
+  #   sso_start_url: https://acme.awsapps.com/start
+  #   sso_region: ap-southeast-1
+  #   account_id: "444455556666"
+  #   role: Developer
+  #   protected: true                                 # writes ask, deletes need the name typed
