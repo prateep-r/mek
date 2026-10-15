@@ -33,6 +33,9 @@ type Entry struct {
 	Event   string `json:"event,omitempty"`
 	Session string `json:"session,omitempty"`
 	Target  string `json:"target,omitempty"`
+	// Config is the project file a context came from (mek.yaml or
+	// mek.local.yaml); empty for ~/.mek/config.yaml.
+	Config string `json:"config,omitempty"`
 }
 
 // entry is the audit record of an invocation.
@@ -41,8 +44,15 @@ func entry(inv *runner.Invocation, start time.Time) Entry {
 		Time: start, Context: inv.Context.Name, Provider: inv.Context.Provider,
 		Command: inv.Argv, Class: inv.Class.String(), Decision: inv.Decision,
 		ExitCode: inv.ExitCode, DurationMS: inv.Duration.Milliseconds(),
-		Session: inv.Session, Target: inv.Target,
+		Session: inv.Session, Target: inv.Target, Config: projectFile(inv.Context),
 	}
+}
+
+func projectFile(c *config.Context) string {
+	if c.InProject {
+		return c.Source
+	}
+	return ""
 }
 
 // started reports whether the guard let the command run.

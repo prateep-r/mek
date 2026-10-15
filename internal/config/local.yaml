@@ -1,0 +1,15 @@
+# mek.local.yaml — your own mek contexts for this project (gitignored).
+# It wins over mek.yaml and ~/.mek/config.yaml. A context comes whole from
+# one file: to change one field of the team's, copy the whole context here.
+# Reference: mek help config
+contexts:
+  # orders-dev:                     # the team's, with your role
+  #   provider: aws
+  #   sso_start_url: https://acme.awsapps.com/start
+  #   sso_region: ap-southeast-1
+  #   account_id: "111122223333"
+  #   role: Admin
+  #
+  # sandbox:                        # yours only, from your ~/.aws/config
+  #   provider: aws
+  #   aws_profile: my-sandbox
