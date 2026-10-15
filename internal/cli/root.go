@@ -79,6 +79,7 @@ What protected and readonly do: mek help guard.`,
 	root.AddCommand(
 		helpTopic("config", "Where contexts come from: ~/.mek/config.yaml, a project's mek.yaml and mek.local.yaml", configHelp),
 		helpTopic("guard", "What protected and readonly do, command by command", guardHelp()),
+		helpTopic("wizard", "mek ctx add / edit: the keys, what it looks up in the cloud, how it saves", wizardHelp()),
 	)
 	root.SetHelpCommandGroupID("setup")
 	root.SetCompletionCommandGroupID("setup")

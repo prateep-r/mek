@@ -148,7 +148,7 @@ func TestEntryDiscoveryWithRealAWS(t *testing.T) {
 		want  []provider.Found
 	}{
 		{provider.EC2InstancesCommand(), provider.ParseEC2Instances, []provider.Found{
-			{Value: "i-0ddd3333eeee4444f", Hint: "i-0ddd3333eeee4444f 10.0.0.6"},
+			{Value: "i-0ddd3333eeee4444f", Hint: "10.0.0.6"},
 			{Value: "i-0aaa1111bbbb2222c", Label: "bastion", Hint: "i-0aaa1111bbbb2222c 10.0.0.5", Extra: "bastion"}}},
 		{provider.RDSInstancesCommand(), provider.ParseRDS, []provider.Found{
 			{Value: "orders.x.rds.amazonaws.com", Label: "orders", Hint: "postgres:5432", Extra: "5432"}}},

@@ -26,7 +26,10 @@ func newInitCmd() *cobra.Command {
 
 The three files have the same shape. Inside a project, mek.local.yaml wins over
 mek.yaml, which wins over ~/.mek/config.yaml, a context coming whole from one
-file. See: mek help config`,
+file. See: mek help config
+
+Or skip the example: mek ctx add asks for a context and creates the file
+(inside a project, the file of your choice). See: mek help wizard`,
 		Args: cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			if project && local {
@@ -38,7 +41,7 @@ file. See: mek help config`,
 					return err
 				}
 				ui.Info("%s created %s", ui.Green("✓"), p)
-				ui.Info("edit it, then run: mek ctx ls && mek login <context>")
+				ui.Info("edit it (or add contexts with: mek ctx add), then run: mek ctx ls && mek login <context>")
 				return nil
 			}
 			cwd, _ := os.Getwd() // "": relative to wherever this is, if the directory is gone
@@ -51,9 +54,9 @@ file. See: mek help config`,
 				ui.Info("%s added %s to %s", ui.Green("✓"), config.LocalFile, config.Show(ignore))
 			}
 			if project {
-				ui.Info("add the project's contexts, then commit it; teammates see them with: mek ctx ls")
+				ui.Info("add the project's contexts (mek ctx add helps), then commit it; teammates see them with: mek ctx ls")
 			} else {
-				ui.Info("copy a context from %s and change what is yours; check with: mek ctx ls", config.TeamFile)
+				ui.Info("copy a context from %s and change what is yours (mek ctx edit <context> does it); check with: mek ctx ls", config.TeamFile)
 			}
 			return nil
 		},

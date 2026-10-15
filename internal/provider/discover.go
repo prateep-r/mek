@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
-	"strings"
 )
 
 // Discovery is a command the config wizard runs to offer a cloud's values
@@ -157,7 +156,11 @@ func ParseEC2Instances(b []byte) ([]Found, error) {
 	r, err := decodeJSON[[]struct{ ID, Name, IP string }](b, "aws ec2 describe-instances")
 	var out []Found
 	for _, i := range r {
-		out = append(out, Found{Value: i.ID, Label: i.Name, Hint: strings.TrimSpace(i.ID + " " + i.IP), Extra: i.Name})
+		f := Found{Value: i.ID, Label: i.Name, Hint: i.IP, Extra: i.Name}
+		if i.Name != "" { // the id shows when there is no name
+			f.Hint = i.ID + " " + i.IP
+		}
+		out = append(out, f)
 	}
 	return byLabel(out), err
 }

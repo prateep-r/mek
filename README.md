@@ -31,16 +31,17 @@ mek exec -- terraform plan     # any tool, same credentials
 2. [Getting started](#2-getting-started)
 3. [Configuration reference](#3-configuration-reference)
 4. [Project config: mek.yaml and mek.local.yaml](#4-project-config-mekyaml-and-meklocalyaml)
-5. [Everyday use](#5-everyday-use)
-6. [Kubernetes (EKS, GKE)](#6-kubernetes-eks-gke)
-7. [Shell on an instance](#7-shell-on-an-instance)
-8. [Tunnels](#8-tunnels)
-9. [Command reference](#9-command-reference)
-10. [How the guard works](#10-how-the-guard-works)
-11. [Troubleshooting](#11-troubleshooting)
-12. [Limitations](#12-limitations)
-13. [Roadmap](#13-roadmap)
-14. [Development](#development)
+5. [Editing config with the wizard](#5-editing-config-with-the-wizard)
+6. [Everyday use](#6-everyday-use)
+7. [Kubernetes (EKS, GKE)](#7-kubernetes-eks-gke)
+8. [Shell on an instance](#8-shell-on-an-instance)
+9. [Tunnels](#9-tunnels)
+10. [Command reference](#10-command-reference)
+11. [How the guard works](#11-how-the-guard-works)
+12. [Troubleshooting](#12-troubleshooting)
+13. [Limitations](#13-limitations)
+14. [Roadmap](#14-roadmap)
+15. [Development](#development)
 
 ## 1. Install
 
@@ -149,6 +150,7 @@ official tools need. Ask whoever runs the account for:
 | Cloud SQL tunnels | the Cloud SQL Admin API enabled; with `private_ip: true`, a network path from your machine to the instance (VPN, peering) | Cloud SQL Client |
 | EKS (`mek kube`, `mek kubectl`) | an access entry (or `aws-auth` mapping) for your role, and an endpoint you can reach | `eks:DescribeCluster` |
 | GKE (`mek kube`, `mek kubectl`) | Kubernetes RBAC for your user, and an endpoint you can reach | Kubernetes Engine Cluster Viewer |
+| The wizard's lists (`mek ctx add`, `mek ctx tunnel add`, …) | nothing | each optional — without one, you type the value: `ec2:DescribeInstances`, `rds:DescribeDBInstances`, `rds:DescribeDBClusters`, `eks:ListClusters`; `compute.instances.list`, `cloudsql.instances.list`, `container.clusters.list` ([details](#what-the-wizard-looks-up)) |
 
 ## 2. Getting started
 
@@ -160,7 +162,7 @@ behind one IAM Identity Center portal, and a GCP project.
 ```console
 $ mek init
 ✓ created /Users/you/.mek/config.yaml
-edit it, then run: mek ctx ls && mek login <context>
+edit it (or add contexts with: mek ctx add), then run: mek ctx ls && mek login <context>
 ```
 
 The file starts as a commented example. `mek init --force` writes it again. Joining a team
@@ -208,6 +210,10 @@ contexts:
 
 Already have an AWS profile you like? `provider: aws` with `aws_profile: my-profile`
 uses it as it is (see [Configuration reference](#3-configuration-reference)).
+
+**Rather answer questions than write YAML?** `mek ctx add` asks for a context — listing your
+IAM Identity Center accounts and roles, or your GCP projects — checks it and writes the file
+(creating it if need be): see [Editing config with the wizard](#5-editing-config-with-the-wizard).
 
 ### Step 3 — check
 
@@ -455,7 +461,7 @@ contexts:
 
 In that project `prod` is the repository's — and still protected, because you protect yours —
 and `dev` is protected too. A context whose name exists in no lower file is exactly what its
-file says. ([What protected and readonly do](#10-how-the-guard-works).)
+file says. ([What protected and readonly do](#11-how-the-guard-works).)
 
 ### The project: where mek looks
 
@@ -474,7 +480,7 @@ never looks at your home directory or above it.
 $ cd ~/work/orders
 $ mek init --project
 ✓ created ./mek.yaml
-add the project's contexts, then commit it; teammates see them with: mek ctx ls
+add the project's contexts (mek ctx add helps), then commit it; teammates see them with: mek ctx ls
 ```
 
 ```yaml
@@ -534,8 +540,10 @@ $ mek init --local
 `mek init --local` adds the file to the repository's `.gitignore`, and `mek doctor` flags it
 if it is committed anyway. Things it is for:
 
-1. **The team's context with your role** — copy the whole context and change what is yours
-   (a context comes whole from one file, so copying only `role:` would drop the rest):
+1. **The team's context with your role** — `mek ctx edit orders-dev`, then *your own copy* in
+   `mek.local.yaml`, does it for you ([how](#change-a-context)). By hand: copy the whole
+   context and change what is yours (a context comes whole from one file, so copying only
+   `role:` would drop the rest):
 
    ```yaml
    contexts:
@@ -595,7 +603,461 @@ replaced by your own `mek.local.yaml` isn't warned about.) The audit log records
 - **Can a project's kubeconfig work from K9s started anywhere?** Yes: it runs
   `mek --project <the repository> --context … kube token`.
 
-## 5. Everyday use
+## 5. Editing config with the wizard
+
+Rather not write YAML? `mek ctx add` asks a question at a time, offers what it can find —
+your IAM Identity Center accounts and roles, your GCP projects, instances, databases,
+clusters — checks the result, and writes it into the right file without touching the rest.
+
+| Command | Does |
+|---|---|
+| `mek ctx add [name]` | add a context |
+| `mek ctx edit [name]` | change one, today's answers filled in (no name: pick it from a list) |
+| `mek ctx rm <name> [--yes]` | remove one (asks first; `--yes` for scripts) |
+| `mek ctx target add\|edit\|rm [name]` | a context's hosts for `mek shell` |
+| `mek ctx cluster add\|edit\|rm [name]` | its Kubernetes clusters for `mek kube` |
+| `mek ctx tunnel add\|edit\|rm [name]` | its port forwards for `mek tunnel` |
+
+`mek context` is the same command as `mek ctx`: `mek context add`, `mek context ls`. For a
+target, cluster or tunnel, `-c <context>` picks the context; without it, a list does.
+`mek help wizard` is this section in the terminal, with the commands each lookup runs.
+
+### The keys
+
+| Key | Does |
+|---|---|
+| `↑` `↓` | choose |
+| type | filter a long list (`esc` clears the filter) |
+| *type it yourself…* | the last row of every list: a value that isn't listed |
+| `enter` | OK |
+| `esc` | back a step — the answers so far are kept |
+| `ctrl-c` | cancel: nothing is written |
+
+Answers stay on the screen above the question (`✓ Account: acme-prod`). The last step shows
+what will be written, and where: **Save**, **Back** or **Cancel** (`←` `→`).
+
+### Add an AWS context (IAM Identity Center)
+
+```console
+$ mek ctx add
+Add a context
+✓ Name: acme-prod
+✓ Cloud: AWS
+✓ Sign in with: IAM Identity Center (SSO)
+✓ Access portal: https://acme.awsapps.com/start
+? Account
+  the accounts your login can reach
+  ▸ acme-audit  777788889999
+    acme-dev  111122223333
+    acme-prod  444455556666
+    type it yourself…
+  enter ok · esc back · ctrl-c cancel
+```
+
+1. **Name** — what you'll type after `mek use` and `-c`; a name that's taken says where
+   (`acme-dev is already in ~/.mek/config.yaml — change it with: mek ctx edit acme-dev`).
+2. **Cloud** — AWS or GCP.
+3. **Sign in with** — IAM Identity Center, or a profile from `~/.aws/config` (next example).
+4. **Access portal** — portals your other contexts use are listed; for a new one, *type it
+   yourself…* and give its URL. A listed portal's region is known; a new one's is asked
+   (**Portal region**).
+5. **Log in to the portal** — only when you aren't logged in yet:
+
+   ```console
+   ? Log in to the portal
+     to list the portal's accounts and roles — or skip, and type them
+     runs: aws sso login --sso-session mek-acme  (a browser opens)
+     [Run it]  Skip
+   ```
+
+   *Run it* puts the form away while the browser login runs, then brings it back. *Skip*
+   goes on without it: you type the account id and role.
+6. **Account** — the accounts your login can reach, by name (above).
+7. **Role** — your roles (permission sets) in that account:
+
+   ```console
+   ? Role
+     your roles (permission sets) in that account
+     ▸ Admin
+       Developer
+       ReadOnly
+       type it yourself…
+   ```
+
+8. **Region** — where commands go; known regions are listed (type to filter: `southeast`),
+   or *none* for the AWS CLI's default.
+9. **Guard** — *normal*, *protected* (changes ask first; deletes need the context's name
+   typed) or *readonly* (changes are blocked). See [How the guard works](#11-how-the-guard-works).
+10. **Save?**
+
+```console
+? Save?
+    in ~/.mek/config.yaml:
+    acme-prod:
+      provider: aws
+      protected: true
+      region: ap-southeast-1
+      sso_start_url: https://acme.awsapps.com/start
+      sso_region: ap-southeast-1
+      account_id: "444455556666"
+      role: Developer
+  [Save]  Back   Cancel
+```
+
+```console
+✓ added acme-prod to ~/.mek/config.yaml
+  next: mek login acme-prod (or mek use acme-prod)
+$ mek -c acme-prod aws sts get-caller-identity
+```
+
+`mek ctx add acme-prod` fills the name in. With no config yet, the first `mek ctx add`
+creates `~/.mek/config.yaml`.
+
+### Add an AWS context (a profile you already have)
+
+```console
+$ mek ctx add sandbox
+Add a context
+✓ Name: sandbox
+✓ Cloud: AWS
+✓ Sign in with: a profile from ~/.aws/config
+? Profile
+  the profiles in ~/.aws/config, used as they are
+  ▸ default
+    sandbox
+    personal
+    type it yourself…
+```
+
+The profiles are read from `~/.aws/config` (or `$AWS_CONFIG_FILE`) — names only. Then the
+region and the guard, and:
+
+```yaml
+sandbox:
+  provider: aws
+  region: us-east-1
+  aws_profile: personal
+```
+
+### Add a GCP context
+
+```console
+$ mek ctx add gcp-data
+Add a context
+✓ Name: gcp-data
+✓ Cloud: GCP
+✓ Google account: you@acme.com
+? Project
+  the projects your account can see
+  ▸ acme-data  Acme Data
+    acme-dev  Acme Dev
+    acme-prod  Acme Prod
+    type it yourself…
+```
+
+- **Google account** — accounts your other contexts use are listed, and that context's login
+  is used to list projects. *none* leaves it to `mek login` to ask.
+- Not logged in as that account (or *none*)? **Log in to Google** runs `gcloud auth login`
+  with the form put away. That login becomes the new context's when you save: no second
+  `mek login`.
+- **Project** — the projects you can see, by id with their name.
+- **Region** — optional (*none*: gcloud's default).
+
+```yaml
+gcp-data:
+  provider: gcp
+  region: asia-southeast1
+  project: acme-data
+  account: you@acme.com
+```
+
+### Add a context inside a project
+
+Inside a project there are three files to choose from. One that has the name already isn't
+offered, and the hint says what a choice replaces:
+
+```console
+$ cd ~/work/orders && mek ctx add orders-sandbox
+Add a context
+✓ Name: orders-sandbox
+? Save it in
+  ▸ ./mek.local.yaml  yours, this project only (not committed)
+    ./mek.yaml  the team's — commit it
+    ~/.mek/config.yaml  yours, on every project
+```
+
+- `./mek.local.yaml` — only you, only here. A new one is added to the repository's `.gitignore`.
+- `./mek.yaml` — the whole team gets it once you commit it. Use IAM Identity Center here, not
+  a profile: a profile is in one person's `~/.aws/config`.
+- `~/.mek/config.yaml` — yours, everywhere.
+
+A new file starts as `mek init` would write it (with its comments), then gets the context.
+
+### Change a context
+
+`mek ctx edit` asks the same questions with today's answers filled in — press `enter` to keep
+one. Without a name it lists the contexts to pick from. Clusters, targets and tunnels are kept
+as they are; renaming a context renames it in place (and the current context follows).
+
+```console
+$ mek ctx edit acme-prod        # e.g. another role, or protected on
+$ mek ctx edit                  # pick one
+```
+
+**A team context:** for a context from the project's `mek.yaml`, the first question is where
+the change goes:
+
+```console
+$ mek ctx edit orders-dev
+Edit orders-dev
+✓ Name: orders-dev
+? Save it in
+    ./mek.yaml  the team's — commit the change
+  ▸ ./mek.local.yaml  your own copy — the team's stays as it is
+```
+
+*Your own copy* is the usual case — the team's account with your role:
+
+```console
+✓ Role: Admin
+? Save?
+    in ./mek.local.yaml (a new file):
+    orders-dev:
+      provider: aws
+      region: ap-southeast-1
+      sso_start_url: https://acme.awsapps.com/start
+      sso_region: ap-southeast-1
+      account_id: "111122223333"
+      role: Admin
+      targets:
+        bastion:
+          instance: tag:Name=orders-bastion
+  [Save]  Back   Cancel
+
+✓ added mek.local.yaml to ./.gitignore
+✓ copied orders-dev to ./mek.local.yaml — yours is used in this project; the team's stays as it is
+```
+
+The copy is whole (a context comes whole from one file), so its targets and tunnels came too.
+Your guards stay on whatever the copy says ([Project config](#4-project-config-mekyaml-and-meklocalyaml)).
+
+### Remove a context
+
+```console
+$ mek ctx rm old-sandbox
+Remove context old-sandbox from ~/.mek/config.yaml? [y/N]: y
+✓ removed old-sandbox from ~/.mek/config.yaml
+
+$ mek ctx rm orders-dev          # your copy in mek.local.yaml…
+✓ removed orders-dev from ./mek.local.yaml
+  orders-dev from ./mek.yaml is used again
+
+$ mek ctx rm staging --yes       # in a script: no question
+```
+
+Removing the current context says so (`it was the current context: mek use <context>`).
+
+### Add a tunnel
+
+```console
+$ mek -c orders-dev ctx tunnel add
+Add a tunnel to orders-dev
+? Forward to
+  ▸ a host, through an instance  e.g. a database: RDS, a private IP, Redis
+    a port on an instance  a service on the instance itself
+```
+
+**A database through a bastion** — the instance is one of the context's targets or a running
+instance (by its Name tag), and RDS and Aurora endpoints are listed with their port:
+
+```console
+✓ Forward to: a host, through an instance
+? Through
+  one of the context's targets, or a running instance
+  ▸ bastion  target · tag:Name=orders-bastion
+    i-0ddd3333eeee4444f  10.0.0.6
+    web 1  i-0aaa1111bbbb2222c 10.0.0.5
+    type it yourself…
+
+✓ Through: bastion
+? Host
+  RDS and Aurora endpoints — or type a host
+  ▸ aurora  aurora-mysql:3306
+    orders  postgres:5432
+    type it yourself…
+```
+
+Then **Port** (the database's, filled in), **Local port** (the port + 10000, filled in; one
+something here already listens on isn't taken) and **Name** (the database's, filled in):
+
+```console
+? Save?
+    in ./mek.yaml, context orders-dev:
+    tunnels:
+      orders:
+        via: bastion
+        host: orders.x.rds.amazonaws.com
+        port: 5432
+  [Save]  Back   Cancel
+
+✓ added tunnel orders to orders-dev in ./mek.yaml
+  next: mek -c orders-dev tunnel orders
+```
+
+**A port on an instance** — *Through* the instance, then the port (say 8080): the instance's
+own service on `localhost:18080`.
+
+**Cloud SQL** (GCP) — the instances are listed by connection name; then the public or the
+private IP, and a local port (15432 for PostgreSQL, 13306 for MySQL, 11433 for SQL Server):
+
+```yaml
+tunnels:
+  orders:
+    local_port: 15432
+    cloudsql: acme-dev:asia-southeast1:orders
+    private_ip: true
+```
+
+On GCP, *a host, through an instance* lists the running VMs; type the host as the VM reaches it.
+
+### Add a target
+
+```console
+$ mek -c orders-dev ctx target add
+Add a target to orders-dev
+✓ Instance: web 1
+? Refer to it by
+  ▸ tag:Name=web 1  its Name tag: still right when the instance is replaced
+    i-0aaa1111bbbb2222c  its id: this instance only
+```
+
+An instance without a Name tag goes in by its id. On GCP the VMs are listed with their zone,
+which is filled in, then the SSH user (empty: gcloud's):
+
+```yaml
+targets:
+  vm-1:
+    instance: vm-1
+    zone: asia-southeast1-a
+    user: me
+```
+
+Then: `mek -c orders-dev shell web-1`.
+
+### Add a cluster
+
+```console
+$ mek -c orders-dev ctx cluster add
+Add a cluster to orders-dev
+? EKS cluster
+  ▸ data-eks
+    main-eks
+    type it yourself…
+```
+
+- **EKS** — the clusters in the context's region; a context without a region is asked for one
+  first.
+- **GKE** — the clusters in every location; the location is filled in, then how to reach it:
+
+  ```console
+  ? Reach it at
+      its endpoint  the cluster's own (public, if it has one)
+    ▸ private  its internal IP — from inside the VPC
+      dns  its DNS-based endpoint — from anywhere IAM allows
+  ```
+
+- **Namespace** — kubectl's default for it (empty: `default`).
+- **Name** — the cluster's, filled in.
+
+Then: `mek -c orders-dev kube main-eks` ([Kubernetes](#7-kubernetes-eks-gke)).
+
+### Change or remove a tunnel, target or cluster
+
+```console
+$ mek -c orders-dev ctx tunnel edit orders     # e.g. another local port
+$ mek ctx tunnel edit                          # pick the context, then the tunnel
+$ mek -c orders-dev ctx target edit web-1      # e.g. by its id instead of its tag
+$ mek -c orders-dev ctx cluster edit main-eks  # e.g. another namespace
+$ mek -c orders-dev ctx tunnel rm orders       # asks first
+$ mek -c orders-dev ctx target rm web-1        # asks first
+$ mek -c orders-dev ctx cluster rm old --yes   # in a script
+```
+
+The pick lists say what each is (`orders  localhost:15432 → orders.x.rds.amazonaws.com:5432 via bastion`).
+A target a tunnel still uses can't be removed: the check before saving says why.
+
+### In mek ui
+
+| Tab | Key | Runs |
+|---|---|---|
+| 1 Contexts | `a` | `mek ctx add` |
+| | `e` | `mek ctx edit <the chosen context>` |
+| | `d` | `mek ctx rm <the chosen context>` (asks first, in the UI) |
+| 2 Tunnels | `a` | `mek -c <the chosen context> ctx tunnel add` |
+
+The wizard takes the terminal and the UI comes back when it ends, showing the change.
+
+### What the wizard looks up
+
+Every list comes from the cloud through mek, like any command: read-only, through the guard,
+in the [audit log](#the-audit-log), under the context being made. Each needs a permission —
+without it, the step says why and you type the value:
+
+| Cloud | Lists | Needs | Runs |
+|---|---|---|---|
+| AWS | accounts | your IAM Identity Center login (no IAM permission) | `aws sso list-accounts` |
+| AWS | roles in an account | your IAM Identity Center login | `aws sso list-account-roles` |
+| AWS | instances (targets, tunnels) | `ec2:DescribeInstances` | `aws ec2 describe-instances` (running) |
+| AWS | databases (tunnels) | `rds:DescribeDBInstances` | `aws rds describe-db-instances` |
+| AWS | Aurora clusters (tunnels) | `rds:DescribeDBClusters` | `aws rds describe-db-clusters` |
+| AWS | EKS clusters | `eks:ListClusters` | `aws eks list-clusters` |
+| GCP | projects | `resourcemanager.projects.get` on each (any role on it) | `gcloud projects list` |
+| GCP | VMs (targets, tunnels) | `compute.instances.list` | `gcloud compute instances list` (running) |
+| GCP | Cloud SQL instances (tunnels) | `cloudsql.instances.list` | `gcloud sql instances list` |
+| GCP | GKE clusters | `container.clusters.list` | `gcloud container clusters list` |
+
+`mek help wizard` prints the full commands.
+
+**The portal token.** Listing accounts and roles takes your IAM Identity Center access token.
+mek reads it from the AWS CLI's own cache (`~/.aws/sso/cache`, where `aws sso login` puts it),
+writes it to a file only you can read in `~/.mek` for `--cli-input-json`, and removes the file
+as soon as the command ends. It is never in argv (which `ps` shows to every user), never in the
+audit log (`cli-input-json` is masked) and never kept by mek.
+
+**When a list can't be had** — not logged in, no permission, no CLI — the step says why, with
+the CLI's own message, and takes a typed value:
+
+```console
+? Account
+  couldn't list them: aws sso list-accounts: exit status 255: An error occurred (UnauthorizedException) … — type the value
+  ▏
+```
+
+### How it saves
+
+- **Only what you changed is rewritten.** The context (or the one context a target, cluster or
+  tunnel belongs to) is written in place; the rest of the file — comments, order, other
+  contexts, blank lines — stays as it was. Comments *inside* that context aren't kept; the
+  ones above it are.
+- **Nothing invalid is saved.** Before writing, the whole config is checked as it would be —
+  every file, every cloud's rules (an account id of 12 digits, one region per portal, a
+  tunnel's target that exists…). If it wouldn't load, the last step says why and only *Back*
+  and *Cancel* are offered.
+- **Atomically**, with the file's permissions: `0600` for `~/.mek/config.yaml`, `0644` for a
+  project's files.
+- A new `mek.local.yaml` is added to `.gitignore`.
+
+### In scripts and CI
+
+`add` and `edit` need a terminal; without one they say so. In CI, write the file (see the
+[specification](#specification)), or remove with `--yes`:
+
+```bash
+mek ctx rm staging --yes
+mek -c dev ctx tunnel rm db --yes     # a target, cluster or tunnel: -c too
+```
+
+## 6. Everyday use
 
 ### The terminal UI
 
@@ -609,13 +1071,13 @@ mek   1 Contexts   2 Tunnels   3 Access   4 Audit
      gcp-dev  gcp acme-dev / asia-southeast1                  readonly
      prod     aws 444455556666 / Admin / ap-southeast-1        protected
 
-↑↓ choose · enter use (saved current) · l log in · 1-4/tab switch · ? keys · q quit
+↑↓ choose · enter use (saved current) · l log in · a add · e edit · d remove · 1-4/tab switch · ? keys · q quit
 ```
 
 | Tab | Shows | Keys |
 |---|---|---|
-| 1 Contexts | every context; `*` is the saved current one | `enter` make it current · `l` log in |
-| 2 Tunnels | every tunnel (state, `↻` reconnects, port, age), and named tunnels that aren't running | `enter` start a named one in the background, or read a running one's log · `x` stop · `l` log (follows new lines) |
+| 1 Contexts | every context; `*` is the saved current one | `enter` make it current · `l` log in · `a` add · `e` edit · `d` remove ([the wizard](#in-mek-ui)) |
+| 2 Tunnels | every tunnel (state, `↻` reconnects, port, age), and named tunnels that aren't running | `enter` start a named one in the background, or read a running one's log · `x` stop · `l` log (follows new lines) · `a` add a tunnel to the chosen context |
 | 3 Access | the chosen context's targets and clusters | `enter` a shell on a target, or write a cluster's kubeconfig · `k` K9s on a cluster |
 | 4 Audit | the last 500 entries, newest first | `/` search · `b` only blocked / declined · `c` only the chosen context · `esc` clear |
 
@@ -651,7 +1113,7 @@ mek tunnel ls
 ```
 
 Kubernetes clusters from several accounts in one kubectl/K9s:
-[section 5](#6-kubernetes-eks-gke).
+[section 5](#7-kubernetes-eks-gke).
 
 ### Protected and readonly contexts
 
@@ -676,7 +1138,7 @@ mek -c prod --confirm prod aws ec2 terminate-instances --instance-ids i-0abc
 ```
 
 `mek exec` can't tell what an arbitrary command does, so on a protected context it always
-asks, and a readonly context refuses it. See [section 10](#10-how-the-guard-works) (or
+asks, and a readonly context refuses it. See [section 10](#11-how-the-guard-works) (or
 `mek help guard`) for how commands are classified, and what the guard doesn't cover.
 
 ### The audit log
@@ -758,7 +1220,7 @@ function prompt { "($(mek ctx --short 2>$null)) PS $($PWD.Path)> " }
 
 `mek ctx --short` reads only the config, so it is fast enough to run on every prompt.
 
-## 6. Kubernetes (EKS, GKE)
+## 7. Kubernetes (EKS, GKE)
 
 List the clusters under the context (see [the complete example](#a-complete-example)), then write the
 context's kubeconfig:
@@ -923,7 +1385,7 @@ k9s -n web
 If the cluster's API endpoint is private-only, your machine needs a network path to it (VPN,
 or a tunnel through a host in the VPC) — kubectl talks to the API server directly.
 
-## 7. Shell on an instance
+## 8. Shell on an instance
 
 ```bash
 mek -c prod shell bastion                 # a name under the context's targets:
@@ -941,7 +1403,7 @@ open port is needed. GCP keeps the context's SSH key and known hosts under
 Protected contexts ask first; readonly contexts block shells. The same applies to
 `mek aws ssm start-session` and `mek gcloud compute ssh`.
 
-## 8. Tunnels
+## 9. Tunnels
 
 A tunnel forwards a port on `127.0.0.1` to a host in a private network — a database, a
 cache, an internal web UI — through the cloud's own session service.
@@ -996,7 +1458,7 @@ to 30 s) and gives up after 5 minutes of that — usually an expired login: `mek
 start the tunnel again. A tunnel whose first attempt fails isn't retried (`-b` shows why).
 `--no-restart` turns reconnecting off; foreground tunnels never reconnect.
 
-## 9. Command reference
+## 10. Command reference
 
 ### Getting help
 
@@ -1009,6 +1471,7 @@ mek help tunnel stop        # a subcommand
 mek tunnel --help           # the same, as a flag (or -h)
 mek help config             # where contexts come from: ~/.mek/config.yaml, mek.yaml, mek.local.yaml
 mek help guard              # what protected and readonly do, command by command
+mek help wizard             # mek ctx add / edit: the keys, what it looks up, how it saves
 ```
 
 After `aws`, `gcloud` or `kubectl`, help belongs to that CLI — `mek aws s3 help`,
@@ -1024,7 +1487,10 @@ current context). For mek's own description of those commands, use `mek help aws
 | `mek init --project` / `--local` | create the project's `./mek.yaml` (for the team) / `./mek.local.yaml` (yours; added to `.gitignore`) |
 | `mek ui` | contexts, tunnels, shells, clusters and the audit log in one terminal screen |
 | `mek ctx ls` | list contexts (`*` = current; a project's with its file) |
-| `mek ctx [--short]` | show the current context (`--short`: just the name, for prompts) |
+| `mek ctx [--short]` | show the current context (`--short`: just the name, for prompts); `mek context` is the same command |
+| `mek ctx add [name]` / `mek ctx edit [name]` | add or change a context, a question at a time ([the wizard](#5-editing-config-with-the-wizard)) |
+| `mek ctx rm <ctx> [--yes]` | remove a context from the file it is in |
+| `mek ctx target\|cluster\|tunnel add\|edit\|rm [name]` | a context's targets, clusters or tunnels, by wizard (`-c` picks the context) |
 | `mek use <ctx>` | switch the saved context (every terminal without its own) |
 | `mek use -s <ctx>` | switch only this terminal (and `KUBECONFIG`, when the context has clusters); needs `mek shell-init`, else `eval "$(mek use -s <ctx>)"` |
 | `mek login [ctx] [--adc] [-- <flags>]` | `aws sso login` / `gcloud auth login` (+ application-default with `--adc`) |
@@ -1058,7 +1524,7 @@ Global flags go **before** the CLI name: `mek -c prod --yes aws ecs update-servi
 | `--project <dir>` | read the project config (`mek.yaml`, `mek.local.yaml`) from `dir`, from anywhere |
 | `--no-local` | ignore project config files; `MEK_NO_LOCAL=1` does the same |
 
-## 10. How the guard works
+## 11. How the guard works
 
 **`protected` and `readonly` are mek's own settings, not the cloud's.** AWS and GCP never see
 them: mek checks each command on your machine before handing it to `aws`, `gcloud` or
@@ -1101,7 +1567,7 @@ belongs in IAM roles, SCPs and org policies. For an account that must stay read-
 read-only role in the cloud *and* `readonly: true` in mek: mek then says so before anything is
 sent, instead of the cloud refusing afterwards.
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
 | You see | Do |
 |---|---|
@@ -1122,9 +1588,13 @@ sent, instead of the cloud refusing afterwards.
 | `aws not found in PATH` | install the CLI; `mek doctor` shows how |
 | `AWS CLI v1 can't do IAM Identity Center logins` | install AWS CLI v2 |
 | kubectl: `getting credentials: exec: … mek …` | the kubeconfig remembers where mek was; run `mek -c <context> kube` again after moving mek |
+| the wizard: `couldn't list them: … (UnauthorizedException) …` | the portal login expired: *Run it* on the wizard's login step, or `mek login <a context on that portal>`; or type the value |
+| the wizard: `couldn't list them: … AccessDenied` / `UnauthorizedOperation` / `PERMISSION_DENIED` | your role lacks the permission in [What the wizard looks up](#what-the-wizard-looks-up): type the value, or ask for it |
+| `mek ctx add asks questions and needs a terminal` | run it in a terminal; in CI or a script, edit the file |
+| `not saved — ./mek.yaml would be invalid: …` | what the change would break: go Back and fix that answer (or fix the file) |
 | anything else | `mek doctor`, and the audit log for what ran |
 
-## 12. Limitations
+## 13. Limitations
 
 - Needs the official CLIs installed; passthrough speed equals the CLI's speed.
 - mek can't grant more than your IAM role/permissions allow.
@@ -1135,6 +1605,8 @@ sent, instead of the cloud refusing afterwards.
 - `mek shell` on GCP runs ssh with the context's own home directory, so your `~/.ssh/config` doesn't apply to it.
 - A foreground tunnel ends when the cloud closes its session (SSM's idle timeout is 20 minutes by default); use `-b`, which reconnects. A reconnect breaks the connections open at that moment.
 - If a tunnel's supervisor is killed with `kill -9`, `ls` shows it as dead; on macOS the tunnel's own process can outlive it (`stop` warns when the port is still taken).
+- The wizard rewrites the context it changes: comments inside that context aren't kept (the
+  rest of the file's are). Its region lists are built into mek; type a region it doesn't list.
 - The Homebrew cask is macOS-only; use `install.sh` or `go install` on Linux, `install.ps1` on Windows.
 - Windows support is new in v0.16 and tested on CI (unit, integration, contract with the real
   `aws`, `gcloud.cmd` and `kubectl`, `install.ps1`); GCP shells through gcloud's PuTTY haven't
@@ -1147,14 +1619,15 @@ sent, instead of the cloud refusing afterwards.
   stays in the context's own directory, but PuTTY keeps host keys in the registry
   (`HKCU\Software\SimonTatham\PuTTY\SshHostKeys`), shared by every context.
 
-## 13. Roadmap
+## 14. Roadmap
 
 1. ✅ Contexts, SSO login, passthrough, exec/env, guard, audit, doctor, self-update
 2. ✅ Access paths ([design](docs/design/0001-tunnel-shell-kube.md)): `mek kube` / `mek kubectl` (EKS, GKE), `mek shell` (SSM, IAP), `mek tunnel` (SSM, IAP, Cloud SQL), background tunnels
 3. ✅ Terminal UI (`mek ui`): contexts, tunnels, shells, clusters, audit log
-4. A resource catalog in the terminal UI, generated from AWS/GCP API models
-5. Desktop GUI (Wails)
-6. Azure and Huawei Cloud again, later (see `keep/azure-huawei`)
+4. ✅ Config wizard (`mek ctx add` / `edit` / `rm`, and a context's targets, clusters and tunnels), with lists from the cloud
+5. A resource catalog in the terminal UI, generated from AWS/GCP API models
+6. Desktop GUI (Wails)
+7. Azure and Huawei Cloud again, later (see `keep/azure-huawei`)
 
 ## Development
 

@@ -27,13 +27,18 @@ func tags(c *Context) string {
 type contextsTab struct{ l list }
 
 func (*contextsTab) title() string { return "Contexts" }
-func (*contextsTab) help() string  { return "↑↓ choose · enter use (saved current) · l log in" }
+func (*contextsTab) help() string {
+	return "↑↓ choose · enter use (saved current) · l log in · a add · e edit · d remove"
+}
 
 func (t *contextsTab) key(m *model, k tea.KeyPressMsg) tea.Cmd {
 	t.l.cursor = m.index(m.selected)
 	if t.l.key(k.String(), len(m.contexts)) {
 		m.selected = m.contexts[t.l.cursor].Name
 		return nil
+	}
+	if k.String() == "a" { // the first context too
+		return m.start(action{label: "add a context", args: []string{"ctx", "add"}, interactive: true})
 	}
 	c := m.context(m.selected)
 	if c == nil {
@@ -44,6 +49,11 @@ func (t *contextsTab) key(m *model, k tea.KeyPressMsg) tea.Cmd {
 		return m.start(action{label: "use " + c.Name, args: []string{"use", c.Name}})
 	case "l":
 		return m.start(action{label: "log in to " + c.Name, args: []string{"login", c.Name}, interactive: true})
+	case "e":
+		return m.start(action{label: "edit " + c.Name, args: []string{"ctx", "edit", c.Name}, interactive: true})
+	case "d":
+		return m.start(action{label: "remove " + c.Name, args: []string{"ctx", "rm", c.Name, "--yes"},
+			confirm: fmt.Sprintf("Remove context %s from its file?", c.Name)})
 	}
 	return nil
 }
@@ -106,10 +116,13 @@ func (m *model) tunnelRows() []tunnelRow {
 
 func (*tunnelsTab) title() string { return "Tunnels" }
 func (*tunnelsTab) help() string {
-	return "enter start (named) / logs · x stop · l logs"
+	return "enter start (named) / logs · x stop · l logs · a add (to the chosen context)"
 }
 
 func (t *tunnelsTab) key(m *model, k tea.KeyPressMsg) tea.Cmd {
+	if c := m.context(m.selected); c != nil && k.String() == "a" {
+		return m.start(action{label: "add a tunnel to " + c.Name, args: []string{"-c", c.Name, "ctx", "tunnel", "add"}, interactive: true})
+	}
 	rows := m.tunnelRows()
 	if len(rows) == 0 || t.l.key(k.String(), len(rows)) {
 		return nil
