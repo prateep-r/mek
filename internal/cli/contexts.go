@@ -128,7 +128,14 @@ func (a *app) newCtxCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "ctx",
 		Short: "Show the current context (use `mek ctx ls` to list all)",
-		Args:  cobra.NoArgs,
+		Long: `Show the current context; mek ctx ls lists them all (* marks the current one).
+
+A context from a project's files is shown with its file:
+  orders-dev (./mek.yaml)  aws 111122223333 / Developer
+Contexts from ~/.mek/config.yaml show none. See: mek help config
+
+  mek ctx --short     just the name, for a shell prompt`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			l, err := a.resolve("") // runs on every prompt: no disk writes
 			if err != nil {

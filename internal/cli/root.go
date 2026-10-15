@@ -40,7 +40,11 @@ func newRoot(a *app) *cobra.Command {
 		Short: "Log in, switch and run commands across AWS and GCP",
 		Long: `mek (เมฆ, "cloud") manages cloud contexts — an AWS account+role or a GCP
 project — and runs the official CLIs (aws, gcloud) with the right
-credentials, plus a safety guard and audit log for protected contexts.`,
+credentials, plus a safety guard and audit log for protected contexts.
+
+Contexts come from ~/.mek/config.yaml and, inside a project, its mek.yaml
+(the team's) and mek.local.yaml (yours): mek help config.
+What protected and readonly do: mek help guard.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -72,6 +76,10 @@ credentials, plus a safety guard and audit log for protected contexts.`,
 	add("run", a.newKubectlCmd(), a.newExecCmd(), a.newEnvCmd())
 	add("access", a.newShellCmd(), a.newTunnelCmd(), a.newKubeCmd())
 	add("setup", newShellInitCmd(), newDoctorCmd(), newVersionCmd(), newSelfUpdateCmd())
+	root.AddCommand(
+		helpTopic("config", "Where contexts come from: ~/.mek/config.yaml, a project's mek.yaml and mek.local.yaml", configHelp),
+		helpTopic("guard", "What protected and readonly do, command by command", guardHelp()),
+	)
 	root.SetHelpCommandGroupID("setup")
 	root.SetCompletionCommandGroupID("setup")
 	return root

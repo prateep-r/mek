@@ -452,3 +452,40 @@ func TestHelpGroups(t *testing.T) {
 		t.Errorf("ungrouped commands:\n%s", out)
 	}
 }
+
+// The help topics: listed in mek help, and the guard's table is the guard's.
+func TestHelpTopics(t *testing.T) {
+	h := newHarness(t, "")
+	out := h.mustRun("help")
+	if !strings.Contains(out, "Additional help topics:") || !strings.Contains(out, "mek config") || !strings.Contains(out, "mek guard") ||
+		!strings.Contains(out, "mek help config") {
+		t.Errorf("help:\n%s", out)
+	}
+	cfg := h.mustRun("help", "config")
+	for _, want := range []string{"./mek.local.yaml", "./mek.yaml", "~/.mek/config.yaml", "mek init --project", "mek init --local",
+		"--project DIR", "--no-local", "MEK_NO_LOCAL=1", "can't be switched off", "aws_profile", "~/.config/mek", "EXAMPLE"} {
+		if !strings.Contains(cfg, want) {
+			t.Errorf("help config missing %q", want)
+		}
+	}
+	g := h.mustRun("help", "guard")
+	for _, row := range []string{
+		"read         run    run                    run",
+		"write        run    ask y/N                blocked",
+		"destructive  run    type the context name  blocked",
+		"unknown      run    ask y/N                blocked",
+		"shell        run    ask y/N                blocked",
+		"tunnel       run    ask y/N                run",
+		"not the cloud's", "--confirm <context>", "mek exec", "audit.jsonl",
+	} {
+		if !strings.Contains(g, row) {
+			t.Errorf("help guard missing %q:\n%s", row, g)
+		}
+	}
+	if out := h.mustRun("ctx", "--help"); !strings.Contains(out, "orders-dev (./mek.yaml)") {
+		t.Errorf("ctx --help:\n%s", out)
+	}
+	if out := h.mustRun("init", "--help"); !strings.Contains(out, "mek init --local") || !strings.Contains(out, ".gitignore") {
+		t.Errorf("init --help:\n%s", out)
+	}
+}
