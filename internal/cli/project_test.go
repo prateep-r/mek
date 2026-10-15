@@ -159,6 +159,14 @@ func TestCtxRm(t *testing.T) {
 	_, err = h.run("ctx", "rm", "nope", "--yes")
 	wantErr(t, err, "unknown context")
 
+	// The file changed while mek asked: nothing is written over it.
+	confirm = func(string) (bool, error) {
+		return true, os.WriteFile(filepath.Join(repo, config.TeamFile), []byte("contexts: [\n"), 0o644)
+	}
+	_, err = h.run("ctx", "rm", "prod")
+	if err == nil {
+		t.Error("removed from a file that changed")
+	}
 }
 
 func TestSaveEdit(t *testing.T) {
