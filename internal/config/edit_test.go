@@ -211,3 +211,16 @@ func TestTemplateAndSnippet(t *testing.T) {
 		t.Errorf("snippet:\n%s", got)
 	}
 }
+
+func TestCheckAliasAndSnippetOf(t *testing.T) {
+	for _, c := range []struct{ section, alias, want string }{
+		{"tunnels", "db", ""}, {"tunnels", "ls", "reserved"}, {"clusters", "token", "reserved"}, {"targets", "a b", "may only contain"},
+	} {
+		if err := CheckAlias(c.section, c.alias); (c.want == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), c.want)) {
+			t.Errorf("CheckAlias(%s, %s) = %v", c.section, c.alias, err)
+		}
+	}
+	if got := SnippetOf(map[string]any{"tunnels": map[string]*Tunnel{"db": {Via: "b", Port: 5432}}}); got != "tunnels:\n  db:\n    via: b\n    port: 5432" {
+		t.Errorf("snippet:\n%s", got)
+	}
+}

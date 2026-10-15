@@ -140,6 +140,12 @@ func (c *Context) validateAccess() error {
 	return nil
 }
 
+// CheckAlias checks a name for an entry of clusters, targets or tunnels.
+func CheckAlias(section, alias string) error {
+	reserved := map[string]map[string]bool{"clusters": reservedClusterNames, "targets": reservedTargetNames, "tunnels": reservedTunnelNames}
+	return validateAlias(section, alias, reserved[section])
+}
+
 func validateAlias(section, alias string, reserved map[string]bool) error {
 	if !validName.MatchString(alias) {
 		return fmt.Errorf("%s: name %q may only contain letters, digits, '.', '_' and '-'", section, alias)

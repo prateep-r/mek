@@ -443,26 +443,7 @@ See also: mek ctx add, mek ctx rm, mek help config`,
 }
 
 // pick asks which context to edit.
-func (w *ctxWizard) pick() (string, error) {
-	if len(w.cfg.Contexts) == 0 {
-		return "", errors.New("no contexts yet — add one: mek ctx add")
-	}
-	var opts []wizard.Option
-	for _, n := range w.cfg.Names() {
-		c := w.cfg.Contexts[n]
-		hint := provider.For(w.cfg, c).Describe()
-		if c.InProject {
-			hint += " · " + config.Show(c.Source)
-		}
-		opts = append(opts, wizard.Option{Value: n, Hint: hint})
-	}
-	cur := wizard.Answers{"name": config.Current()}
-	a, err := runForm(wizard.New("Edit a context").Prefill(cur).Select("name", "Which one?", wizard.Options(opts...), false))
-	if err != nil {
-		return "", err
-	}
-	return a["name"], nil
-}
+func (w *ctxWizard) pick() (string, error) { return pickContext(w.cfg, "Edit a context") }
 
 // usedBy lists, for a hint, the contexts that have a value: "used by a, b".
 func (w *ctxWizard) usedBy(has func(*config.Context) bool) string {
