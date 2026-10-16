@@ -266,6 +266,7 @@ func (w *ctxWizard) preview(a wizard.Answers) (string, error) {
 
 // run asks, saves and says what changed.
 func (w *ctxWizard) run(title string) error {
+	defer os.RemoveAll(provider.GCloudWizardDir()) // a login the new context didn't take (saved: it moved)
 	a, err := runForm(w.form(title))
 	if err != nil {
 		return err

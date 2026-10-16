@@ -614,3 +614,18 @@ func TestCtxEditGCPAccount(t *testing.T) {
 		t.Error("not saved")
 	}
 }
+
+// A login made in the wizard and not saved doesn't stay behind.
+func TestCtxAddCanceledLeavesNoLogin(t *testing.T) {
+	h := newHarness(t, testConfig)
+	wizardDir := filepath.Join(config.Dir(), "gcloud", ".wizard")
+	h.exec.respond = func(argv []string) (string, int) {
+		gcloudLogin(t, wizardDir)
+		return "[]", 0
+	}
+	answering(t, []string{"type:n", "enter", "down", "enter", "enter", "enter", "ctrl+c"})
+	h.run("ctx", "add")
+	if _, err := os.Stat(wizardDir); !os.IsNotExist(err) {
+		t.Errorf(".wizard left after a cancel: %v", err)
+	}
+}

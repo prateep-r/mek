@@ -211,7 +211,9 @@ THE PORTAL TOKEN (AWS)
 
 SAVING
   Only the context or entry you changed is rewritten; the rest of the file —
-  comments, order, other contexts — stays as it was. First the whole config is
+  comments, order, other contexts — stays as it was (a target, cluster or tunnel
+  keeps its context's comments too; mek ctx edit doesn't keep those inside the
+  context it rewrites). First the whole config is
   checked as it would be (every file, every cloud's rules): if it wouldn't
   load, nothing is written and the last step says why. A new mek.local.yaml
   goes into the repository's .gitignore. A GCP login made in the wizard becomes

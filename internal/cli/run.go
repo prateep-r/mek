@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -160,22 +161,36 @@ func (a *app) query(l *loaded) provider.Query {
 				return nil, fmt.Errorf("%s: %w", what, err)
 			}
 			if l.draft {
-				return nil, fmt.Errorf("%s: %v%s", what, err, lastLine(stderr.String()))
+				return nil, fmt.Errorf("%s: %v%s", what, err, cliReason(stderr.String()))
 			}
 			// Not %w: an *ExitError would make main exit quietly, without the hint.
-			return nil, fmt.Errorf("%s: %v%s (logged in? try: mek -c %s login)", what, err, lastLine(stderr.String()), l.ctx.Name)
+			return nil, fmt.Errorf("%s: %v%s (logged in? try: mek -c %s login)", what, err, cliReason(stderr.String()), l.ctx.Name)
 		}
 		return out.Bytes(), nil
 	}
 }
 
-// lastLine is a CLI's last line of stderr, as ": line" ("" when silent).
-func lastLine(s string) string {
+var (
+	errorLine   = regexp.MustCompile(`(?i)\berror\b`)
+	gcloudError = regexp.MustCompile(`^ERROR:\s*(\([^)]*\)\s*)?`)
+)
+
+// cliReason is why a CLI failed, from its stderr, as ": reason" ("" when
+// silent): its first error line — gcloud explains below it how to fix it,
+// which isn't the reason — else its last line.
+func cliReason(s string) string {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
-	if l := strings.TrimSpace(lines[len(lines)-1]); l != "" {
-		return ": " + l
+	reason := strings.TrimSpace(lines[len(lines)-1])
+	for _, l := range lines {
+		if errorLine.MatchString(l) {
+			reason = gcloudError.ReplaceAllString(strings.TrimSpace(l), "")
+			break
+		}
 	}
-	return ""
+	if reason == "" {
+		return ""
+	}
+	return ": " + reason
 }
 
 func warnAudit(err error) { ui.Info("%s audit log: %v", ui.Yellow("warning:"), err) }
