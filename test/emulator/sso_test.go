@@ -80,30 +80,61 @@ func TestAWSSSOLogin(t *testing.T) {
 	// set assigned to the principal on an account. Unique names, so a shared
 	// emulator (make docker-up) can run this repeatedly.
 	role := fmt.Sprintf("Dev%d", time.Now().UnixNano()%1e9)
-	admin := func(args ...string) string {
-		t.Helper()
-		cmd := exec.Command(aws, args...)
-		cmd.Env = append(os.Environ(), "AWS_ACCESS_KEY_ID=test", "AWS_SECRET_ACCESS_KEY=test", "AWS_REGION=us-east-1",
-			"AWS_ENDPOINT_URL="+floci, "AWS_CONFIG_FILE=/dev/null", "AWS_SHARED_CREDENTIALS_FILE=/dev/null")
-		out, err := cmd.Output()
-		if err != nil {
-			t.Fatalf("aws %v: %v\n%s", args, err, out)
-		}
-		return strings.TrimSpace(string(out))
-	}
-	instance := admin("sso-admin", "list-instances", "--query", "Instances[0].InstanceArn", "--output", "text")
-	ps := admin("sso-admin", "create-permission-set", "--instance-arn", instance, "--name", role,
-		"--query", "PermissionSet.PermissionSetArn", "--output", "text")
-	admin("sso-admin", "create-account-assignment", "--instance-arn", instance, "--target-id", "111122223333",
-		"--target-type", "AWS_ACCOUNT", "--permission-set-arn", ps, "--principal-type", "USER", "--principal-id", ssoPrincipal)
+	assign(t, aws, floci, role, "111122223333")
 
 	u := newUser(t, fmt.Sprintf(`contexts:
   sso: {provider: aws, sso_start_url: "https://acme.awsapps.com/start", sso_region: us-east-1, account_id: "111122223333", role: %s, region: us-east-1}
   sso-ro: {provider: aws, sso_start_url: "https://acme.awsapps.com/start", sso_region: us-east-1, account_id: "111122223333", role: %s, region: us-east-1, readonly: true}
 `, role, role), aws, "AWS_ENDPOINT_URL="+endpoint)
+	transcript := deviceLogin(t, u, floci, "sso")
+	// mek runs `aws sts get-caller-identity` after login: it already used the token.
+	if !strings.Contains(transcript, "111122223333") {
+		t.Errorf("login's identity check should show the SSO account:\n%s", transcript)
+	}
 
+	// Later commands use the cached token through mek's generated profile.
+	if out := u.ok("-c", "sso", "aws", "sts", "get-caller-identity", "--query", "Account", "--output", "text"); !strings.Contains(out, "111122223333") {
+		t.Errorf("sts via the SSO profile: %s", out)
+	}
+	bucket := fmt.Sprintf("mek-sso-%d", time.Now().UnixNano()%1e9)
+	u.ok("-c", "sso", "aws", "s3", "mb", "s3://"+bucket)
+	u.blocked("-c", "sso-ro", "aws", "s3", "rb", "s3://"+bucket) // same login, readonly context
+	u.ok("-c", "sso", "aws", "s3", "rb", "s3://"+bucket)
+}
+
+// admin runs the aws CLI as the emulator's administrator.
+func admin(t *testing.T, aws, floci string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command(aws, args...)
+	cmd.Env = append(os.Environ(), "AWS_ACCESS_KEY_ID=test", "AWS_SECRET_ACCESS_KEY=test", "AWS_REGION=us-east-1",
+		"AWS_ENDPOINT_URL="+floci, "AWS_CONFIG_FILE=/dev/null", "AWS_SHARED_CREDENTIALS_FILE=/dev/null")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("aws %v: %v\n%s", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// assign sets up Identity Center as an organisation would: a permission set
+// (role) assigned to the principal on each account. Unique role names, so a
+// shared emulator (make docker-up) can run the tests again.
+func assign(t *testing.T, aws, floci, role string, accounts ...string) {
+	t.Helper()
+	instance := admin(t, aws, floci, "sso-admin", "list-instances", "--query", "Instances[0].InstanceArn", "--output", "text")
+	ps := admin(t, aws, floci, "sso-admin", "create-permission-set", "--instance-arn", instance, "--name", role,
+		"--query", "PermissionSet.PermissionSetArn", "--output", "text")
+	for _, account := range accounts {
+		admin(t, aws, floci, "sso-admin", "create-account-assignment", "--instance-arn", instance, "--target-id", account,
+			"--target-type", "AWS_ACCOUNT", "--permission-set-arn", ps, "--principal-type", "USER", "--principal-id", ssoPrincipal)
+	}
+}
+
+// deviceLogin runs mek login for ctx — aws sso login with a device code —
+// approves the device the way a browser would, and returns what it printed.
+func deviceLogin(t *testing.T, u *user, floci, ctx string) string {
+	t.Helper()
 	// mek login → aws sso login prints a verification URL and polls.
-	cmd := testkit.Command(mek, u.vars, "login", "sso", "--", "--use-device-code", "--no-browser")
+	cmd := testkit.Command(mek, u.vars, "login", ctx, "--", "--use-device-code", "--no-browser")
 	out, _ := cmd.StdoutPipe()
 	cmd.Stderr = cmd.Stdout
 	if err := cmd.Start(); err != nil {
@@ -160,17 +191,5 @@ func TestAWSSSOLogin(t *testing.T) {
 		cmd.Process.Kill()
 		t.Fatalf("mek login did not finish:\n%s", transcript.String())
 	}
-	// mek runs `aws sts get-caller-identity` after login: it already used the token.
-	if !strings.Contains(transcript.String(), "111122223333") {
-		t.Errorf("login's identity check should show the SSO account:\n%s", transcript.String())
-	}
-
-	// Later commands use the cached token through mek's generated profile.
-	if out := u.ok("-c", "sso", "aws", "sts", "get-caller-identity", "--query", "Account", "--output", "text"); !strings.Contains(out, "111122223333") {
-		t.Errorf("sts via the SSO profile: %s", out)
-	}
-	bucket := fmt.Sprintf("mek-sso-%d", time.Now().UnixNano()%1e9)
-	u.ok("-c", "sso", "aws", "s3", "mb", "s3://"+bucket)
-	u.blocked("-c", "sso-ro", "aws", "s3", "rb", "s3://"+bucket) // same login, readonly context
-	u.ok("-c", "sso", "aws", "s3", "rb", "s3://"+bucket)
+	return transcript.String()
 }

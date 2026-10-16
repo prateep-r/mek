@@ -1,10 +1,11 @@
 //go:build emulator
 
-// The emulator test runs mek's whole AWS IAM Identity Center login with the
-// real aws CLI against Floci, a free local emulator of AWS's APIs
-// (floci.io): device-code login, approval, role credentials through the
-// profile mek generates — what stub CLIs can't show. Run with
-// `make test-emulator`.
+// The emulator tests run mek with the real aws CLI against Floci, a free
+// local emulator of AWS's APIs (floci.io), for what stub CLIs can't show:
+// the whole IAM Identity Center login (device code, approval, role
+// credentials through the profile mek generates), and the config wizard on
+// a real terminal listing that login's accounts and roles and the account's
+// instances, databases and clusters. Run with `make test-emulator`.
 //
 // It starts its own Floci container on a random 127.0.0.1 port and removes
 // it afterwards; it never touches an emulator already running on the
