@@ -55,6 +55,19 @@ func TestLoadEmbedded(t *testing.T) {
 		t.Errorf("rds db-instances: %+v", rds)
 	}
 
+	az, err := Load("azure")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, vms := find(t, az, "vm", "vm")
+	if vms.List != "list" || vms.ID != "id" || vms.Describe == nil || vms.Describe.Param != "--ids" {
+		t.Errorf("azure vm: %+v", vms)
+	}
+	_, aks := find(t, az, "aks", "aks")
+	if aks.Describe == nil || !aks.Describe.ByName || !aks.Describe.Group {
+		t.Errorf("azure aks: %+v", aks)
+	}
+
 	gcp, err := Load("gcp")
 	if err != nil {
 		t.Fatal(err)
@@ -84,7 +97,7 @@ func TestLoadErrors(t *testing.T) {
 		"elsewhere.txt.gz": {Data: nil},
 	}
 	for cloud, want := range map[string]string{
-		"azure":   "no resource catalog for azure",
+		"huawei":  "no resource catalog for huawei",
 		"notgz":   "notgz catalog: gzip: invalid header",
 		"cut":     "cut catalog: unexpected EOF",
 		"notjson": "notjson catalog: invalid character",

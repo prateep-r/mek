@@ -331,8 +331,11 @@ func (t *resourcesTab) act(m *model, a catalog.Action) tea.Cmd {
 	what := fmt.Sprintf("%s %s (%s)", a.Command, t.row.ID, t.ctx)
 	act := action{label: what, args: append([]string{"-c", t.ctx}, argv...), after: t.refresh, data: true}
 	class := guard.ClassifyAWS(argv[1:])
-	if t.cloud == "gcp" {
+	switch t.cloud {
+	case "gcp":
 		class = guard.ClassifyGCloud(argv[1:])
+	case "azure":
+		class = guard.ClassifyAzure(argv[1:])
 	}
 	switch guard.Decide(&config.Context{Protected: c.Protected, ReadOnly: c.ReadOnly}, class) {
 	case guard.Block:
@@ -418,13 +421,13 @@ func (t *resourcesTab) body(w, h int) string {
 				state = yellow.Render(state)
 			}
 			row := []string{r.ID, r.Name, state}
-			if t.cloud == "gcp" {
+			if t.cloud != "aws" {
 				row = append(row, r.Where)
 			}
 			rows = append(rows, row)
 		}
 		header := []string{"ID", "NAME", "STATE"}
-		if t.cloud == "gcp" {
+		if t.cloud != "aws" {
 			header = append(header, "WHERE")
 		}
 		more := ""

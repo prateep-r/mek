@@ -7,13 +7,13 @@ import (
 )
 
 func TestFor(t *testing.T) {
-	for _, cloud := range []string{"aws", "gcp"} {
+	for _, cloud := range []string{"aws", "gcp", "azure"} {
 		if _, err := For(cloud); err != nil {
 			t.Errorf("For(%s): %v", cloud, err)
 		}
 	}
-	if _, err := For("azure"); err == nil {
-		t.Error("For(azure) has a source")
+	if _, err := For("huawei"); err == nil {
+		t.Error("For(huawei) has a source")
 	}
 }
 
@@ -136,5 +136,42 @@ func TestPaths(t *testing.T) {
 	}
 	if str(map[string]any{"a": 1.0}, "a") != "" || str(nil, "a") != "" {
 		t.Error("str of a number or nothing")
+	}
+}
+
+func TestAzure(t *testing.T) {
+	src, _ := For("azure")
+	vm := &Service{Name: "vm"}
+	vms := &Resource{Name: "vm", List: "list", ID: "id", Label: "name", State: "provisioningState",
+		Describe: &Action{Command: "show", Param: "--ids"}}
+	if got := words(src.List(vm, vms, "")); got != "az vm list --output json" {
+		t.Errorf("list: %s", got)
+	}
+	id := "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm-1"
+	rows, next, err := src.Rows(vms, []byte(`[{"id":"`+id+`","name":"vm-1","provisioningState":"Succeeded","location":"southeastasia"}]`))
+	if err != nil || next != "" || len(rows) != 1 || rows[0].ID != id || rows[0].Name != "vm-1" || rows[0].State != "Succeeded" || rows[0].Where != "southeastasia" {
+		t.Fatalf("rows %+v next %q err %v", rows, next, err)
+	}
+	if got := words(src.Describe(vm, vms, rows[0])); got != "az vm show --ids "+id+" --output json" {
+		t.Errorf("describe: %s", got)
+	}
+	del := Action{Command: "delete", Param: "--ids", Flags: []string{"--yes"}}
+	if got := words(src.Act(vm, vms, del, rows[0])); got != "az vm delete --ids "+id+" --yes" {
+		t.Errorf("act: %s", got)
+	}
+	rows, _, _ = src.Rows(vms, []byte(`[{"id":"`+id+`","name":"aks-1","resourceGroup":"rg-aks"}]`))
+	stop := Action{Command: "stop", Param: "--name", ByName: true, Group: true}
+	if got := words(src.Act(&Service{Name: "aks"}, vms, stop, rows[0])); got != "az aks stop --resource-group rg-aks --name aks-1" {
+		t.Errorf("by name: %s", got)
+	}
+	show := Action{Command: "show", Param: "--name", ByName: true}
+	if got := words(src.Act(&Service{Name: "acr"}, vms, show, rows[0])); got != "az acr show --name aks-1" {
+		t.Errorf("by name, no group: %s", got)
+	}
+	if src.Describe(vm, &Resource{}, rows[0]) != nil {
+		t.Error("no describe command, yet a describe")
+	}
+	if _, _, err := src.Rows(vms, []byte(`{}`)); err == nil {
+		t.Error("an object read as a list")
 	}
 }

@@ -1,6 +1,7 @@
 #!/bin/sh
 # Install any missing CLI for the contract tests: AWS CLI v2, Google Cloud CLI
-# (with gke-gcloud-auth-plugin) and kubectl. For CI runners and containers
+# (with gke-gcloud-auth-plugin), Azure CLI (with the bastion and ssh
+# extensions) and kubectl. For CI runners and containers
 # (Debian/Ubuntu, amd64 or arm64); uses sudo when not root.
 set -eu
 
@@ -45,12 +46,20 @@ if need gke-gcloud-auth-plugin; then
   $SUDO apt-get install -y -qq google-cloud-cli-gke-gcloud-auth-plugin >/dev/null
 fi
 
+if need az; then
+  curl -fsSL https://aka.ms/InstallAzureCLIDeb | $SUDO bash >/dev/null
+fi
+
+# az extensions for Azure Bastion shells and tunnels (mek never installs them).
+az extension add --name bastion --only-show-errors --yes >/dev/null 2>&1 || az extension add --name bastion --only-show-errors
+az extension add --name ssh --only-show-errors --yes >/dev/null 2>&1 || az extension add --name ssh --only-show-errors
+
 if need kubectl; then
   v=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
   curl -fsSL "https://dl.k8s.io/release/$v/bin/linux/$arch/kubectl" -o "$tmp/kubectl"
   $SUDO install -m 0755 "$tmp/kubectl" /usr/local/bin/kubectl
 fi
 
-for c in aws gcloud gke-gcloud-auth-plugin kubectl; do
+for c in aws gcloud gke-gcloud-auth-plugin az kubectl; do
   printf '%-23s %s\n' "$c" "$(command -v "$c")"
 done

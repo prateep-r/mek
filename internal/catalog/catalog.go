@@ -48,8 +48,11 @@ type Resource struct {
 // Action is a command that takes one resource: "stop-instances
 // --instance-ids <id>", or for gcloud "instances stop <name>".
 type Action struct {
-	Command string `json:"command"`
-	Param   string `json:"param,omitempty"` // "--instance-ids"; "": a positional name
+	Command string   `json:"command"`
+	Param   string   `json:"param,omitempty"`  // "--instance-ids"; "": a positional name
+	Flags   []string `json:"flags,omitempty"`  // what it always takes: az's "--yes"
+	ByName  bool     `json:"byName,omitempty"` // azure: Param takes the item's name, not its id
+	Group   bool     `json:"group,omitempty"`  // azure: and --resource-group its resource group
 }
 
 // Location is how a gcloud action says where its resource is: --zone with

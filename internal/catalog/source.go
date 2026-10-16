@@ -9,7 +9,8 @@ import (
 // Row is one listed resource.
 type Row struct {
 	ID, Name, State string
-	Where           string          // gcp: its zone, region or location
+	Where           string          // gcp: its zone, region or location; azure: its location
+	Group           string          // azure: its resource group
 	Raw             json.RawMessage // the item as the CLI printed it
 }
 
@@ -34,6 +35,8 @@ func For(cloud string) (Source, error) {
 		return aws{}, nil
 	case "gcp":
 		return gcp{}, nil
+	case "azure":
+		return azure{}, nil
 	}
 	return nil, fmt.Errorf("no resource catalog for %s", cloud)
 }
@@ -84,7 +87,7 @@ func (aws) Describe(s *Service, r *Resource, row Row) []string {
 }
 
 func (aws) Act(s *Service, r *Resource, a Action, row Row) []string {
-	return awsCommand(s, a, row)
+	return append(awsCommand(s, a, row), a.Flags...)
 }
 
 func awsCommand(s *Service, a Action, row Row) []string {
@@ -125,7 +128,7 @@ func (gcp) Describe(s *Service, r *Resource, row Row) []string {
 }
 
 func (gcp) Act(s *Service, r *Resource, a Action, row Row) []string {
-	return append(gcpCommand(s, r, a, row), "--quiet") // mek ui has asked already
+	return append(append(gcpCommand(s, r, a, row), a.Flags...), "--quiet") // mek ui has asked already
 }
 
 // gcpCommand names the resource, and where it is unless its id is a full
@@ -136,6 +139,51 @@ func gcpCommand(s *Service, r *Resource, a Action, row Row) []string {
 		argv = append(argv, r.Location.Flag+"="+row.Where)
 	}
 	return argv
+}
+
+// azure lists ARM resources: each one's id is its resource id, which every
+// command about it takes as --ids.
+type azure struct{}
+
+func (azure) List(s *Service, r *Resource, _ string) []string {
+	argv := append(append([]string{"az", s.Name}, strings.Fields(r.List)...), r.ListArgs...)
+	return append(argv, "--output", "json")
+}
+
+func (azure) Rows(r *Resource, out []byte) ([]Row, string, error) {
+	var list []any
+	if err := json.Unmarshal(out, &list); err != nil {
+		return nil, "", fmt.Errorf("reading the list: %w", err)
+	}
+	var rows []Row
+	for _, item := range list {
+		row := rowOf(r, item)
+		row.Where, row.Group = str(item, "location"), str(item, "resourceGroup")
+		rows = append(rows, row)
+	}
+	return rows, "", nil
+}
+
+func (azure) Describe(s *Service, r *Resource, row Row) []string {
+	if r.Describe == nil {
+		return nil
+	}
+	return append(azureCommand(s, *r.Describe, row), "--output", "json")
+}
+
+func (azure) Act(s *Service, r *Resource, a Action, row Row) []string {
+	return append(azureCommand(s, a, row), a.Flags...)
+}
+
+func azureCommand(s *Service, a Action, row Row) []string {
+	argv := append([]string{"az", s.Name}, strings.Fields(a.Command)...)
+	if a.Group {
+		argv = append(argv, "--resource-group", row.Group)
+	}
+	if a.ByName {
+		return append(argv, a.Param, row.Name)
+	}
+	return append(argv, a.Param, row.ID)
 }
 
 // rowOf is the id, name and state an item has (when its fields are
