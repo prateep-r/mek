@@ -41,7 +41,7 @@ jobs:
       - run: make test-integration
       - run: make test-e2e
 
-  # mek with the real aws / gcloud / az / kubectl CLIs: offline contract
+  # mek with the real aws / gcloud / az / hcloud / kubectl CLIs: offline contract
   # checks, then the full AWS SSO login against the Floci emulator.
   real-clis:
     runs-on: ubuntu-latest
@@ -54,6 +54,7 @@ jobs:
       - run: make test-contract
         env:
           MEK_CONTRACT_REQUIRE: "1" # a missing CLI fails instead of skipping
+          MEK_CONTRACT_HCLOUD: "1"  # a throwaway runner: KooCLI may write its ~/.hcloud
       - run: make test-emulator
         env:
           MEK_EMULATOR_REQUIRE: "1" # missing docker or CLI fails instead of skipping

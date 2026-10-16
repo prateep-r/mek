@@ -67,6 +67,12 @@ contexts:
   #   tunnels:
   #     pg: {host: 10.20.0.4, port: 5432}            # Bastion connects to the IP itself
 
+  # Huawei Cloud: a KooCLI profile you made (hcloud configure init); mek never writes ~/.hcloud.
+  # example-huawei:
+  #   provider: huawei
+  #   hcloud_profile: default
+  #   region: ap-southeast-3                         # optional: --cli-region on each command
+
 # How mek behaves for you (only in this file, not in a project's mek.yaml).
 # settings:
 #   show_cmd: true     # print each command mek runs as you'd type it yourself (mek show-cmd on|off)

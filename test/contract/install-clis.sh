@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install any missing CLI for the contract tests: AWS CLI v2, Google Cloud CLI
 # (with gke-gcloud-auth-plugin), Azure CLI (with the bastion and ssh
-# extensions) and kubectl. For CI runners and containers
+# extensions), Huawei Cloud KooCLI and kubectl. For CI runners and containers
 # (Debian/Ubuntu, amd64 or arm64); uses sudo when not root.
 set -eu
 
@@ -54,12 +54,18 @@ fi
 az extension add --name bastion --only-show-errors --yes >/dev/null 2>&1 || az extension add --name bastion --only-show-errors
 az extension add --name ssh --only-show-errors --yes >/dev/null 2>&1 || az extension add --name ssh --only-show-errors
 
+if need hcloud; then
+  curl -fsSL "https://ap-southeast-3-hwcloudcli.obs.ap-southeast-3.myhuaweicloud.com/cli/latest/huaweicloud-cli-linux-$arch.tar.gz" -o "$tmp/hcloud.tgz"
+  tar -xzf "$tmp/hcloud.tgz" -C "$tmp" hcloud
+  $SUDO install -m 0755 "$tmp/hcloud" /usr/local/bin/hcloud # the archive ships it as rwx------
+fi
+
 if need kubectl; then
   v=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
   curl -fsSL "https://dl.k8s.io/release/$v/bin/linux/$arch/kubectl" -o "$tmp/kubectl"
   $SUDO install -m 0755 "$tmp/kubectl" /usr/local/bin/kubectl
 fi
 
-for c in aws gcloud gke-gcloud-auth-plugin az kubectl; do
+for c in aws gcloud gke-gcloud-auth-plugin az hcloud kubectl; do
   printf '%-23s %s\n' "$c" "$(command -v "$c")"
 done

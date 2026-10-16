@@ -33,6 +33,9 @@ var guid = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-
 func IsGUID(s string) bool { return guid.MatchString(s) }
 
 func validateAzure(c *config.Context) error {
+	if err := notHuawei(c); err != nil {
+		return err
+	}
 	if c.TenantID == "" || c.SubscriptionID == "" {
 		return errors.New("azure context needs tenant_id and subscription_id")
 	}
@@ -77,6 +80,16 @@ func validateAzure(c *config.Context) error {
 		}
 		if t.Via != "" && (!named || target.Bastion == nil) && c.Bastion == nil {
 			return fmt.Errorf("tunnels.%s: set the context's bastion", alias)
+		}
+	}
+	return nil
+}
+
+// cmpErr is the first error that isn't nil.
+func cmpErr(errs ...error) error {
+	for _, err := range errs {
+		if err != nil {
+			return err
 		}
 	}
 	return nil

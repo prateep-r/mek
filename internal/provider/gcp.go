@@ -17,7 +17,7 @@ var gcpCloud = Cloud{
 	},
 	Classify: guard.ClassifyGCloud,
 	Validate: func(c *config.Context) error {
-		if err := notAzure(c); err != nil {
+		if err := cmpErr(notAzure(c), notHuawei(c)); err != nil {
 			return err
 		}
 		if c.Project == "" {

@@ -80,7 +80,7 @@ func TestRegistry(t *testing.T) {
 		}
 	}
 	// Each cloud's Strategy is the right classifier.
-	destructive := map[string]string{"aws": "ec2 terminate-instances", "gcloud": "compute instances delete vm", "az": "vm delete -g rg -n vm"}
+	destructive := map[string]string{"aws": "ec2 terminate-instances", "gcloud": "compute instances delete vm", "az": "vm delete -g rg -n vm", "hcloud": "ECS DeleteServers"}
 	for _, c := range Clouds() {
 		args, ok := destructive[c.CLI]
 		if !ok {

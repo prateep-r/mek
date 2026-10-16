@@ -1,5 +1,6 @@
 # mek's test image: Go plus the real cloud CLIs (aws, gcloud with
-# gke-gcloud-auth-plugin, az with the bastion and ssh extensions, kubectl), so every test layer runs the same on any
+# gke-gcloud-auth-plugin, az with the bastion and ssh extensions, hcloud,
+# kubectl), so every test layer runs the same on any
 # machine. Built and run
 # through compose.yaml (`make docker-test`); used by this project only.
 FROM golang:1.27

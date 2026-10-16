@@ -36,6 +36,7 @@ services:
     environment:
       # A missing CLI or emulator is a failure here, never a skip.
       MEK_CONTRACT_REQUIRE: "1"
+      MEK_CONTRACT_HCLOUD: "1" # a throwaway container: KooCLI may write its ~/.hcloud
       MEK_EMULATOR_REQUIRE: "1"
       MEK_FLOCI_AWS_URL: http://floci-aws:4566
 

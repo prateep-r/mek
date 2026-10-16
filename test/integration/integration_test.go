@@ -66,7 +66,7 @@ func setup(t *testing.T, cfg string) *env {
 			t.Fatal(err)
 		}
 	}
-	stubs, log := testkit.Stubs(t, "aws", "gcloud", "az")
+	stubs, log := testkit.Stubs(t, "aws", "gcloud", "az", "hcloud")
 	e.log, e.stubs = log, stubs
 	e.vars = []string{"MEK_HOME=" + e.mekHome, "HOME=" + e.home, "PATH=" + stubs + string(os.PathListSeparator) + systemPath(), "STUB_LOG=" + log}
 	return e

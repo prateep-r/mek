@@ -162,3 +162,45 @@ func TestClassifyAzure(t *testing.T) {
 		}
 	}
 }
+
+func TestClassifyHuawei(t *testing.T) {
+	cases := map[string]Class{
+		"":                             Read,
+		"ECS ListServersDetails":       Read,
+		"ECS ShowServer --server_id=x": Read,
+		"--cli-region ap-southeast-2 ECS ListServersDetails": Read,
+		"ECS NovaListServers":                                Read,
+		"ECS CreateServers --cli-jsonInput=a.json":           Write,
+		"ECS UpdateServer --server_id=x":                     Write,
+		"ECS DeleteServers --servers.1.id=x":                 Destructive,
+		"ECS BatchStopServers":                               Destructive,
+		"ECS BatchRebootServers":                             Destructive,
+		"ECS DeleteServers --dryrun":                         Read,
+		"obs ls obs://bucket":                                Read,
+		"obs cp a obs://bucket/a":                            Write,
+		"obs rm obs://bucket/a":                              Destructive,
+		"configure list":                                     Read,
+		"version":                                            Read,
+		"ECS":                                                Read,
+		"ECS ResizeServer":                                   Write,
+		"ECS ReinstallServerWithCloudInit":                   Destructive,
+		"obs stat obs://b":                                   Read,
+		"obs rb obs://b":                                     Destructive,
+	}
+	for in, want := range cases {
+		if got := ClassifyHuawei(strings.Fields(in)); got != want {
+			t.Errorf("hcloud %q = %s, want %s", in, got, want)
+		}
+	}
+}
+
+func TestHcloudEdges(t *testing.T) {
+	if got := ClassifyHuawei([]string{"ECS", ""}); got != Write {
+		t.Errorf("no operation name: %s", got)
+	}
+	for args, want := range map[string]bool{"ECS ListServersDetails": true, "configure list": false, "": false, "--cli-region r ECS ShowServer": true} {
+		if got := IsHcloudAPICommand(strings.Fields(args)); got != want {
+			t.Errorf("IsHcloudAPICommand(%q) = %v", args, got)
+		}
+	}
+}
