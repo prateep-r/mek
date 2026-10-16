@@ -10,6 +10,7 @@ in, switches between them and runs the official CLIs with the right credentials 
 for AWS and GCP. Think *K9s/Lens, but for cloud accounts*.
 
 ```bash
+mek ctx add                    # add an account by answering questions (or edit the YAML)
 mek login dev                  # SSO once, covers every account behind the same portal
 mek use dev                    # switch context
 mek aws s3 ls                  # any aws command, in that context
@@ -1472,6 +1473,65 @@ mek tunnel --help           # the same, as a flag (or -h)
 mek help config             # where contexts come from: ~/.mek/config.yaml, mek.yaml, mek.local.yaml
 mek help guard              # what protected and readonly do, command by command
 mek help wizard             # mek ctx add / edit: the keys, what it looks up, how it saves
+```
+
+`mek` on its own shows the same as `mek help`:
+
+```console
+$ mek help
+mek (เมฆ, "cloud") manages cloud contexts — an AWS account+role or a GCP
+project — and runs the official CLIs (aws, gcloud) with the right
+credentials, plus a safety guard and audit log for protected contexts.
+
+Contexts come from ~/.mek/config.yaml and, inside a project, its mek.yaml
+(the team's) and mek.local.yaml (yours): mek help config.
+Add one by answering questions: mek ctx add (mek help wizard).
+What protected and readonly do: mek help guard.
+
+Usage:
+  mek [command]
+
+Contexts:
+  ctx         Show the current context (use `mek ctx ls` to list all)
+  init        Create ~/.mek/config.yaml (or a project's mek.yaml / mek.local.yaml) from a commented example
+  login       Log in to a context (AWS IAM Identity Center / gcloud)
+  ui          Browse and use contexts, tunnels, shells, clusters and the audit log in one screen
+  use         Switch the current context (every shell), or only this shell with -s
+
+Run commands:
+  aws         Run any AWS CLI command in the current context
+  env         Print shell exports for a context: eval "$(mek env)"
+  exec        Run any command (terraform, kubectl, scripts...) with the context's credentials
+  gcloud      Run any Google Cloud CLI command in the current context
+  kubectl     Run kubectl on the current context's clusters (see `mek kube`)
+
+Access (shells, tunnels, Kubernetes):
+  kube        Write a kubeconfig for the context's clusters (kubectl, K9s, FreeLens)
+  shell       Open a shell on an instance (AWS SSM, GCP IAP + SSH)
+  tunnel      Forward a local port to a private host (AWS SSM, GCP IAP, Cloud SQL)
+
+Setup:
+  completion  Generate the autocompletion script for the specified shell
+  doctor      Check config and required CLIs, with install hints
+  help        Help about any command
+  self-update Update mek to the latest release (installs via install.sh / manual download)
+  shell-init  Set up mek use -s to switch this shell: eval "$(mek shell-init zsh)"
+  version     Print mek's version
+
+Flags:
+      --confirm string   confirm destructive commands non-interactively by passing the context name
+  -c, --context string   context for this command (overrides the current context and $MEK_CONTEXT)
+  -h, --help             help for mek
+      --no-local         ignore project config files (mek.yaml, mek.local.yaml); also MEK_NO_LOCAL=1
+      --project string   read the project config (mek.yaml, mek.local.yaml) from this directory instead of looking up from here
+  -y, --yes              answer yes to write confirmations on protected contexts
+
+Additional help topics:
+  mek config      Where contexts come from: ~/.mek/config.yaml, a project's mek.yaml and mek.local.yaml
+  mek guard       What protected and readonly do, command by command
+  mek wizard      mek ctx add / edit: the keys, what it looks up in the cloud, how it saves
+
+Use "mek [command] --help" for more information about a command.
 ```
 
 After `aws`, `gcloud` or `kubectl`, help belongs to that CLI — `mek aws s3 help`,
