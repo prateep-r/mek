@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "checkJs": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "target": "es2022",
+    "noEmit": true,
+    "paths": {
+      "/wails/runtime.js": [
+        "./src/wails-runtime.d.ts"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*.js",
+    "src/**/*.svelte",
+    "src/**/*.d.ts"
+  ]
+}

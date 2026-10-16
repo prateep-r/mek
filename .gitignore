@@ -8,3 +8,7 @@ config.yaml
 
 # Personal Claude Code instructions
 CLAUDE.local.md
+
+# mek-desktop's frontend: its packages and build
+/cmd/mek-desktop/frontend/node_modules/
+/cmd/mek-desktop/frontend/dist/

@@ -59,6 +59,28 @@ jobs:
         env:
           MEK_EMULATOR_REQUIRE: "1" # missing docker or CLI fails instead of skipping
 
+  # mek-desktop: the frontend's checks and tests, and the app built with
+  # cgo where it ships (macOS; Linux with GTK and WebKitGTK).
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install GTK and WebKitGTK (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev
+      - run: make desktop-check
+      - run: make desktop
+
   goreleaser:
     runs-on: ubuntu-latest
     steps:
