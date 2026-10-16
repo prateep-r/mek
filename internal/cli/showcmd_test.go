@@ -204,3 +204,29 @@ func TestShowCmdReviewFixes(t *testing.T) {
 	}
 	h.mustRun("--no-show-cmd", "ui")
 }
+
+func TestCLIReason(t *testing.T) {
+	gcloud := `ERROR: (gcloud.projects.list) You do not currently have an active account selected.
+Please run:
+
+  $ gcloud auth login
+
+to obtain new credentials.
+
+If you have already logged in with a different account, run:
+
+  $ gcloud config set account ACCOUNT
+
+to select an already authenticated account to use.
+`
+	for in, want := range map[string]string{
+		gcloud: ": You do not currently have an active account selected.",
+		"\nAn error occurred (AccessDenied) when calling the ListClusters operation: no\n": ": An error occurred (AccessDenied) when calling the ListClusters operation: no",
+		"warming up\nconnection refused\n":                                                 ": connection refused",
+		"":                                                                                 "",
+	} {
+		if got := cliReason(in); got != want {
+			t.Errorf("%q: %q", in, got)
+		}
+	}
+}

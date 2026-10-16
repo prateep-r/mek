@@ -959,10 +959,11 @@ the CLI's own message, and takes a typed value:
 
 ### How it saves
 
-- **Only what you changed is rewritten.** The context (or the one context a target, cluster or
-  tunnel belongs to) is written in place; the rest of the file — comments, order, other
-  contexts, blank lines — stays as it was. Comments *inside* that context aren't kept; the
-  ones above it are.
+- **Only what you changed is rewritten.** A target, cluster or tunnel is written in place —
+  the rest of its context, comments included, stays as it was (a context written on one line,
+  `{…}`, is rewritten as a block). `mek ctx add` / `edit` write the context in place: the
+  comments above it stay, the ones inside it don't. The rest of the file — comments, order,
+  other contexts, blank lines — stays as it was, and a symlinked file stays a symlink.
 - **Nothing invalid is saved.** Before writing, the whole config is checked as it would be —
   every file, every cloud's rules (an account id of 12 digits, one region per portal, a
   tunnel's target that exists…). If it wouldn't load, the last step says why and only *Back*
@@ -1766,8 +1767,9 @@ official tools need. Ask whoever runs the account for:
 - `mek shell` on GCP runs ssh with the context's own home directory, so your `~/.ssh/config` doesn't apply to it.
 - A foreground tunnel ends when the cloud closes its session (SSM's idle timeout is 20 minutes by default); use `-b`, which reconnects. A reconnect breaks the connections open at that moment.
 - If a tunnel's supervisor is killed with `kill -9`, `ls` shows it as dead; on macOS the tunnel's own process can outlive it (`stop` warns when the port is still taken).
-- The wizard rewrites the context it changes: comments inside that context aren't kept (the
-  rest of the file's are). Its region lists are built into mek; type a region it doesn't list.
+- `mek ctx edit` rewrites the context it changes: comments inside it aren't kept (a target,
+  cluster or tunnel change keeps them). The wizard's region lists are built into mek; type a
+  region it doesn't list.
 - The Homebrew cask is macOS-only; use `install.sh` or `go install` on Linux.
 - macOS and Linux only; zsh and bash for `mek shell-init` and completion.
 
