@@ -3,6 +3,7 @@
 # and packages it with the mek CLI it runs, into dist/desktop:
 #   macOS  mek-desktop_<version>_darwin_<arch>.zip   — mek.app (unsigned)
 #   Linux  mek-desktop_<version>_linux_<arch>.tar.gz — needs GTK 4 and WebKitGTK 6.0
+# each with its SHA-256 in <file>.sha256.
 # Usage: package.sh <version> [arch]   (arch: amd64 or arm64; default: this machine's)
 set -eu
 
@@ -17,7 +18,9 @@ mkdir -p "$out"
 
 (cd "$root/cmd/mek-desktop/frontend" && npm ci --no-fund --no-audit && npm run build)
 
-ldflags="-s -w -X github.com/prateep-r/mek/internal/version.Version=$version"
+commit=$(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo none)
+pkg=github.com/prateep-r/mek/internal/version
+ldflags="-s -w -X $pkg.Version=$version -X $pkg.Commit=$commit -X $pkg.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 export CGO_ENABLED=1 GOOS="$os" GOARCH="$arch"
 if [ "$os" = darwin ]; then
   # Go needs macOS 13; the cgo parts are built for the same.
@@ -58,9 +61,12 @@ if [ "$os" = darwin ]; then
 </dict>
 </plist>
 PLIST
-  (cd "$work" && ditto -c -k --keepParent mek.app "$out/$name.zip")
-  echo "$out/$name.zip"
+  file="$name.zip"
+  (cd "$work" && ditto -c -k --keepParent mek.app "$out/$file")
 else
-  tar -C "$work" -czf "$out/$name.tar.gz" mek-desktop mek
-  echo "$out/$name.tar.gz"
+  file="$name.tar.gz"
+  tar -C "$work" -czf "$out/$file" mek-desktop mek
 fi
+# Its checksum beside it, in checksums.txt's format: shasum -a 256 -c <file>.sha256
+(cd "$out" && shasum -a 256 "$file" > "$file.sha256")
+echo "$out/$file"
