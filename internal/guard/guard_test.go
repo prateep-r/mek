@@ -33,6 +33,11 @@ func TestClassifyAWS(t *testing.T) {
 		"sso login":                                            Read,
 		"ec2":                                                  Read,
 		"ec2 describe-instances help":                          Read,
+		"s3 mv s3://b/a s3://c/a":                              Destructive,
+		"kms schedule-key-deletion --key-id k":                 Destructive,
+		"apigateway test-invoke-method --rest-api-id a":        Write,
+		"ec2 terminate-instances --dry-run --no-dry-run":       Destructive, // the last one wins
+		"ec2 terminate-instances --no-dry-run --dry-run":       Read,
 	}
 	for in, want := range cases {
 		if got := ClassifyAWS(strings.Fields(in)); got != want {
@@ -45,23 +50,35 @@ func TestClassifyGCloud(t *testing.T) {
 	cases := map[string]Class{
 		"":                       Read,
 		"compute instances list": Read,
-		"compute instances describe vm-1 --zone a": Read,
-		"--project p compute instances list":       Read,
-		"projects get-iam-policy p":                Read,
-		"logging read severity>=ERROR --limit 10":  Read,
-		"run services list":                        Read,
-		"run deploy svc --image x":                 Write,
-		"compute instances create vm-1":            Write,
-		"compute instances delete vm-1 --zone a":   Destructive,
-		"compute instances stop vm-1":              Destructive,
-		"sql instances patch db --tier x":          Write,
-		"beta container clusters delete c":         Destructive,
-		"container clusters get-credentials c":     Read,
-		"config set project p":                     Read, // local only
-		"auth login":                               Read,
-		"compute ssh vm-1":                         Shell, // IAP/SSH sessions: guard class shell
-		"compute":                                  Read,
-		"foo bar baz":                              Write,
+		"compute instances describe vm-1 --zone a":        Read,
+		"--project p compute instances list":              Read,
+		"projects get-iam-policy p":                       Read,
+		"logging read severity>=ERROR --limit 10":         Read,
+		"run services list":                               Read,
+		"run deploy svc --image x":                        Write,
+		"compute instances create vm-1":                   Write,
+		"compute instances delete vm-1 --zone a":          Destructive,
+		"compute instances stop vm-1":                     Destructive,
+		"sql instances patch db --tier x":                 Write,
+		"beta container clusters delete c":                Destructive,
+		"container clusters get-credentials c":            Read,
+		"config set project p":                            Read, // local only
+		"auth login":                                      Read,
+		"compute ssh vm-1":                                Shell, // IAP/SSH sessions: guard class shell
+		"compute":                                         Read,
+		"foo bar baz":                                     Write,
+		"compute os-login ssh-keys remove --key k":        Destructive, // a verb before a word that starts like one
+		"scheduler jobs run list-users":                   Write,       // the verb, not the job's name
+		"pubsub subscriptions pull s":                     Write,       // pulls ack messages away from others
+		"pubsub subscriptions seek s --time t":            Destructive,
+		"pubsub topics publish t --message m":             Write,
+		"sql connect db --user u":                         Shell,
+		"compute connect-to-serial-port vm-1":             Shell,
+		"cloud-shell ssh":                                 Shell,
+		"compute instances delete connect":                Destructive, // a name, after the verb
+		"firebase test android run":                       Write,
+		"projects test-iam-permissions p --permissions x": Read,
+		"storage mv gs://b/a gs://b/c":                    Destructive,
 	}
 	for in, want := range cases {
 		if got := ClassifyGCloud(strings.Fields(in)); got != want {
@@ -144,17 +161,29 @@ func TestClassifyAzure(t *testing.T) {
 		"vm delete -g rg -n vm1 --yes":          Destructive,
 		"vm deallocate -g rg -n vm1":            Destructive,
 		"vm stop --ids /subscriptions/s/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm1": Destructive,
-		"vm reimage -g rg -n vm":                Destructive,
-		"provider unregister -n Microsoft.Web":  Destructive,
-		"storage account keys regenerate":       Destructive,
-		"account set --subscription s":          Read, // local only
-		"login --tenant t":                      Read,
-		"vm":                                    Read,
-		"vm delete --help":                      Read,
-		"foo bar baz":                           Write,
-		"network bastion ssh --name b -g rg":    Shell,
-		"network bastion tunnel --name b -g rg": Tunnel,
-		"network bastion list":                  Read,
+		"vm reimage -g rg -n vm":                       Destructive,
+		"provider unregister -n Microsoft.Web":         Destructive,
+		"storage account keys regenerate":              Destructive,
+		"account set --subscription s":                 Write, // the subscription later commands act on
+		"account show":                                 Read,
+		"account clear":                                Read,
+		"account lock delete -n l":                     Destructive,
+		"bicep build -f main.bicep":                    Read,
+		"bicep publish -f m.bicep --target br:x":       Write,
+		"-o table vm delete -n vm1":                    Destructive,
+		"--query [].id -o tsv vm list":                 Read,
+		"monitor log-analytics query-pack delete -n p": Destructive, // the last word, not query
+		"vm run-command invoke --scripts -h":           Write,       // -h as a value, not help
+		"vm delete -h":                                 Read,
+		"vm generalize -g rg -n vm1":                   Destructive,
+		"redis flush -g rg -n r":                       Destructive,
+		"login --tenant t":                             Read,
+		"vm":                                           Read,
+		"vm delete --help":                             Read,
+		"foo bar baz":                                  Write,
+		"network bastion ssh --name b -g rg":           Shell,
+		"network bastion tunnel --name b -g rg":        Tunnel,
+		"network bastion list":                         Read,
 	}
 	for in, want := range cases {
 		if got := ClassifyAzure(strings.Fields(in)); got != want {
@@ -186,6 +215,7 @@ func TestClassifyHuawei(t *testing.T) {
 		"ECS ReinstallServerWithCloudInit":                   Destructive,
 		"obs stat obs://b":                                   Read,
 		"obs rb obs://b":                                     Destructive,
+		"obs abort obs://b -u id":                            Destructive,
 	}
 	for in, want := range cases {
 		if got := ClassifyHuawei(strings.Fields(in)); got != want {

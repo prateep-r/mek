@@ -1410,8 +1410,8 @@ K9s or FreeLens started from the Dock, and can never use another context's crede
 `~/.kube/config` is never written.
 
 For the guard, `kubectl get/describe/logs` are reads, `apply/scale/…` writes,
-`delete/drain` destructive, `exec/attach/debug` a **shell** and `port-forward/proxy` a
-**tunnel**; `--dry-run` is a read.
+`delete/drain` (and `apply --prune`) destructive, `exec/attach/debug/proxy` a **shell**
+(`proxy` serves the whole API) and `port-forward` a **tunnel**; `--dry-run` is a read.
 
 ### Private clusters
 
@@ -1806,10 +1806,10 @@ prints the same rules, from the code itself):
 |---|---|---|---|---|
 | read | `describe-*`, `list-*`, `get-*` (aws), `list` / `describe` (gcloud), `list` / `show` (az), `List*` / `Show*` (hcloud), `s3 ls`, `kubectl get`/`logs`, `--dry-run` | run | run | run |
 | write | `create-*`, `update-*`, `create` / `deploy`, `s3 cp`, `kubectl apply`/`scale`, unknown verbs | run | ask y/N | blocked |
-| destructive | `delete-*`, `terminate-*`, `stop-*`, `delete` / `stop` (gcloud), `delete` / `stop` / `deallocate` (az), `Delete*` / `Stop*` (hcloud), `s3 rm`, `sync --delete`, `kubectl delete`/`drain` | run | type the context name | blocked |
+| destructive | `delete-*`, `terminate-*`, `stop-*`, `delete` / `stop` (gcloud), `delete` / `stop` / `deallocate` (az), `Delete*` / `Stop*` (hcloud), `s3 rm` / `mv`, `sync --delete`, `kubectl delete`/`drain` | run | type the context name | blocked |
 | unknown | anything via `mek exec` | run | ask y/N | blocked |
-| shell | `mek shell`, `aws ssm start-session`, `gcloud compute ssh`, `az network bastion ssh`, `kubectl exec`/`attach`/`debug` | run | ask y/N | blocked |
-| tunnel | `mek tunnel`, SSM port forwarding, `gcloud compute start-iap-tunnel`, `az network bastion tunnel`, `kubectl port-forward`/`proxy` | run | ask y/N | run |
+| shell | `mek shell`, `aws ssm start-session`, `gcloud compute ssh` / `sql connect`, `az network bastion ssh`, `kubectl exec`/`attach`/`debug`/`proxy` | run | ask y/N | blocked |
+| tunnel | `mek tunnel`, SSM port forwarding, `gcloud compute start-iap-tunnel`, `az network bastion tunnel`, `kubectl port-forward` | run | ask y/N | run |
 
 - **run** — runs at once. **ask y/N** — asks first. **type the context name** — you type the
   context's name to go on. **blocked** — refused, nothing is sent.

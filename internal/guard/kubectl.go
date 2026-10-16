@@ -13,6 +13,8 @@ var kubectlValueFlags = map[string]bool{
 	"-s": true, "--server": true, "--token": true, "--as": true, "--as-group": true,
 	"--request-timeout": true, "--cache-dir": true, "--certificate-authority": true,
 	"--client-certificate": true, "--client-key": true, "--tls-server-name": true, "-v": true,
+	"--as-uid": true, "--username": true, "--password": true, "--profile": true, "--profile-output": true,
+	"--vmodule": true, "--log-flush-frequency": true,
 }
 
 var (
@@ -23,14 +25,17 @@ var (
 		"config": true, // edits the local kubeconfig only, like `aws configure`
 	}
 	kubectlDestructive = map[string]bool{"delete": true, "drain": true}
-	kubectlShell       = map[string]bool{"exec": true, "attach": true, "debug": true}
-	kubectlTunnel      = map[string]bool{"port-forward": true, "proxy": true}
+	// proxy serves the whole API on localhost with the context's
+	// credentials — not one service's bytes — so it counts as a shell.
+	kubectlShell  = map[string]bool{"exec": true, "attach": true, "debug": true, "proxy": true}
+	kubectlTunnel = map[string]bool{"port-forward": true}
 )
 
 // ClassifyKubectl classifies `kubectl <verb> ...` arguments.
 func ClassifyKubectl(args []string) Class {
 	pos := positionals(args, kubectlValueFlags)
-	if len(pos) == 0 || HasFlag(args, "--help") || HasFlag(args, "-h") || kubectlDryRun(args) {
+	own := beforeDashDash(args) // after --, the command run in the pod: its -h is its own
+	if len(pos) == 0 || HasFlag(own, "--help") || HasFlag(own, "-h") || kubectlDryRun(own) {
 		return Read
 	}
 	verb := pos[0]
@@ -43,8 +48,10 @@ func ClassifyKubectl(args []string) Class {
 		return Shell
 	case kubectlTunnel[verb]:
 		return Tunnel
-	case verb == "replace" && HasFlag(args, "--force"):
+	case verb == "replace" && HasFlag(own, "--force"):
 		return Destructive // deletes and re-creates
+	case verb == "apply" && HasFlag(own, "--prune"):
+		return Destructive // deletes what the files no longer have
 	case verb == "auth" && len(pos) > 1 && (pos[1] == "can-i" || pos[1] == "whoami"):
 		return Read
 	case verb == "rollout" && len(pos) > 1:
