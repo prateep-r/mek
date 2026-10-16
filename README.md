@@ -276,18 +276,19 @@ That's the core. The rest of this page is reference and recipes.
 
 ### The terminal UI
 
-`mek ui` puts contexts, tunnels, shells, clusters and the audit log on one screen:
+`mek ui` puts contexts, tunnels, shells, clusters, the audit log and the cloud's resources on
+one screen:
 
 ```console
 $ mek ui                 # or: mek -c prod ui, to start on prod
-mek   1 Contexts   2 Tunnels   3 Access   4 Audit
+mek   1 Contexts   2 Tunnels   3 Access   4 Audit   5 Resources
      CONTEXT  ACCOUNT
      audit    aws 777788889999 / ReadOnly / -                readonly
 ▸ *  dev      aws 111122223333 / Developer / ap-southeast-1
      gcp-dev  gcp acme-dev / asia-southeast1
      prod     aws 444455556666 / Admin / ap-southeast-1      protected
 
-↑↓ choose · enter use (saved current) · l log in · a add · e edit · d remove · 1-4/tab switch · ? keys · q quit
+↑↓ choose · enter use (saved current) · l log in · a add · e edit · d remove · 1-5/tab switch · ? keys · q quit
 ```
 
 | Tab | Shows | Keys |
@@ -296,14 +297,48 @@ mek   1 Contexts   2 Tunnels   3 Access   4 Audit
 | 2 Tunnels | every tunnel (state, `↻` reconnects, port, age), and named tunnels that aren't running | `enter` start a named one in the background, or read a running one's log · `x` stop · `l` log (follows new lines) · `a` add a tunnel to the chosen context |
 | 3 Access | the chosen context's targets and clusters | `enter` a shell on a target, or write a cluster's kubeconfig · `k` K9s on a cluster |
 | 4 Audit | the last 500 entries, newest first | `/` search · `b` only blocked / declined · `c` only the chosen context · `esc` clear |
+| 5 Resources | the chosen context's cloud: its services, their kinds of resource, the resources, one resource's details ([below](#the-resources-tab)) | `enter` open · `esc` back · `/` filter · `a` actions · `r` list again |
 
-- **The chosen context:** the one on tab 1 is the one tabs 3 and 4 use.
+- **The chosen context:** the one on tab 1 is the one tabs 3, 4 and 5 use.
 - **Everything runs mek itself** — `mek use`, `mek -c dev tunnel db -b`, `mek -c dev shell
   bastion` — so the guard and the audit log work as when typed: a protected context asks first
   (in the UI, or in the terminal for shells), a readonly one still blocks shells.
 - **Shells, logins, K9s and the wizard** take over the terminal and return to the UI when they
   end; when one fails, it waits for Enter so the error can be read.
 - **Tunnels and the audit log** refresh every second.
+
+#### The Resources tab
+
+Every service of the context's cloud, and every kind of resource in it that a list
+command shows with no arguments — EC2 instances, RDS databases, Lambda functions, S3
+buckets, Compute Engine VMs, Cloud SQL instances, Cloud Run services and the rest:
+
+```console
+mek   1 Contexts   2 Tunnels   3 Access   4 Audit   5 Resources
+  dev  aws › ec2 › instances
+
+  ID                   NAME     STATE
+▸ i-0aaa1111bbbb2222c  bastion  running
+  i-0ddd3333eeee4444f  batch    stopped
+
+enter details · a actions · / filter · r reload · esc back · 1-5/tab switch · ? keys · q quit
+```
+
+- **Lists, details and actions are mek runs** of the cloud's CLI — `mek -c dev aws ec2
+  describe-instances`, `mek -c dev gcloud compute instances stop vm-1 --zone=…` — so they use
+  the context's login, and the guard and the audit log apply as when typed.
+- **Actions** (`a`) are the commands that take nothing but the resource: start, stop,
+  reboot, delete and the like. mek ui asks before each one, on any context; on a protected
+  context a destructive one needs the context's name typed. A readonly context blocks them.
+  A command that needs more than the resource isn't offered: type it with `mek aws` / `mek gcloud`.
+- **Details** are the resource's describe output as JSON, or its list entry when there is no
+  describe command.
+- **Long lists:** AWS lists come 100 at a time; moving past the last row fetches the next
+  hundred. gcloud lists show the first 500.
+- **Where the list comes from:** the services and their commands are generated from the AWS
+  CLI's and gcloud's own command models (`make catalog`, see
+  [Development](#development)), and built into mek. The tab names the CLI version they came
+  from.
 
 ### Several accounts at once
 
@@ -1634,7 +1669,7 @@ Contexts:
   ctx         Show the current context (use `mek ctx ls` to list all)
   init        Create ~/.mek/config.yaml (or a project's mek.yaml / mek.local.yaml) from a commented example
   login       Log in to a context (AWS IAM Identity Center / gcloud)
-  ui          Browse and use contexts, tunnels, shells, clusters and the audit log in one screen
+  ui          Browse and use contexts, tunnels, shells, clusters, cloud resources and the audit log in one screen
   use         Switch the current context (every shell), or only this shell with -s
 
 Run commands:
@@ -1793,9 +1828,9 @@ official tools need. Ask whoever runs the account for:
 2. ✅ Access paths ([design](docs/design/0001-tunnel-shell-kube.md)): `mek kube` / `mek kubectl` (EKS, GKE), `mek shell` (SSM, IAP), `mek tunnel` (SSM, IAP, Cloud SQL), background tunnels
 3. ✅ Terminal UI (`mek ui`): contexts, tunnels, shells, clusters, audit log
 4. ✅ Config wizard (`mek ctx add` / `edit` / `rm`, and a context's targets, clusters and tunnels), with lists from the cloud
-5. A resource catalog in the terminal UI, generated from AWS/GCP API models
-6. Desktop GUI (Wails)
-7. More clouds: Azure, Huawei Cloud
+5. ✅ Resources in the terminal UI, generated from the AWS CLI's and gcloud's command models
+6. More clouds: Azure, Huawei Cloud
+7. Desktop GUI (Wails)
 
 ## Development
 
@@ -1829,6 +1864,13 @@ How the code fits together (the GoF patterns are named where they shape it):
 - **`internal/tui`** is `mek ui` (Bubble Tea): each tab and overlay is a State handling its
   own keys, and every key that acts is an `action` (a Command) holding mek's own arguments,
   run in the terminal or in the background — the UI never talks to a cloud itself.
+- **The resource catalog:** `tools/catalog` (`make catalog`) reads the installed AWS CLI's
+  command index and botocore models, and gcloud's command tree, and writes
+  `internal/catalog/{aws,gcp}.json.gz` — for each service, the resources a list command shows
+  with no arguments, the field that identifies one, and the commands that take only that
+  (`tools/catalog/tuned.go` fixes the few the models get wrong). `internal/catalog` embeds
+  them, decodes one only when the Resources tab opens, and turns a resource into each
+  cloud's argv (a `Source` per cloud, a Strategy).
   Design notes: [docs/design/0001-tunnel-shell-kube.md](docs/design/0001-tunnel-shell-kube.md).
 
 ```bash
@@ -1849,8 +1891,8 @@ Tests come in five layers, all run by CI (integration and e2e on Linux and macOS
 | Unit | `*_test.go` next to the code | every package, with fakes for processes, prompts, HTTP and the filesystem |
 | Integration (`-tags integration`) | `test/integration` | the real binary against recording stub CLIs: env per cloud, leaked credentials removed, guard + audit, exit codes, signal forwarding, concurrent runs, login flows, kube/shell/tunnel commands, project config, `mek shell-init` in real bash and zsh, show-cmd on stderr only, and background tunnels with a stub that really listens (start → ls → stop, reconnecting, a `kill -9`ed supervisor, ten simultaneous starts) |
 | E2E (`-tags e2e`) | `test/e2e` | release archives served over HTTP, installed by the real `install.sh` (including tampered / unlisted archives being refused), a new user's first session on both clouds, the confirmation prompts (including shells and tunnels) answered on a real pseudo-terminal, a background tunnel outliving the terminal that started it, `mek ui` driven by keys (switch, start and stop a tunnel, open a shell, quit with the terminal restored), and the config wizard by arrow keys (accounts and roles from a stub portal, a team context copied into `mek.local.yaml`, `mek ui` opening it) |
-| Contract (`-tags contract`) | `test/contract` | mek with the **real** `aws`, `gcloud`, `gke-gcloud-auth-plugin` and `kubectl`, offline: each CLI reads the config, directories, kubeconfigs and session commands mek hands it, against local fake APIs where one is needed; the wizard's lookups (`--query` / `--format` expressions and the portal token in a file), and show-cmd's printed commands run in `sh`. A missing CLI is skipped; `MEK_CONTRACT_REQUIRE=1` makes it fail. `sh test/contract/install-clis.sh` installs the CLIs on Debian/Ubuntu |
-| Emulator (`-tags emulator`) | `test/emulator` | the **full AWS IAM Identity Center login** with the real `aws` against the [Floci](https://floci.io) emulator in docker — `mek login` → `aws sso login` (device code) → approval → role credentials through the profile mek generates — then a real call, a readonly block and a confirmed delete with them; and **the config wizard** on a real terminal — `mek ctx add` listing that login's accounts and roles, `mek ctx tunnel/target/cluster add` listing the account's EC2 instances, RDS databases and EKS clusters — with show-cmd's output run by hand and the portal token kept out of the audit log. It starts its own container on a random local port (never an emulator you already run); a small test proxy adds the `x-amzn-ErrorType` header Floci 2.1.0 leaves out of pending-token responses. A missing docker or CLI is skipped; `MEK_EMULATOR_REQUIRE=1` makes it fail |
+| Contract (`-tags contract`) | `test/contract` | mek with the **real** `aws`, `gcloud`, `gke-gcloud-auth-plugin` and `kubectl`, offline: each CLI reads the config, directories, kubeconfigs and session commands mek hands it, against local fake APIs where one is needed; the wizard's lookups (`--query` / `--format` expressions and the portal token in a file), show-cmd's printed commands run in `sh`, and the resource catalog's commands (every one for the popular AWS resources parsed by the real `aws`; an EC2 and a Compute Engine instance listed, described and stopped). A missing CLI is skipped; `MEK_CONTRACT_REQUIRE=1` makes it fail. `sh test/contract/install-clis.sh` installs the CLIs on Debian/Ubuntu |
+| Emulator (`-tags emulator`) | `test/emulator` | the **full AWS IAM Identity Center login** with the real `aws` against the [Floci](https://floci.io) emulator in docker — `mek login` → `aws sso login` (device code) → approval → role credentials through the profile mek generates — then a real call, a readonly block and a confirmed delete with them; and **the config wizard** on a real terminal — `mek ctx add` listing that login's accounts and roles, `mek ctx tunnel/target/cluster add` listing the account's EC2 instances, RDS databases and EKS clusters — with show-cmd's output run by hand and the portal token kept out of the audit log; and **the Resources tab** of `mek ui` listing an EC2 instance, stopping and terminating it, and blocked on a readonly context. It starts its own container on a random local port (never an emulator you already run); a small test proxy adds the `x-amzn-ErrorType` header Floci 2.1.0 leaves out of pending-token responses. A missing docker or CLI is skipped; `MEK_EMULATOR_REQUIRE=1` makes it fail |
 
 `make cover` merges unit coverage with coverage from the instrumented binary the
 integration tests run, so `main()` and real process paths count too. Tests that

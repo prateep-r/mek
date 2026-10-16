@@ -19,8 +19,11 @@ type action struct {
 	label       string   // what it does, for the status line: "start tunnel db (prod)"
 	args        []string // mek's arguments
 	interactive bool
-	confirm     string  // asked first, then --yes is passed (protected contexts)
-	then        *action // runs once this one succeeds
+	confirm     string                 // asked first, then --yes is passed (protected contexts)
+	typed       string                 // with confirm: what must be typed, then passed as --confirm
+	then        *action                // runs once this one succeeds
+	after       func(m *model) tea.Cmd // runs in the UI once this one succeeds
+	data        bool                   // it prints the cloud's JSON: not for the status line
 }
 
 // doneMsg reports a finished action; out is the last line it printed.
@@ -39,7 +42,11 @@ var (
 
 // start runs an action, asking first when it says so.
 func (m *model) start(a action) tea.Cmd {
-	if a.confirm != "" {
+	switch {
+	case a.typed != "":
+		m.overlay = &typedScreen{a: a}
+		return nil
+	case a.confirm != "":
 		m.overlay = &confirmScreen{a}
 		return nil
 	}
@@ -48,7 +55,10 @@ func (m *model) start(a action) tea.Cmd {
 
 func (m *model) run(a action, yes bool) tea.Cmd {
 	args := a.args
-	if yes {
+	switch {
+	case yes && a.typed != "":
+		args = append([]string{"--confirm", a.typed}, args...)
+	case yes:
 		args = append([]string{"--yes"}, args...)
 	}
 	cmd := exec.Command(m.mek, args...)
@@ -71,11 +81,14 @@ func (m *model) done(d doneMsg) tea.Cmd {
 		return nil
 	}
 	m.status = green.Render("✓ ") + d.a.label
-	if d.out != "" {
+	if d.out != "" && !d.a.data {
 		m.status += dim.Render(" — " + d.out)
 	}
 	if d.a.then != nil {
 		return m.run(*d.a.then, false)
+	}
+	if d.a.after != nil {
+		return d.a.after(m)
 	}
 	return nil
 }

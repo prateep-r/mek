@@ -27,6 +27,40 @@ func (c *confirmScreen) view(*model, int, int) string {
 	return "\n  " + yellow.Render(c.a.confirm) + " [y/N]"
 }
 
+// typedScreen asks before a destructive action on a protected context:
+// the context's name must be typed, as mek asks, and is passed as --confirm.
+type typedScreen struct {
+	a     action
+	input string
+}
+
+func (*typedScreen) help() string { return "type the context's name · enter run · esc cancel" }
+
+func (s *typedScreen) key(m *model, k tea.KeyPressMsg) tea.Cmd {
+	switch k.String() {
+	case "enter":
+		m.overlay = nil
+		if s.input == s.a.typed {
+			return m.run(s.a, true)
+		}
+		m.status = dim.Render("cancelled: " + s.a.label + " (the name didn't match)")
+	case "esc":
+		m.overlay = nil
+		m.status = dim.Render("cancelled: " + s.a.label)
+	case "backspace":
+		if r := []rune(s.input); len(r) > 0 {
+			s.input = string(r[:len(r)-1])
+		}
+	default:
+		s.input += k.Text
+	}
+	return nil
+}
+
+func (s *typedScreen) view(*model, int, int) string {
+	return "\n  " + red.Render(s.a.confirm) + "\n\n  Type " + bold.Render(s.a.typed) + " to run it: " + s.input + "▏"
+}
+
 // logsScreen is a background tunnel's log, following new lines unless the
 // view is scrolled up.
 type logsScreen struct {
@@ -107,7 +141,7 @@ func (keysScreen) key(m *model, _ tea.KeyPressMsg) tea.Cmd {
 }
 
 func (keysScreen) view(m *model, _, _ int) string {
-	out := []string{bold.Render("  Keys"), "", "  1-4, tab   switch tabs", "  ↑↓         move · g G first / last · pgup pgdown",
+	out := []string{bold.Render("  Keys"), "", "  1-5, tab   switch tabs", "  ↑↓         move · g G first / last · pgup pgdown",
 		"  r          refresh now", "  q          quit", ""}
 	for _, t := range m.tabs {
 		out = append(out, "  "+bold.Render(fmt.Sprintf("%-10s", t.title()))+dim.Render(t.help()))

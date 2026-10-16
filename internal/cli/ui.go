@@ -21,16 +21,19 @@ var (
 func (a *app) newUICmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "ui",
-		Short: "Browse and use contexts, tunnels, shells, clusters and the audit log in one screen",
+		Short: "Browse and use contexts, tunnels, shells, clusters, cloud resources and the audit log in one screen",
 		Long: `A terminal UI over mek: switch and log in to contexts, start, stop and read
-tunnels, open shells, write kubeconfigs or start k9s, and search the audit log.
+tunnels, open shells, write kubeconfigs or start k9s, search the audit log, and
+browse the chosen context's cloud resources: list them, read one's details,
+and start, stop, reboot or delete one.
 
 Everything it does runs mek itself, so protected contexts still ask, readonly
 ones still block, and the audit log records it as if typed.
 
 On the Contexts tab, a adds a context, e edits the chosen one and d removes
 it; on the Tunnels tab, a adds a tunnel to the chosen context (the mek ctx
-wizards; see: mek help wizard).
+wizards; see: mek help wizard). On the Resources tab, a opens the actions
+of the chosen resource; mek ui asks before each one, on any context.
 
   mek ui              # starts on the current context
   mek -c prod ui      # starts on prod`,
