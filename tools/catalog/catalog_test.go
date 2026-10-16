@@ -167,3 +167,21 @@ func TestAzureCatalog(t *testing.T) {
 		t.Errorf("azure catalog:\n got %s\nwant %s", got, want)
 	}
 }
+
+func TestAWSOneKindPerName(t *testing.T) {
+	var model serviceModel
+	json.Unmarshal([]byte(`{"operations": {
+	  "ListTrails": {"output": {"shape": "ListOut"}}, "DescribeTrails": {"output": {"shape": "DescOut"}}},
+	 "shapes": {
+	  "ListOut": {"type": "structure", "members": {"Trails": {"shape": "Names"}}},
+	  "Names": {"type": "list", "member": {"shape": "String"}},
+	  "DescOut": {"type": "structure", "members": {"trailList": {"shape": "TrailList"}}},
+	  "TrailList": {"type": "list", "member": {"shape": "Trail"}},
+	  "Trail": {"type": "structure", "members": {"Name": {"shape": "String"}, "TrailARN": {"shape": "String"}}},
+	  "String": {"type": "string"}}}`), &model)
+	cmds := map[string][]param{"list-trails": {}, "describe-trails": {}, "delete-trail": {{"name", true}}}
+	got := resources(cmds, model, nil)
+	if len(got) != 1 || got[0].List != "describe-trails" || got[0].ID != "Name" {
+		t.Errorf("trails: %+v", got)
+	}
+}

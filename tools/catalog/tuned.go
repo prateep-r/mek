@@ -23,6 +23,13 @@ var tuned = map[string]func(*catalog.Resource){
 		r.Location = &catalog.Location{Flag: "--region", Field: `metadata.labels."cloud.googleapis.com/location"`}
 	},
 	"gcp/projects/projects": func(r *catalog.Resource) { r.ID = "projectId" },
+	// describe-clusters with no clusters named describes the default one
+	// only: list them all, and describe one by its ARN.
+	"aws/ecs/clusters": func(r *catalog.Resource) {
+		*r = catalog.Resource{Name: "clusters", List: "list-clusters", Items: "clusterArns[]", Paged: true,
+			Describe: &catalog.Action{Command: "describe-clusters", Param: "--clusters"},
+			Actions:  []catalog.Action{{Command: "delete-cluster", Param: "--cluster"}}}
+	},
 	// --secret-id takes the name too.
 	"aws/secretsmanager/secrets": func(r *catalog.Resource) {
 		r.Describe = &catalog.Action{Command: "describe-secret", Param: "--secret-id"}

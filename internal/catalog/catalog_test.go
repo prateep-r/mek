@@ -78,6 +78,26 @@ func TestLoadEmbedded(t *testing.T) {
 	}
 }
 
+// Each kind of resource is there once per service: the Resources tab and
+// mek-desktop find one by its name.
+func TestNoTwoKindsShareAName(t *testing.T) {
+	for _, cloud := range []string{"aws", "gcp", "azure"} {
+		c, err := Load(cloud)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range c.Services {
+			seen := map[string]bool{}
+			for _, r := range s.Resources {
+				if seen[r.Name] {
+					t.Errorf("%s %s has two %s", cloud, s.Name, r.Name)
+				}
+				seen[r.Name] = true
+			}
+		}
+	}
+}
+
 func gz(s string) []byte {
 	var b bytes.Buffer
 	w := gzip.NewWriter(&b)
