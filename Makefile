@@ -59,7 +59,7 @@ test-e2e: ## Install from release artifacts with install.sh, then user journeys 
 test-contract: ## Run mek with the real cloud CLIs, offline (a missing CLI is skipped)
 	go test -tags contract -count=1 ./test/contract/...
 
-test-emulator: ## The full AWS SSO login against the Floci emulator in docker
+test-emulator: ## The full AWS SSO login, and the config wizard, against the Floci emulator in docker
 	go test -tags emulator -count=1 ./test/emulator/...
 
 test-all: check test-integration test-e2e test-contract test-emulator ## Every test layer

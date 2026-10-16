@@ -81,6 +81,10 @@ func TestParseDiscoveries(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(gke, []Found{{Value: "main", Hint: "asia-southeast1", Extra: "asia-southeast1"}}) {
 		t.Errorf("gke: %v %v", gke, err)
 	}
+	unnamed, _ := ParseAccounts([]byte(`{"accountList":[{"accountId":"111122223333","accountName":"111122223333"},{"accountId":"444455556666"}]}`))
+	if !reflect.DeepEqual(unnamed, []Found{{Value: "111122223333"}, {Value: "444455556666"}}) {
+		t.Errorf("accounts without names: %v", unnamed)
+	}
 	for _, f := range []func([]byte) ([]Found, error){ParseAccounts, ParseRoles, ParseProjects, ParseEC2Instances, ParseRDS, ParseEKSClusters, ParseGCEInstances, ParseCloudSQL, ParseGKEClusters} {
 		if _, err := f([]byte("<html>")); err == nil || !strings.Contains(err.Error(), "unexpected output") {
 			t.Errorf("bad output: %v", err)

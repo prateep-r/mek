@@ -113,7 +113,11 @@ func ParseAccounts(b []byte) ([]Found, error) {
 	}](b, "aws sso list-accounts")
 	var out []Found
 	for _, a := range r.AccountList {
-		out = append(out, Found{Value: a.AccountID, Label: a.AccountName, Hint: a.AccountID})
+		f := Found{Value: a.AccountID, Label: a.AccountName, Hint: a.AccountID}
+		if a.AccountName == "" || a.AccountName == a.AccountID { // no name of its own: the id, once
+			f.Label, f.Hint = "", ""
+		}
+		out = append(out, f)
 	}
 	slices.SortFunc(out, func(x, y Found) int { return cmp.Compare(x.Label, y.Label) })
 	return out, err
