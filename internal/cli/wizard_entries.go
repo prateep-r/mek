@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/prateep-r/mek/internal/config"
 	"github.com/prateep-r/mek/internal/provider"
@@ -47,7 +48,7 @@ func (targetKind) steps(f *wizard.Form, e *entryWizard) {
 				{Value: a["instance"], Hint: "its id: this instance only"},
 			}
 		}, false).When(func(a wizard.Answers) bool { return e.extra[a["instance"]] != "" })
-		e.nameStep(f, func(a wizard.Answers) string { return alias(e.extra[a["instance"]]) })
+		e.nameStep(f, func(a wizard.Answers) string { return alias("targets", e.extra[a["instance"]]) })
 		return
 	}
 	f.Load("instance", "VM", func(wizard.Answers) ([]wizard.Option, error) {
@@ -55,7 +56,7 @@ func (targetKind) steps(f *wizard.Form, e *entryWizard) {
 	}).Check(required("a VM name")).Help("running VMs — or type a name")
 	f.Input("zone", "Zone", func(a wizard.Answers) string { return e.extra[a["instance"]] }, nil).Help("empty: looked up when it is used")
 	f.Input("user", "SSH user", nil, nil).Help("empty: gcloud's (your user name here)")
-	e.nameStep(f, func(a wizard.Answers) string { return alias(a["instance"]) })
+	e.nameStep(f, func(a wizard.Answers) string { return alias("targets", a["instance"]) })
 }
 
 func (targetKind) prefill(c *config.Context, name string, a wizard.Answers) {
@@ -127,7 +128,7 @@ func (clusterKind) steps(f *wizard.Form, e *entryWizard) {
 		), false)
 	}
 	f.Input("namespace", "Namespace", nil, nil).Help("kubectl's default namespace for it; empty: default")
-	e.nameStep(f, func(a wizard.Answers) string { return alias(a["cluster"]) })
+	e.nameStep(f, func(a wizard.Answers) string { return alias("clusters", a["cluster"]) })
 }
 
 func (clusterKind) prefill(c *config.Context, name string, a wizard.Answers) {
@@ -210,9 +211,9 @@ func (tunnelKind) steps(f *wizard.Form, e *entryWizard) {
 	e.nameStep(f, func(a wizard.Answers) string {
 		switch a["kind"] {
 		case "host":
-			return alias(e.labels[a["host"]])
+			return alias("tunnels", e.labels[a["host"]])
 		case "cloudsql":
-			return alias(a["cloudsql"][strings.LastIndex(a["cloudsql"], ":")+1:])
+			return alias("tunnels", a["cloudsql"][strings.LastIndex(a["cloudsql"], ":")+1:])
 		}
 		return ""
 	})
@@ -244,8 +245,12 @@ func (e *entryWizard) instancesAndTargets(wizard.Answers) ([]wizard.Option, erro
 
 // databases are RDS instances and Aurora clusters, if either lookup works.
 func (e *entryWizard) databases(wizard.Answers) ([]wizard.Option, error) {
-	dbs, err1 := e.lookup(provider.RDSInstancesCommand(), provider.ParseRDS)
-	clusters, err2 := e.lookup(provider.RDSClustersCommand(), provider.ParseRDS)
+	var dbs, clusters []wizard.Option
+	var err1, err2 error
+	var wg sync.WaitGroup
+	wg.Go(func() { dbs, err1 = e.lookup(provider.RDSInstancesCommand(), provider.ParseRDS) })
+	wg.Go(func() { clusters, err2 = e.lookup(provider.RDSClustersCommand(), provider.ParseRDS) })
+	wg.Wait()
 	if err1 != nil && err2 != nil {
 		return nil, err1
 	}

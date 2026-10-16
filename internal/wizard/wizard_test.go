@@ -373,3 +373,19 @@ func TestExec(t *testing.T) {
 		t.Errorf("handed over: %v %v (%d runs)", a, err, runs)
 	}
 }
+
+// A load left behind in one step never fills another Load step.
+func TestLoadOfAnotherStep(t *testing.T) {
+	list := func(v string) func(Answers) ([]Option, error) {
+		return func(Answers) ([]Option, error) { return []Option{{Value: v}}, nil }
+	}
+	f := New("x").Load("account", "Account", list("111122223333")).Load("role", "Role", list("Admin"))
+	stale := f.Init() // Account's fetch, not yet back
+	f.Update(tea.WindowSizeMsg{Width: 80})
+	run(f, f.steps[0].enter(f)) // Account again (seq 2): its list
+	f.Update(key("enter"))      // Account chosen; Role starts loading (seq 1, as the stale one's)
+	f.Update(stale())           // Account's first result arrives at Role
+	if s := screen(f); !strings.Contains(s, "looking them up") {
+		t.Errorf("Role took Account's list:\n%s", s)
+	}
+}

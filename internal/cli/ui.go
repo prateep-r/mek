@@ -52,6 +52,9 @@ wizards; see: mek help wizard).
 			if err != nil {
 				return err
 			}
+			if f := a.opts.showCmd; f.set { // the mek commands the UI runs follow the flag
+				os.Setenv("MEK_SHOW_CMD", map[bool]string{true: "1", false: "0"}[f.on])
+			}
 			return runUI(tui.Live{}, exe, a.opts.context)
 		},
 	}

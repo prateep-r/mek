@@ -284,8 +284,9 @@ type loader struct {
 	seq     int // ignores results of a load left with Esc
 }
 
-// loaded carries a fetch's result back.
+// loaded carries a fetch's result back to the step that asked for it.
 type loaded struct {
+	step *loader
 	seq  int
 	opts []Option
 	err  error
@@ -308,13 +309,13 @@ func (s *loader) enter(f *Form) tea.Cmd {
 	}
 	return func() tea.Msg {
 		opts, err := s.fetch(a)
-		return loaded{seq, opts, err}
+		return loaded{s, seq, opts, err}
 	}
 }
 
 func (s *loader) update(f *Form, msg tea.Msg) tea.Cmd {
 	if m, ok := msg.(loaded); ok {
-		if m.seq != s.seq {
+		if m.step != s || m.seq != s.seq { // another step's, or one left with Esc
 			return nil
 		}
 		s.loading = false

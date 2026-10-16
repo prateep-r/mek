@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -23,10 +24,12 @@ import (
 // runPlain runs a helper command (login, whoami) without guard or audit.
 func (a *app) runPlain(argv, env []string) error { return a.plainTo(argv, env, nil) }
 
+// plain runs an invocation outside the guard and the audit log.
+func (a *app) plain(inv *runner.Invocation) error { return inv.Err(a.showCmd(a.exec).Run(inv)) }
+
 // plainTo is runPlain with stdout sent to w (nil: the terminal).
 func (a *app) plainTo(argv, env []string, w io.Writer) error {
-	inv := &runner.Invocation{Argv: argv, Env: env, Stdout: w}
-	return inv.Err(a.showCmd(a.exec).Run(inv))
+	return a.plain(&runner.Invocation{Argv: argv, Env: env, Stdout: w})
 }
 
 // newPassthroughCmd forwards everything after `mek <cli>` to the real CLI.
@@ -146,8 +149,9 @@ func (a *app) query(l *loaded) provider.Query {
 	return func(argv []string) ([]byte, error) {
 		var out, stderr bytes.Buffer
 		inv := &runner.Invocation{Context: l.ctx, Argv: argv, Env: l.env.Apply(os.Environ()), Class: guard.Read, Stdout: &out}
-		if l.quiet || l.draft {
-			inv.Stderr, inv.Quiet = &stderr, true
+		if l.quiet || l.draft { // a form is on the screen: the CLI may neither print nor ask
+			inv.Stdin, inv.Stderr, inv.Quiet = bytes.NewReader(nil), &stderr, true
+			inv.Env = append(inv.Env, "CLOUDSDK_CORE_DISABLE_PROMPTS=1")
 		}
 		if err := inv.Err(a.pipeline().Run(inv)); err != nil {
 			what := strings.Join(argv[:min(3, len(argv))], " ")
@@ -256,14 +260,23 @@ func (a *app) takeGlobalFlags(args []string) ([]string, error) {
 			default:
 				a.opts.context = val
 			}
-		case "-y", "--yes":
-			a.opts.yes = true
-		case "--show-cmd":
-			a.opts.showCmd = true
-		case "--no-show-cmd":
-			a.opts.noShowCmd = true
-		case "--no-local":
-			config.NoProject = true
+		case "-y", "--yes", "--no-local", "--show-cmd", "--no-show-cmd":
+			on := true
+			if hasVal {
+				b, err := strconv.ParseBool(val)
+				if err != nil {
+					return nil, fmt.Errorf("%s: %q isn't true or false", name, val)
+				}
+				on = b
+			}
+			switch name {
+			case "--show-cmd", "--no-show-cmd":
+				showCmdValue{&a.opts.showCmd, name, name == "--show-cmd"}.Set(strconv.FormatBool(on))
+			case "--no-local":
+				config.NoProject = on
+			default:
+				a.opts.yes = on
+			}
 		default:
 			return args, nil
 		}

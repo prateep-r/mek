@@ -14,6 +14,7 @@ import (
 	"github.com/prateep-r/mek/internal/config"
 	"github.com/prateep-r/mek/internal/kube"
 	"github.com/prateep-r/mek/internal/provider"
+	"github.com/prateep-r/mek/internal/runner"
 	"github.com/prateep-r/mek/internal/ui"
 )
 
@@ -137,8 +138,8 @@ func (a *app) newKubeTokenCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			a.machine = true // kubectl reads this output: show-cmd stays out of it
-			return a.runPlain(l.prov.TokenCommand(name, location), l.env.Apply(os.Environ()))
+			// Quiet: kubectl reads this output, so show-cmd stays out of it.
+			return a.plain(&runner.Invocation{Argv: l.prov.TokenCommand(name, location), Env: l.env.Apply(os.Environ()), Quiet: true})
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "cluster name")

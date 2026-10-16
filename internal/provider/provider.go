@@ -8,6 +8,7 @@ package provider
 import (
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -53,6 +54,17 @@ func (e Env) Shell() string {
 }
 
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
+
+var plainWord = regexp.MustCompile(`^[A-Za-z0-9_@%+=:,./-]+$`)
+
+// ShellWord is s for a POSIX shell command line: as it is when that is
+// safe, else single-quoted.
+func ShellWord(s string) string {
+	if plainWord.MatchString(s) {
+		return s
+	}
+	return shellQuote(s)
+}
 
 // orDash shows an unset value as "-" in one-line summaries.
 func orDash(s string) string {

@@ -16,6 +16,7 @@ type Invocation struct {
 	Argv    []string
 	Env     []string
 	Class   guard.Class
+	Stdin   io.Reader // nil: the terminal
 	Stdout  io.Writer // nil: the terminal
 	Stderr  io.Writer // nil: the terminal
 	Quiet   bool      // a lookup for a form on the screen: nothing of its own is printed
@@ -73,7 +74,7 @@ var Exec Runner = Func(func(inv *Invocation) error {
 	if stdout == nil {
 		stdout = os.Stdout
 	}
-	code, err := RunStoppable(inv.Argv, inv.Env, stdout, inv.Stderr, inv.Stop)
+	code, err := RunStoppable(inv.Argv, inv.Env, inv.Stdin, stdout, inv.Stderr, inv.Stop)
 	inv.ExitCode, inv.Duration = code, time.Since(start)
 	return err
 })
