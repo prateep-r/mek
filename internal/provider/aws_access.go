@@ -95,6 +95,8 @@ func (a *AWS) TunnelMethod(t config.Tunnel) (TunnelMethod, error) {
 	switch {
 	case t.CloudSQL != "":
 		return nil, errors.New("cloudsql tunnels are gcp only")
+	case t.Via == "":
+		return nil, errors.New("needs via: the instance to go through")
 	case t.Host != "":
 		return ssmRemoteHost{h, t.Host}, nil
 	}

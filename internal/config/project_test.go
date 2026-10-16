@@ -167,8 +167,14 @@ func TestKey(t *testing.T) {
 	if a.Key() == "dev" || a.Key() != b.Key() || a.Key() == c.Key() || !strings.HasPrefix(a.Key(), "dev-") || len(a.Key()) != len("dev-")+8 {
 		t.Errorf("keys: %s %s %s", a.Key(), b.Key(), c.Key())
 	}
-	if (&Context{Name: "dev"}).Key() != "dev" { // ~/.mek/config.yaml: the name, as before
+	if (&Context{Name: "dev"}).Key() != "dev" { // ~/.mek/config.yaml: the name
 		t.Error("global key")
+	}
+	az := &Context{Name: "dev", Provider: ProviderAzure, TenantID: "t", SubscriptionID: "s1", InProject: true}
+	az2 := *az
+	az2.SubscriptionID = "s2"
+	if az.Key() == az2.Key() {
+		t.Errorf("azure subscriptions share a key: %s", az.Key())
 	}
 }
 

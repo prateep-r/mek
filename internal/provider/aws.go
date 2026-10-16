@@ -60,6 +60,9 @@ func ssoRegion(c *config.Context) string {
 }
 
 func validateAWS(c *config.Context) error {
+	if err := notAzure(c); err != nil {
+		return err
+	}
 	if c.UseMetadata {
 		return errors.New("use_metadata is for gcp contexts")
 	}

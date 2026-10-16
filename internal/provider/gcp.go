@@ -17,6 +17,9 @@ var gcpCloud = Cloud{
 	},
 	Classify: guard.ClassifyGCloud,
 	Validate: func(c *config.Context) error {
+		if err := notAzure(c); err != nil {
+			return err
+		}
 		if c.Project == "" {
 			return errors.New("gcp context needs project")
 		}

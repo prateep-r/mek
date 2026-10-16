@@ -72,7 +72,11 @@ func (c *Context) Key() string {
 	if !c.InProject {
 		return c.Name
 	}
-	id := strings.Join([]string{c.Provider, c.SSOStartURL, c.SSORegion, c.AccountID, c.Role, c.AWSProfile, c.Project, c.Account}, "\x00")
+	fields := []string{c.Provider, c.SSOStartURL, c.SSORegion, c.AccountID, c.Role, c.AWSProfile, c.Project, c.Account}
+	if c.Provider == ProviderAzure {
+		fields = append(fields, c.TenantID, c.SubscriptionID)
+	}
+	id := strings.Join(fields, "\x00")
 	sum := sha256.Sum256([]byte(id))
 	return c.Name + "-" + hex.EncodeToString(sum[:4])
 }

@@ -429,7 +429,7 @@ func TestHelpGroups(t *testing.T) {
 	out := h.mustRun("help")
 	groups := map[string][]string{
 		"Contexts:":                             {"ctx", "init", "login", "ui", "use"},
-		"Run commands:":                         {"aws", "env", "exec", "gcloud", "kubectl"},
+		"Run commands:":                         {"aws", "az", "env", "exec", "gcloud", "kubectl"},
 		"Access (shells, tunnels, Kubernetes):": {"kube", "shell", "tunnel"},
 		"Setup:":                                {"completion", "doctor", "help", "self-update", "shell-init", "show-cmd", "version"},
 	}

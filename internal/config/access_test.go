@@ -40,6 +40,11 @@ func TestValidateTargets(t *testing.T) {
 		{"      vm:\n", "targets.vm needs an instance"},
 		{"      vm: {instance: -oProxyCommand=x}\n", "targets.vm.instance must not start with '-'"},
 		{"      vm: {instance: x, user: \"-l\"}\n", "targets.vm.user must not start"},
+		{"      vm: {instance: x, auth: password}\n", "targets.vm.auth must be aad or ssh-key"},
+		{"      vm: {instance: x, auth: ssh-key}\n", "targets.vm: auth ssh-key needs a user"},
+		{"      vm: {instance: x, bastion: {name: b}}\n", "targets.vm.bastion needs name and resource_group"},
+		{"      vm: {instance: x, bastion: {name: b, resource_group: \"-g\"}}\n", "targets.vm.bastion.resource_group must not start"},
+		{"      vm: {instance: x}\n    bastion: {resource_group: g}\n", "bastion needs name and resource_group"},
 	}
 	for _, c := range cases {
 		_, err := Parse([]byte(ctx + c.in))
@@ -61,7 +66,7 @@ func TestValidateTunnels(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"      ls: {via: x, port: 1}\n", "reserved"},
 		{"      db:\n", "tunnels.db is empty"},
-		{"      db: {port: 5432}\n", "tunnels.db: needs via (a target) or cloudsql"},
+		{"      db: {port: 5432}\n", "tunnels.db: needs via (a target), host or cloudsql"},
 		{"      db: {via: x}\n", "port 0 is not a port"},
 		{"      db: {via: x, port: 70000}\n", "port 70000 is not a port"},
 		{"      db: {via: x, port: 60000}\n", "port 60000 + 10000 is not a port: set local_port"},

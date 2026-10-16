@@ -31,7 +31,7 @@ type providerFlow interface {
 	apply(w *ctxWizard, a wizard.Answers, c *config.Context)
 }
 
-var flows = []providerFlow{awsFlow{}, gcpFlow{}}
+var flows = []providerFlow{awsFlow{}, gcpFlow{}, azureFlow{}}
 
 func flowFor(cloud string) providerFlow {
 	for _, fl := range flows {
@@ -67,7 +67,7 @@ func newCtxWizard(app *app) (*ctxWizard, error) {
 		return nil, err
 	}
 	w := &ctxWizard{app: app, cfg: cfg, layers: map[string]map[string]*config.Context{}}
-	os.RemoveAll(provider.GCloudWizardDir()) // a login a canceled wizard left: whose, nobody knows
+	removeWizardLogins() // a login a canceled wizard left: whose, nobody knows
 	if cfg.Project != "" {
 		w.files = []string{filepath.Join(cfg.Project, config.LocalFile), filepath.Join(cfg.Project, config.TeamFile)}
 	}
@@ -266,7 +266,7 @@ func (w *ctxWizard) preview(a wizard.Answers) (string, error) {
 
 // run asks, saves and says what changed.
 func (w *ctxWizard) run(title string) error {
-	defer os.RemoveAll(provider.GCloudWizardDir()) // a login the new context didn't take (saved: it moved)
+	defer removeWizardLogins() // a login the new context didn't take (saved: it moved)
 	a, err := runForm(w.form(title))
 	if err != nil {
 		return err
@@ -280,6 +280,39 @@ func (w *ctxWizard) run(title string) error {
 	}
 	w.keepLogin(a, e.Path)
 	return w.report(a, e.Path)
+}
+
+func removeWizardLogins() {
+	os.RemoveAll(provider.GCloudWizardDir())
+	os.RemoveAll(provider.AzureWizardDir())
+}
+
+// keepLogin moves the login the wizard used (gcloud's or az's) to the saved
+// context's own directory — from the wizard's, or from the edited context's
+// old key (renamed, or a project's context whose project changed) — so it
+// needn't log in again. Another context's login stays where it is. Best
+// effort: at worst, mek login.
+func (w *ctxWizard) keepLogin(a wizard.Answers, path string) {
+	var from, fresh string
+	var dirOf func(*config.Context) string
+	switch a["cloud"] {
+	case config.ProviderGCP:
+		from, fresh, dirOf = w.gcloudDir(a), provider.GCloudWizardDir(), provider.GCloudDir
+	case config.ProviderAzure:
+		from, fresh, dirOf = w.azureDir(), provider.AzureWizardDir(), provider.AzureDir
+	default:
+		return
+	}
+	own := w.old != nil && w.old.Provider == a["cloud"] && path == w.old.Source && from == dirOf(w.old)
+	if from != fresh && !own {
+		return
+	}
+	to := dirOf(w.draftCtx(a))
+	if from == to {
+		return
+	}
+	os.Remove(to) // only when empty
+	os.Rename(from, to)
 }
 
 // draftCtx is the context the answers make, as if saved already.
@@ -348,7 +381,7 @@ It asks, in order:
   Save it in   inside a project only: mek.local.yaml (yours, not committed),
                mek.yaml (the team's — commit it) or ~/.mek/config.yaml (yours,
                on every project). A file that has the name already isn't offered.
-  Cloud        AWS or GCP
+  Cloud        AWS, GCP or Azure
   AWS          IAM Identity Center: the access portal (portals your other
                contexts use are listed) and its region; then, logged in to the
                portal (it offers to log in first), the accounts you can reach
@@ -358,6 +391,9 @@ It asks, in order:
   GCP          the Google account (accounts your other contexts use are
                listed); logged in (it offers to), your projects are listed;
                then a region
+  Azure        logged in (it offers to), the tenants and their subscriptions
+               are listed; then the subscription's Bastion hosts (for shells
+               and tunnels, or none) and a region
   Guard        normal, protected (changes ask; deletes need the name typed)
                or readonly (changes are blocked)
   Save?        the YAML it will write, and where: Save, Back or Cancel

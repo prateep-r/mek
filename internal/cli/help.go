@@ -66,7 +66,7 @@ FOR TEAMS
   person's ~/.aws/config, so keep such contexts in mek.local.yaml or
   ~/.mek/config.yaml.
 
-  A project's context keeps its gcloud login, SSH key, kubeconfig and AWS
+  A project's context keeps its gcloud or az login, SSH key, kubeconfig and AWS
   profile apart from a same-named context elsewhere — they are filed by name and
   account — so two projects' "dev" never mix, while the same "dev" in two clones
   shares one login.
@@ -101,7 +101,7 @@ EXAMPLE
 
 WHERE MEK KEEPS THINGS
   ~/.mek, or $MEK_HOME: config.yaml, the current context, the audit log,
-  kubeconfigs, gcloud logins, SSH keys and tunnels.`
+  kubeconfigs, gcloud and az logins, SSH keys and tunnels.`
 
 // guardHelp is the guard's page; its table comes from guard.Decide itself.
 func guardHelp() string {
@@ -110,7 +110,7 @@ func guardHelp() string {
 		guard.Write:       "create-*, update-*, s3 cp, deploy, kubectl apply/scale, unknown verbs",
 		guard.Destructive: "delete-*, terminate-*, stop-*, s3 rm, sync --delete, kubectl delete/drain",
 		guard.Unknown:     "anything through mek exec",
-		guard.Shell:       "mek shell, aws ssm start-session, gcloud compute ssh, kubectl exec",
+		guard.Shell:       "mek shell, aws ssm start-session, gcloud compute ssh, az network bastion ssh, kubectl exec",
 		guard.Tunnel:      "mek tunnel, port forwarding, kubectl port-forward/proxy",
 	}
 	word := map[guard.Decision]string{guard.Allow: "run", guard.Confirm: "ask y/N",
@@ -123,9 +123,9 @@ func guardHelp() string {
 			word[guard.Decide(&config.Context{Protected: true}, c)], word[guard.Decide(&config.Context{ReadOnly: true}, c)], examples[c])
 	}
 	w.Flush()
-	return `protected and readonly are mek's own settings — not the cloud's. AWS and GCP never
-see them: mek checks each command on your machine before handing it to aws,
-gcloud or kubectl. They guard against mistakes — a delete typed in the prod
+	return `protected and readonly are mek's own settings — not the cloud's. AWS, GCP and
+Azure never see them: mek checks each command on your machine before handing it
+to aws, gcloud, az or kubectl. They guard against mistakes — a delete typed in the prod
 terminal you took for dev, a script run with the wrong context — not against
 someone who means harm.
 
@@ -150,8 +150,8 @@ THE AUDIT LOG
 
 WHAT THE GUARD DOESN'T COVER
   The cloud's own permissions decide what is possible: IAM roles, permission
-  sets, SCPs, GCP IAM. A role that can delete prod can delete it without mek.
-  Running aws / gcloud / kubectl yourself, or after "mek env" / "mek use -s",
+  sets, SCPs, GCP IAM, Azure RBAC. A role that can delete prod can delete it
+  without mek. Running aws / gcloud / az / kubectl yourself, or after "mek env" / "mek use -s",
   skips the guard; "mek exec" does not (its commands are "unknown").
   For an account that must stay read-only, use a read-only role in the cloud
   and readonly: true in mek: mek then says so before anything is sent.
@@ -166,7 +166,7 @@ IN A PROJECT
 func wizardHelp() string {
 	var b strings.Builder
 	for _, d := range provider.Discoveries() {
-		fmt.Fprintf(&b, "  %-4s %-30s needs %s\n       %s\n", d.Cloud, d.What, d.Permission, strings.Join(d.Argv, " "))
+		fmt.Fprintf(&b, "  %-5s %-30s needs %s\n        %s\n", d.Cloud, d.What, d.Permission, strings.Join(d.Argv, " "))
 	}
 	return `mek ctx add / edit, and mek ctx target / cluster / tunnel add / edit, ask a
 question at a time instead of you editing YAML, offering what they can find.
@@ -198,7 +198,7 @@ WHAT IT LOOKS UP
 ` + b.String() + `
   When a list can't be had — not logged in, no permission, no CLI — the step
   says why and takes a typed value. Not logged in yet, the wizard offers to
-  (aws sso login --sso-session …, gcloud auth login), putting the form away
+  (aws sso login --sso-session …, gcloud auth login, az login), putting the form away
   while the browser flow runs; or skip that, and type.
 
 THE PORTAL TOKEN (AWS)
@@ -216,8 +216,8 @@ SAVING
   context it rewrites). First the whole config is
   checked as it would be (every file, every cloud's rules): if it wouldn't
   load, nothing is written and the last step says why. A new mek.local.yaml
-  goes into the repository's .gitignore. A GCP login made in the wizard becomes
-  the new context's.
+  goes into the repository's .gitignore. A GCP or Azure login made in the
+  wizard becomes the new context's.
 
   Editing a context from a project's mek.yaml asks first: change the team's
   file, or make your own copy in mek.local.yaml.
