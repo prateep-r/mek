@@ -24,7 +24,7 @@ COVER_DIR  := $(abspath $(BIN_DIR)/cover)
 COVER_PKGS := ./cmd/...,./internal/...
 
 .DEFAULT_GOAL := help
-.PHONY: help catalog catalog-docker build run install uninstall test test-integration test-e2e test-contract test-emulator test-all docker-test docker-up docker-down docker-clean cover cover-html fmt fmt-check vet lint vuln tidy check snapshot release-check clean
+.PHONY: help desktop desktop-check desktop-package catalog catalog-docker build run install uninstall test test-integration test-e2e test-contract test-emulator test-all docker-test docker-up docker-down docker-clean cover cover-html fmt fmt-check vet lint vuln tidy check snapshot release-check clean
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -98,6 +98,23 @@ tidy: ## Tidy go.mod / go.sum
 check: fmt-check vet test ## Everything CI should pass — run before pushing
 
 CLOUDS ?= aws,gcp,azure
+
+## ---- desktop app (mek-desktop) ----
+
+DESKTOP_UI := cmd/mek-desktop/frontend
+# macOS: Go needs 13; the app's cgo parts are built for the same.
+DESKTOP_ENV := $(if $(filter Darwin,$(shell uname)),MACOSX_DEPLOYMENT_TARGET=13.0 CGO_CFLAGS=-mmacosx-version-min=13.0 CGO_LDFLAGS=-mmacosx-version-min=13.0)
+
+desktop: ## Build bin/mek-desktop (needs npm and cgo; on Linux, GTK 3 and WebKitGTK 4.1)
+	cd $(DESKTOP_UI) && npm ci --no-fund --no-audit && npm run build
+	$(DESKTOP_ENV) go build -tags desktop -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/mek-desktop ./cmd/mek-desktop
+
+desktop-check: ## The desktop app's checks: svelte-check, its tests, go vet with the desktop tag
+	cd $(DESKTOP_UI) && npm ci --no-fund --no-audit && npm run check && npm test && npm run build
+	go vet -tags desktop ./cmd/mek-desktop
+
+desktop-package: ## Package mek-desktop for this machine into dist/desktop (mek.app on macOS)
+	sh cmd/mek-desktop/package.sh $(VERSION)
 
 catalog: ## Regenerate mek ui's resource catalogs from the installed aws, gcloud and az (CLOUDS=aws,gcp to pick)
 	go run ./tools/catalog -clouds $(CLOUDS)
