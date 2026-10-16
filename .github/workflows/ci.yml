@@ -80,6 +80,13 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libgtk-4-dev libwebkitgtk-6.0-dev
       - run: make desktop-check
       - run: make desktop
+      - name: Install Playwright's Chromium (Linux)
+        if: runner.os == 'Linux'
+        working-directory: cmd/mek-desktop/frontend
+        run: npx playwright install --with-deps chromium
+      - name: The window, end to end (Linux)
+        if: runner.os == 'Linux'
+        run: make desktop-e2e
 
   goreleaser:
     runs-on: ubuntu-latest

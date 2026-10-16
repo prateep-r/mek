@@ -153,9 +153,28 @@ func resources(cmds map[string][]param, model serviceModel, pages map[string]map
 		if !pickID(model, cmds, item, &r) {
 			continue
 		}
+		// list-x and describe-x both name x: keep the one that tells more.
+		if i := slices.IndexFunc(out, func(o catalog.Resource) bool { return o.Name == r.Name }); i >= 0 {
+			if richness(r) > richness(out[i]) {
+				out[i] = r
+			}
+			continue
+		}
 		out = append(out, r)
 	}
 	return out
+}
+
+// richness is how much a resource offers: its actions, a detail view, an
+// id field to show, a name and a state.
+func richness(r catalog.Resource) int {
+	n := len(r.Actions)
+	for _, has := range []bool{r.Describe != nil, r.ID != "", r.Label != "", r.State != ""} {
+		if has {
+			n++
+		}
+	}
+	return n
 }
 
 func sortedKeys[V any](m map[string]V) []string {

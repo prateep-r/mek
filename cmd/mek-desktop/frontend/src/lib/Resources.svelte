@@ -16,11 +16,16 @@
   let detail = $state("");
   let gen = 0; // which fetch counts: older ones are dropped
 
+  // The context's name, not the context: the window reads the contexts
+  // again every few seconds, and that mustn't start the tab over.
+  let name = $derived(ctx?.Name);
+
   $effect(() => {
-    const name = ctx?.Name;
+    const current = name;
     catalog = null; kind = null; rows = []; row = null; error = ""; filter = "";
-    if (!name) return;
-    api.resources(name).then((c) => (catalog = c)).catch((e) => (error = String(e?.message ?? e)));
+    if (!current) return;
+    api.resources(current).then((c) => { if (current === name) catalog = c; })
+      .catch((e) => { if (current === name) error = String(e?.message ?? e); });
   });
 
   let kinds = $derived(catalog ? filterKinds(catalog.Kinds || [], filter) : []);

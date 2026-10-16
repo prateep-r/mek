@@ -9,5 +9,5 @@ export default defineConfig({
     // The Wails runtime is served by the app itself, not bundled.
     rollupOptions: { external: ["/wails/runtime.js"] },
   },
-  test: { environment: "node" },
+  test: { environment: "node", include: ["src/**/*.test.js"] },
 });

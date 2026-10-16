@@ -24,7 +24,7 @@ COVER_DIR  := $(abspath $(BIN_DIR)/cover)
 COVER_PKGS := ./cmd/...,./internal/...
 
 .DEFAULT_GOAL := help
-.PHONY: help desktop desktop-check desktop-package catalog catalog-docker build run install uninstall test test-integration test-e2e test-contract test-emulator test-all docker-test docker-up docker-down docker-clean cover cover-html fmt fmt-check vet lint vuln tidy check snapshot release-check clean
+.PHONY: help desktop desktop-check desktop-e2e desktop-package catalog catalog-docker build run install uninstall test test-integration test-e2e test-contract test-emulator test-all docker-test docker-up docker-down docker-clean cover cover-html fmt fmt-check vet lint vuln tidy check snapshot release-check clean
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -112,6 +112,9 @@ desktop: ## Build bin/mek-desktop (needs npm and cgo; on Linux, GTK 4 and WebKit
 desktop-check: ## The desktop app's checks: svelte-check, its tests, go vet with the desktop tag
 	cd $(DESKTOP_UI) && npm ci --no-fund --no-audit && npm run check && npm test && npm run build
 	go vet -tags desktop ./cmd/mek-desktop
+
+desktop-e2e: ## The desktop window in a browser (Playwright), with the real service behind it and a stub mek
+	cd $(DESKTOP_UI) && npm ci --no-fund --no-audit && npm run build && npm run e2e
 
 desktop-package: ## Package mek-desktop for this machine into dist/desktop (mek.app on macOS)
 	sh cmd/mek-desktop/package.sh $(VERSION)
