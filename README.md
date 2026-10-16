@@ -378,7 +378,7 @@ Download it from the [releases](https://github.com/prateep-r/mek/releases) page:
 | Where | File | Notes |
 |---|---|---|
 | macOS (Apple silicon / Intel) | `mek-desktop_<version>_darwin_arm64.zip` / `_amd64.zip` | `mek.app`, with the mek it runs inside. It isn't signed yet: the first time, right-click it → *Open* → *Open* |
-| Linux | `mek-desktop_<version>_linux_amd64.tar.gz` | `mek-desktop` and `mek`; needs GTK 3 and WebKitGTK 4.1 (`apt install libgtk-3-0 libwebkit2gtk-4.1-0`) |
+| Linux | `mek-desktop_<version>_linux_amd64.tar.gz` | `mek-desktop` and `mek`; needs GTK 4 and WebKitGTK 6.0 (`apt install libgtk-4-1 libwebkitgtk-6.0-4`) |
 
 It uses the `mek` next to it, else the one on your `PATH`, and the cloud CLIs on your login
 shell's `PATH` (an app started from the Dock gets a bare one).
@@ -2125,7 +2125,7 @@ make run ARGS="doctor"
 make install     # build with version info and copy to ~/.local/bin
 make vuln        # govulncheck
 make snapshot    # goreleaser build of all archives into dist/ (no publish)
-make desktop     # bin/mek-desktop (needs npm and cgo; Linux: GTK 3 and WebKitGTK 4.1)
+make desktop     # bin/mek-desktop (needs npm and cgo; Linux: GTK 4 and WebKitGTK 6.0)
 ```
 
 Tests come in six layers, all run by CI (integration, e2e and the desktop app on Linux and macOS):
