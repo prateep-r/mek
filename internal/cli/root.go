@@ -44,6 +44,7 @@ credentials, plus a safety guard and audit log for protected contexts.
 
 Contexts come from ~/.mek/config.yaml and, inside a project, its mek.yaml
 (the team's) and mek.local.yaml (yours): mek help config.
+Add one by answering questions: mek ctx add (mek help wizard).
 What protected and readonly do: mek help guard.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
