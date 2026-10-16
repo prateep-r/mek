@@ -24,7 +24,7 @@ COVER_DIR  := $(abspath $(BIN_DIR)/cover)
 COVER_PKGS := ./cmd/...,./internal/...
 
 .DEFAULT_GOAL := help
-.PHONY: help build run install uninstall test test-integration test-e2e test-contract test-emulator test-all docker-test docker-up docker-down docker-clean cover cover-html fmt fmt-check vet lint vuln tidy check snapshot release-check clean
+.PHONY: help catalog build run install uninstall test test-integration test-e2e test-contract test-emulator test-all docker-test docker-up docker-down docker-clean cover cover-html fmt fmt-check vet lint vuln tidy check snapshot release-check clean
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z0-9_-]+:.*## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -96,6 +96,9 @@ tidy: ## Tidy go.mod / go.sum
 	go mod tidy
 
 check: fmt-check vet test ## Everything CI should pass — run before pushing
+
+catalog: ## Regenerate mek ui's resource catalogs from the installed aws and gcloud
+	go run ./tools/catalog
 
 ## ---- docker (mek's own, isolated test environment) ----
 
