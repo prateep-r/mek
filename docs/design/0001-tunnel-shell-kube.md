@@ -3,7 +3,7 @@
 Status: **implemented** for AWS and GCP — `mek kube` / `mek kubectl` in v0.6.0, `mek shell`
 and foreground `mek tunnel` in v0.7.0, background tunnels in v0.8.0. Azure (Bastion shells
 and tunnels, AKS) shipped in v0.9.0 and Azure and Huawei Cloud support was then paused; that
-code is kept on the `keep/azure-huawei` branch.
+code is in the `v0.9.0` tag.
 
 ## Problem
 
@@ -195,5 +195,5 @@ cloud registry hook (every cloud mek has implements them all).
    failure. The record gains `restart`/`restarts` and a `reconnecting` phase (a State, like
    `starting`); the audit keeps one start and one end for the whole tunnel. `--no-restart`
    opts out; foreground tunnels don't reconnect (Ctrl-C and a closed session look alike).
-3. When Azure and Huawei Cloud return (`keep/azure-huawei`): Huawei CCE only offers static
+3. When Azure and Huawei Cloud return (see `v0.9.0`): Huawei CCE only offers static
    client certificates — a long-lived credential — for kubeconfigs.

@@ -1761,7 +1761,7 @@ official tools need. Ask whoever runs the account for:
 - Needs the official CLIs installed; passthrough speed equals the CLI's speed.
 - mek can't grant more than your IAM role/permissions allow.
 - AWS login supports IAM Identity Center (SSO) and existing profiles; SAML-only IdPs without Identity Center are not built in (use `aws_profile` with your existing tooling).
-- mek supports AWS and GCP. Azure and Huawei Cloud were in v0.4.0–v0.9.0 and are paused; that code is kept on the `keep/azure-huawei` branch.
+- mek supports AWS and GCP. Azure and Huawei Cloud were in v0.4.0–v0.9.0 and are paused; that code is in the `v0.9.0` tag.
 - Every kubectl request through mek's kubeconfig fetches a fresh token (about 0.5–1 s); mek never caches tokens.
 - The kubeconfig records mek's path and `PATH` when it is written; run `mek kube` again after moving mek or the cloud CLIs.
 - `mek shell` on GCP runs ssh with the context's own home directory, so your `~/.ssh/config` doesn't apply to it.
@@ -1781,7 +1781,7 @@ official tools need. Ask whoever runs the account for:
 4. ✅ Config wizard (`mek ctx add` / `edit` / `rm`, and a context's targets, clusters and tunnels), with lists from the cloud
 5. A resource catalog in the terminal UI, generated from AWS/GCP API models
 6. Desktop GUI (Wails)
-7. Azure and Huawei Cloud again, later (see `keep/azure-huawei`)
+7. Azure and Huawei Cloud again, later (they were in v0.4.0–v0.9.0)
 
 ## Development
 
