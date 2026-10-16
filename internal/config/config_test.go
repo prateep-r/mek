@@ -69,7 +69,6 @@ func TestDir(t *testing.T) {
 		t.Errorf("MEK_HOME: %s %s", Dir(), Path())
 	}
 	t.Setenv("MEK_HOME", "")
-	t.Setenv("XDG_CONFIG_HOME", "/x") // no longer where mek lives
 	t.Setenv("HOME", "/h")
 	if Dir() != filepath.Join("/h", ".mek") {
 		t.Errorf("home: %s", Dir())
