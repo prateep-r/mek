@@ -31,7 +31,7 @@ var (
 )
 
 // ErrHomebrew means the binary is managed by Homebrew and must be upgraded there.
-var ErrHomebrew = errors.New("mek is installed via Homebrew — run: brew upgrade mek")
+var ErrHomebrew = errors.New("installed via Homebrew — run: brew upgrade mek")
 
 // Latest returns the tag of the latest release (e.g. "v0.2.0") by following
 // GitHub's /releases/latest redirect, avoiding the rate-limited REST API.

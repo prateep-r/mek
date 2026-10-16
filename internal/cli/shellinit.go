@@ -41,7 +41,7 @@ Every other mek command runs unchanged.`,
 		ValidArgs: []string{"zsh", "bash"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if args[0] != "zsh" && args[0] != "bash" {
-				return fmt.Errorf("mek shell-init %s: want zsh or bash", args[0])
+				return fmt.Errorf("shell-init %s: want zsh or bash", args[0])
 			}
 			fmt.Fprint(cmd.OutOrStdout(), shellInit)
 			return nil
@@ -69,7 +69,7 @@ complete too.
 			case "bash":
 				return root.GenBashCompletionV2(cmd.OutOrStdout(), true)
 			}
-			return fmt.Errorf("mek completion %s: want zsh or bash", args[0])
+			return fmt.Errorf("completion %s: want zsh or bash", args[0])
 		},
 	}
 }

@@ -20,7 +20,7 @@ func TestUI(t *testing.T) {
 	isTerminal = func() bool { return false }
 	h := newHarness(t, "")
 	_, err := h.run("ui")
-	wantErr(t, err, "mek ui needs a terminal")
+	wantErr(t, err, "ui needs a terminal")
 
 	isTerminal = func() bool { return true }
 	_, err = h.run("ui")

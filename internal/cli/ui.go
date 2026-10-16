@@ -37,7 +37,7 @@ wizards; see: mek help wizard).
 		Args: cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			if !isTerminal() {
-				return errors.New("mek ui needs a terminal")
+				return errors.New("ui needs a terminal")
 			}
 			cfg, err := config.Load()
 			if err != nil {

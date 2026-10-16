@@ -218,7 +218,7 @@ On or off, the first that says wins:
 			}
 			on, ok := onOff(args[0])
 			if !ok {
-				return fmt.Errorf("mek show-cmd %s: want on or off", args[0])
+				return fmt.Errorf("show-cmd %s: want on or off", args[0])
 			}
 			if err := saveShowCmd(on); err != nil {
 				return err
