@@ -75,3 +75,26 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$GITHUB_REF_NAME" dist/desktop/* --clobber --repo "$GITHUB_REPOSITORY"
+
+  # The Homebrew cask for mek-desktop, from the Mac files' checksums, in the
+  # same tap as mek's (not for pre-releases, like goreleaser's).
+  desktop-cask:
+    needs: desktop
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Write Casks/mek-desktop.rb to prateep-r/homebrew-tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          RELEASE_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mkdir sums
+          GH_TOKEN="$RELEASE_TOKEN" gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --dir sums --pattern 'mek-desktop_*_darwin_*.zip.sha256'
+          sh cmd/mek-desktop/cask.sh "$version" sums > mek-desktop.rb
+          path=Casks/mek-desktop.rb
+          sha=$(gh api "repos/prateep-r/homebrew-tap/contents/$path" --jq .sha 2>/dev/null) || sha="" # none yet
+          gh api -X PUT "repos/prateep-r/homebrew-tap/contents/$path" \
+            -f message="mek-desktop $version" -f content="$(base64 -w0 mek-desktop.rb)" ${sha:+-f sha="$sha"} >/dev/null
+          echo "Casks/mek-desktop.rb is mek-desktop $version"

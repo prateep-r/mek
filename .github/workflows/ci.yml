@@ -80,6 +80,21 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libgtk-4-dev libwebkitgtk-6.0-dev
       - run: make desktop-check
       - run: make desktop
+      - name: Package it, and install the .deb (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          make desktop-package VERSION=v0.0.0-ci
+          sudo apt-get install -y -qq ./dist/desktop/mek-desktop_0.0.0-ci_linux_amd64.deb
+          test -x /usr/lib/mek-desktop/mek-desktop && test -L /usr/bin/mek-desktop
+          test -f /usr/share/applications/mek-desktop.desktop
+          /usr/lib/mek-desktop/mek version
+          cd dist/desktop && sha256sum -c ./*.sha256
+      - name: The cask for these files
+        if: runner.os == 'Linux'
+        run: |
+          mkdir sums
+          for a in arm64 amd64; do echo "0000  mek-desktop_0.0.0_darwin_$a.zip" > sums/mek-desktop_0.0.0_darwin_$a.zip.sha256; done
+          sh cmd/mek-desktop/cask.sh 0.0.0 sums | ruby -c
       - name: Install Playwright's Chromium (Linux)
         if: runner.os == 'Linux'
         working-directory: cmd/mek-desktop/frontend

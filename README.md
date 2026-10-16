@@ -373,12 +373,20 @@ targets and clusters, resources and the audit log on the right.
 - **The Resources tab** is the [one in `mek ui`](#the-resources-tab): pick a kind of resource,
   click one for its details, and act on it from its buttons.
 
-Download it from the [releases](https://github.com/prateep-r/mek/releases) page:
+Install it:
+
+```bash
+brew install --cask prateep-r/tap/mek-desktop     # macOS: mek.app in /Applications
+sudo apt install ./mek-desktop_<version>_linux_amd64.deb   # Debian/Ubuntu, from the releases page
+```
+
+Or download it from the [releases](https://github.com/prateep-r/mek/releases) page:
 
 | Where | File | Notes |
 |---|---|---|
-| macOS (Apple silicon / Intel) | `mek-desktop_<version>_darwin_arm64.zip` / `_amd64.zip` | `mek.app`, with the mek it runs inside. It isn't signed yet: the first time, right-click it → *Open* → *Open* |
-| Linux | `mek-desktop_<version>_linux_amd64.tar.gz` | `mek-desktop` and `mek`; needs GTK 4 and WebKitGTK 6.0 (`apt install libgtk-4-1 libwebkitgtk-6.0-4`) |
+| macOS (Apple silicon / Intel) | `mek-desktop_<version>_darwin_arm64.zip` / `_amd64.zip` | `mek.app`, with the mek it runs inside. It isn't signed yet: the first time, right-click it → *Open* → *Open* (the cask does that for you) |
+| Debian / Ubuntu | `mek-desktop_<version>_linux_amd64.deb` | installs in `/usr/lib/mek-desktop`, with a menu entry; apt brings GTK 4 and WebKitGTK 6.0 |
+| Other Linux | `mek-desktop_<version>_linux_amd64.tar.gz` | `mek-desktop` and `mek`; needs GTK 4 and WebKitGTK 6.0 |
 
 Each file has its SHA-256 beside it (`shasum -a 256 -c <file>.sha256`). It uses the `mek` next
 to it, else the one on your `PATH`, and the cloud CLIs on your login
@@ -2106,7 +2114,8 @@ How the code fits together (the GoF patterns are named where they shape it):
   Wails v3 window with a Svelte frontend (`cmd/mek-desktop/frontend`). It binds
   `internal/desktop`'s `Service` — the same reads as `mek ui` through `internal/view`, the
   same catalog, and every action a run of mek — which imports no GUI toolkit, so it is tested
-  like any package. `make desktop-package` builds `mek.app` (macOS) or a Linux archive.
+  like any package. `make desktop-package` builds `mek.app` (macOS), or a Linux archive and
+  `.deb`; a release also writes the `mek-desktop` cask to the tap (`cmd/mek-desktop/cask.sh`).
 - **The resource catalog:** `tools/catalog` (`make catalog`, or `make catalog-docker` with the
   CLIs in mek's test image) reads the installed AWS CLI's command index and botocore models,
   gcloud's command tree and az's command loader, and writes
