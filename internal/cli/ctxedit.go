@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"os"
@@ -37,16 +38,30 @@ func saveEdit(e *config.Editor) error {
 }
 
 // checkEdit is why the config would be invalid with the edit (nil: it
-// wouldn't).
+// wouldn't). A problem the config has already, that the edit leaves as it
+// was, doesn't stop it: fixing that is another edit.
 func checkEdit(e *config.Editor) error {
 	cfg, err := config.Preview(e.Path, e.Bytes())
 	if err == nil {
 		err = provider.Validate(cfg)
 	}
-	if err != nil {
-		return fmt.Errorf("%s would be invalid: %w", config.Show(e.Path), err)
+	if err == nil {
+		return nil
 	}
-	return nil
+	if _, before := provider.Load(); before != nil && before.Error() == err.Error() {
+		return nil
+	}
+	return fmt.Errorf("%s would be invalid: %w", config.Show(e.Path), err)
+}
+
+// loadForEdit is the config for the commands that change it: an invalid
+// context must not stop you from fixing or removing it.
+func loadForEdit() (*config.Config, error) {
+	cfg, err := config.Load() // without each cloud's rules; with the others, cfg is still read
+	if cfg == nil {
+		return nil, err
+	}
+	return cfg, nil
 }
 
 // filePerm: a project's files are for a repository; ~/.mek/config.yaml is
@@ -88,7 +103,7 @@ used from then on, and mek says which.
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeContexts,
 		RunE: func(_ *cobra.Command, args []string) error {
-			cfg, err := provider.Load()
+			cfg, err := loadForEdit()
 			if err != nil {
 				return err
 			}
@@ -102,7 +117,7 @@ used from then on, and mek says which.
 					return errors.New("no terminal to ask on — pass --yes to remove it")
 				}
 				if err != nil || !ok {
-					return err
+					return cmp.Or(err, errors.New("aborted"))
 				}
 			}
 			if err := editConfig(ctx.Source, nil, func(e *config.Editor) error { return e.Delete(ctx.Name) }); err != nil {

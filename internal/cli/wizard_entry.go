@@ -98,6 +98,20 @@ func (e *entryWizard) lookup(argv []string, parse func([]byte) ([]provider.Found
 	return toOptions(found), err
 }
 
+// extraOf and labelOf are what a lookup found with value v (under mu: a
+// lookup may still be writing).
+func (e *entryWizard) extraOf(v string) string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.extra[v]
+}
+
+func (e *entryWizard) labelOf(v string) string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.labels[v]
+}
+
 var notAlias = regexp.MustCompile(`[^a-z0-9._-]+`)
 
 // alias makes a default entry name of a cloud's name ("" if it can't).

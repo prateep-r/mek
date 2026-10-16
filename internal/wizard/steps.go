@@ -13,8 +13,9 @@ import (
 
 type input struct {
 	common
-	def   func(Answers) string
-	value string
+	def     func(Answers) string
+	value   string
+	offered *string // the last starting value def gave, if any
 }
 
 // Input asks for a line of text; def is its starting value (nil: none, or
@@ -26,10 +27,12 @@ func (f *Form) Input(key, title string, def func(Answers) string, validate func(
 func (s *input) enter(f *Form) tea.Cmd {
 	s.err = ""
 	switch v, ok := f.answers[s.key]; {
-	case ok:
-		s.value = v
-	case s.def != nil:
+	case ok && (s.offered == nil || v != *s.offered):
+		s.value = v // typed, or there from the start: kept
+	case s.def != nil: // an answer left as offered follows the answers before it
 		s.value = s.def(f.answers)
+		offered := s.value
+		s.offered = &offered
 	default:
 		s.value = ""
 	}

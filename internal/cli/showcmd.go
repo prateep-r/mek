@@ -103,9 +103,15 @@ func (a *app) showCmdOn() bool {
 
 // savedShowCmd is settings.show_cmd from ~/.mek/config.yaml (nil: not set),
 // read once — and only once a command runs — even if the rest of the file
-// has a problem.
+// has a problem. A config loaded already has it: the file isn't parsed again.
 func (a *app) savedShowCmd() (*bool, error) {
 	a.settings.Do(func() {
+		if a.cfg != nil {
+			if a.cfg.Settings != nil {
+				a.settingShowCmd = a.cfg.Settings.ShowCmd
+			}
+			return
+		}
 		b, err := os.ReadFile(config.Path())
 		if errors.Is(err, fs.ErrNotExist) {
 			return

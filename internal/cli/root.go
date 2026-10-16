@@ -30,7 +30,8 @@ type globalOpts struct {
 // every NewRoot (each test, each run) starts clean.
 type app struct {
 	opts globalOpts
-	exec runner.Runner // runs processes; tests swap in a fake
+	exec runner.Runner  // runs processes; tests swap in a fake
+	cfg  *config.Config // the config resolve loaded, if it did
 	// settings.show_cmd from ~/.mek/config.yaml, read once (savedShowCmd).
 	settings       sync.Once
 	settingShowCmd *bool
@@ -143,6 +144,7 @@ func (a *app) resolve(name string) (*loaded, error) {
 	if name == "" {
 		name = a.opts.context
 	}
+	a.cfg = cfg
 	ctx, err := cfg.Resolve(name)
 	if err != nil {
 		return nil, err

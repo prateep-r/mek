@@ -45,18 +45,18 @@ func (targetKind) steps(f *wizard.Form, e *entryWizard) {
 		}).Check(required("an instance")).Help("running instances — or type i-… or tag:Key=Value")
 		f.Select("by", "Refer to it by", func(a wizard.Answers) []wizard.Option {
 			return []wizard.Option{
-				{Value: "tag:Name=" + e.extra[a["instance"]], Hint: "its Name tag: still right when the instance is replaced"},
+				{Value: "tag:Name=" + e.extraOf(a["instance"]), Hint: "its Name tag: still right when the instance is replaced"},
 				{Value: a["instance"], Hint: "its id: this instance only"},
 			}
-		}, false).When(func(a wizard.Answers) bool { return e.extra[a["instance"]] != "" })
-		e.nameStep(f, func(a wizard.Answers) string { return alias("targets", e.extra[a["instance"]]) })
+		}, false).When(func(a wizard.Answers) bool { return e.extraOf(a["instance"]) != "" })
+		e.nameStep(f, func(a wizard.Answers) string { return alias("targets", e.extraOf(a["instance"])) })
 		return
 	}
 	if e.azure() {
 		f.Load("instance", "VM", func(wizard.Answers) ([]wizard.Option, error) {
 			return e.lookup(provider.AzureVMsCommand(), provider.ParseAzureVMs)
 		}).Check(required("a VM name or resource id")).Help("running VMs — or type a name or resource id")
-		f.Input("resource_group", "Resource group", func(a wizard.Answers) string { return e.extra[a["instance"]] }, nil).
+		f.Input("resource_group", "Resource group", func(a wizard.Answers) string { return e.extraOf(a["instance"]) }, nil).
 			Help("the VM's; empty: looked up when it is used")
 		f.Select("auth", "Log in with", wizard.Options(
 			wizard.Option{Value: "", Label: "Microsoft Entra ID", Hint: "your az login: no key (the VM needs the AAD login extension)"},
@@ -64,14 +64,14 @@ func (targetKind) steps(f *wizard.Form, e *entryWizard) {
 		), false)
 		f.Input("user", "SSH user", nil, required("a user")).When(func(a wizard.Answers) bool { return a["auth"] == config.AuthSSHKey })
 		f.Load("bastion", "Bastion", e.bastions).When(func(wizard.Answers) bool { return e.ctx.Bastion == nil }).
-			Check(required("a Bastion (resource-group/name)")).Help("the context has none: this VM's")
+			Check(checkBastion(false)).Help("the context has none: this VM's")
 		e.nameStep(f, func(a wizard.Answers) string { return alias("targets", a["instance"]) })
 		return
 	}
 	f.Load("instance", "VM", func(wizard.Answers) ([]wizard.Option, error) {
 		return e.lookup(provider.GCEInstancesCommand(), provider.ParseGCEInstances)
 	}).Check(required("a VM name")).Help("running VMs — or type a name")
-	f.Input("zone", "Zone", func(a wizard.Answers) string { return e.extra[a["instance"]] }, nil).Help("empty: looked up when it is used")
+	f.Input("zone", "Zone", func(a wizard.Answers) string { return e.extraOf(a["instance"]) }, nil).Help("empty: looked up when it is used")
 	f.Input("user", "SSH user", nil, nil).Help("empty: gcloud's (your user name here)")
 	e.nameStep(f, func(a wizard.Answers) string { return alias("targets", a["instance"]) })
 }
@@ -90,7 +90,7 @@ func (targetKind) apply(e *entryWizard, a wizard.Answers, c *config.Context) {
 	switch {
 	case e.aws():
 		t.Zone, t.User = "", ""
-		if e.extra[a["instance"]] != "" {
+		if e.extraOf(a["instance"]) != "" {
 			t.Instance = a["by"]
 		}
 	case e.azure():
@@ -147,13 +147,13 @@ func (clusterKind) steps(f *wizard.Form, e *entryWizard) {
 		f.Load("cluster", "AKS cluster", func(wizard.Answers) ([]wizard.Option, error) {
 			return e.lookup(provider.AKSClustersCommand(), provider.ParseAKSClusters)
 		}).Check(required("a cluster name"))
-		f.Input("resource_group", "Resource group", func(a wizard.Answers) string { return e.extra[a["cluster"]] }, required("a resource group")).
+		f.Input("resource_group", "Resource group", func(a wizard.Answers) string { return e.extraOf(a["cluster"]) }, required("a resource group")).
 			Help("the cluster's")
 	} else {
 		f.Load("cluster", "GKE cluster", func(wizard.Answers) ([]wizard.Option, error) {
 			return e.lookup(provider.GKEClustersCommand(), provider.ParseGKEClusters)
 		}).Check(required("a cluster name"))
-		f.Input("location", "Location", func(a wizard.Answers) string { return e.extra[a["cluster"]] }, required("a zone or region")).
+		f.Input("location", "Location", func(a wizard.Answers) string { return e.extraOf(a["cluster"]) }, required("a zone or region")).
 			Help("the cluster's zone or region")
 		f.Select("endpoint", "Reach it at", wizard.Options(
 			wizard.Option{Value: "", Label: "its endpoint", Hint: "the cluster's own (public, if it has one)"},
@@ -244,7 +244,7 @@ func (tunnelKind) steps(f *wizard.Form, e *entryWizard) {
 	default:
 		f.Input("host", "Host", nil, required("a host")).When(is("host")).Help("its address, as the instance reaches it")
 	}
-	f.Input("port", "Port", func(a wizard.Answers) string { return e.extra[a["host"]] }, checkPort).When(remote)
+	f.Input("port", "Port", func(a wizard.Answers) string { return e.extraOf(a["host"]) }, checkPort).When(remote)
 	if !e.aws() && !e.azure() {
 		f.Load("cloudsql", "Instance", func(wizard.Answers) ([]wizard.Option, error) {
 			return e.lookup(provider.CloudSQLInstancesCommand(), provider.ParseCloudSQL)
@@ -258,7 +258,7 @@ func (tunnelKind) steps(f *wizard.Form, e *entryWizard) {
 	e.nameStep(f, func(a wizard.Answers) string {
 		switch a["kind"] {
 		case "host":
-			return alias("tunnels", e.labels[a["host"]])
+			return alias("tunnels", e.labelOf(a["host"]))
 		case "cloudsql":
 			return alias("tunnels", a["cloudsql"][strings.LastIndex(a["cloudsql"], ":")+1:])
 		}
@@ -338,6 +338,19 @@ func bastionOf(v string) *config.Bastion {
 	return &config.Bastion{Name: name, ResourceGroup: group}
 }
 
+// checkBastion wants resource-group/name — or nothing, when optional.
+func checkBastion(optional bool) func(string, wizard.Answers) error {
+	return func(v string, _ wizard.Answers) error {
+		if v == "" && optional {
+			return nil
+		}
+		if b := bastionOf(v); b == nil || b.ResourceGroup == "" || b.Name == "" || strings.Contains(b.Name, "/") {
+			return errors.New("a Bastion as resource-group/name, please")
+		}
+		return nil
+	}
+}
+
 func checkPort(v string, _ wizard.Answers) error {
 	if p, err := strconv.Atoi(v); err != nil || p < 1 || p > 65535 {
 		return errors.New("a port is a number from 1 to 65535")
@@ -351,7 +364,7 @@ var cloudSQLPorts = map[string]string{"POSTGRES": "15432", "MYSQL": "13306", "SQ
 
 func (e *entryWizard) defaultLocal(a wizard.Answers) string {
 	if a["kind"] == "cloudsql" {
-		engine, _, _ := strings.Cut(e.extra[a["cloudsql"]], "_")
+		engine, _, _ := strings.Cut(e.extraOf(a["cloudsql"]), "_")
 		return cloudSQLPorts[engine]
 	}
 	if p, err := strconv.Atoi(a["port"]); err == nil && p+10000 <= 65535 {

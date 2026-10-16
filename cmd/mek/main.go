@@ -19,6 +19,7 @@ func run(args []string, stderr io.Writer) int {
 	root.SetArgs(args)
 	err := root.Execute()
 	var exit *runner.ExitError
+	var missing *runner.NotFoundError
 	switch {
 	case err == nil:
 		return 0
@@ -26,5 +27,8 @@ func run(args []string, stderr io.Writer) int {
 		return exit.Code // the wrapped CLI already printed its own error
 	}
 	fmt.Fprintf(stderr, "%s %v\n", ui.Red("mek:"), err)
+	if errors.As(err, &missing) {
+		return 127
+	}
 	return 1
 }

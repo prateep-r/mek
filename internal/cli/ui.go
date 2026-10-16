@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -14,9 +15,10 @@ import (
 
 // Test seams: the UI needs a real terminal, and runs this binary.
 var (
-	isTerminal = func() bool { return term.IsTerminal(os.Stdin.Fd()) && term.IsTerminal(os.Stdout.Fd()) }
-	runUI      = tui.Run
-	executable = os.Executable
+	isTerminal    = func() bool { return term.IsTerminal(os.Stdin.Fd()) && term.IsTerminal(os.Stdout.Fd()) }
+	outIsTerminal = func(w io.Writer) bool { f, ok := w.(*os.File); return ok && term.IsTerminal(f.Fd()) }
+	runUI         = tui.Run
+	executable    = os.Executable
 )
 
 func (a *app) newUICmd() *cobra.Command {

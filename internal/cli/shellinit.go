@@ -7,20 +7,30 @@ import (
 )
 
 // shellInit is a shell function named mek: `mek use -s <context>` (or
-// --shell) runs the exports mek prints, so this shell switches; anything else
-// goes to the mek program unchanged.
+// --shell), mek's own flags before use too, runs the exports mek prints, so
+// this shell switches; anything else goes to the mek program unchanged.
 const shellInit = `# mek shell integration — https://github.com/prateep-r/mek
 mek() {
-  if [ "${1-}" = use ]; then
-    local __mek_arg __mek_out
-    for __mek_arg in "$@"; do
+  local __mek_arg __mek_out __mek_skip= __mek_use= __mek_s=
+  for __mek_arg in "$@"; do
+    if [ -n "$__mek_skip" ]; then __mek_skip=; continue; fi
+    if [ -z "$__mek_use" ]; then
       case "$__mek_arg" in
-        -s|--shell|--shell=true)
-          __mek_out="$(command mek "$@")" || return
-          eval "$__mek_out"
-          return ;;
+        -c|--context|--confirm|--project) __mek_skip=1 ;;
+        -*) ;;
+        use) __mek_use=1 ;;
+        *) break ;;
       esac
-    done
+    else
+      case "$__mek_arg" in
+        -s|--shell|--shell=true) __mek_s=1; break ;;
+      esac
+    fi
+  done
+  if [ -n "$__mek_s" ]; then
+    __mek_out="$(command mek "$@")" || return
+    eval "$__mek_out"
+    return
   fi
   command mek "$@"
 }

@@ -28,4 +28,9 @@ func TestRun(t *testing.T) {
 	if code := run([]string{"use", "nope"}, &stderr); code != 1 || !strings.Contains(stderr.String(), "mek: unknown context") {
 		t.Errorf("mek error: code %d, stderr %q", code, stderr.String())
 	}
+	// A CLI that isn't installed exits 127, as in a shell.
+	stderr.Reset()
+	if code := run([]string{"exec", "--", "no-such-cli-here"}, &stderr); code != 127 || !strings.Contains(stderr.String(), "not found in PATH") {
+		t.Errorf("missing CLI: code %d, stderr %q", code, stderr.String())
+	}
 }

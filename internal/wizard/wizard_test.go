@@ -116,6 +116,21 @@ func TestBackAndSkip(t *testing.T) {
 	}
 }
 
+// A default left as offered follows a changed earlier answer; one typed
+// over stays.
+func TestInputDefaultFollows(t *testing.T) {
+	f := clouds().Input("note", "Note", nil, nil)
+	drive(t, f, "type:dev", "enter", "down", "enter", "enter") // project: dev-proj, as offered
+	drive(t, f, "esc", "esc", "esc", "ctrl+u", "type:qa", "enter", "enter")
+	if !strings.Contains(screen(f), "qa-proj▏") {
+		t.Fatalf("stale default:\n%s", screen(f))
+	}
+	drive(t, f, "ctrl+u", "type:mine", "enter", "esc", "esc", "esc", "ctrl+u", "type:ops", "enter", "enter")
+	if !strings.Contains(screen(f), "mine▏") {
+		t.Errorf("typed answer replaced:\n%s", screen(f))
+	}
+}
+
 func regions() []Option {
 	var out []Option
 	for i := range 25 {

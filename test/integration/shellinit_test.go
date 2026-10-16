@@ -25,9 +25,14 @@ mek use --shell dev 2>/dev/null
 echo "ctx=$MEK_CONTEXT kube=${KUBECONFIG-unset}"
 mek use -s nope 2>/dev/null
 echo "status=$? ctx=$MEK_CONTEXT"
+mek --no-local use -s prod 2>/dev/null
+echo "ctx=$MEK_CONTEXT"
+mek --project "$PWD" -y use dev --shell 2>/dev/null
+echo "ctx=$MEK_CONTEXT"
+mek ctx use 2>/dev/null; mek -c prod ctx --short
 `
 	kube := filepath.Join(e.mekHome, "kube", "prod.yaml")
-	want := []string{"ctx=prod kube=" + kube, "prod", "ctx=dev kube=unset", "status=1 ctx=dev"}
+	want := []string{"ctx=prod kube=" + kube, "prod", "ctx=dev kube=unset", "status=1 ctx=dev", "ctx=prod", "ctx=dev", "prod"}
 	for _, sh := range []struct{ name, args, script string }{
 		{"bash", "--norc --noprofile -c", strings.ReplaceAll(posix, "SHELL", "bash")},
 		{"zsh", "-f -c", strings.ReplaceAll(posix, "SHELL", "zsh")},
