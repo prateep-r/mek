@@ -215,8 +215,8 @@ func TestPassthrough(t *testing.T) {
 
 	_, err := h.run("-c", "uat", "gcloud", "projects", "list")
 	wantErr(t, err, "needs a context with provider gcp")
-	_, err = h.run("aws", "-c")
-	wantErr(t, err, "needs a value")
+	_, err = h.run("-c")
+	wantErr(t, err, "needs an argument")
 	_, err = h.run("-c", "nope", "aws", "s3", "ls")
 	wantErr(t, err, "unknown context")
 
@@ -367,6 +367,19 @@ func TestFlagsAfterTheCLIAreItsOwn(t *testing.T) {
 	h.mustRun("--context=uat", "aws", "--version")
 	if got := h.exec.argv()[2]; got != "aws --version" {
 		t.Errorf("aws got %q", got)
+	}
+
+	// Traversing children still refuses a mistyped command.
+	_, err := h.run("ctxx")
+	wantErr(t, err, "unknown command \"ctxx\"")
+	wantErr(t, err, "Did you mean this?\n\tctx")
+	_, err = h.run("-c", "uat", "frobnicate")
+	wantErr(t, err, "unknown command \"frobnicate\"")
+	if strings.Contains(err.Error(), "Did you mean") {
+		t.Errorf("no suggestion expected: %v", err)
+	}
+	if out := h.mustRun(); !strings.Contains(out, "Usage:\n  mek [command]") {
+		t.Errorf("bare mek: %s", out)
 	}
 }
 

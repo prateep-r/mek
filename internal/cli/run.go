@@ -253,4 +253,3 @@ func confirmResult(ok bool, err error, flag string) (string, error) {
 	}
 	return "confirmed", nil
 }
-

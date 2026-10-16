@@ -162,7 +162,7 @@ func TestKubeToken(t *testing.T) {
 
 func TestKubectl(t *testing.T) {
 	h := newKubeHarness(t)
-	h.mustRun("kubectl", "-c", "g", "get", "pods")
+	h.mustRun("-c", "g", "kubectl", "get", "pods")
 	inv := h.exec.invs[0]
 	if strings.Join(inv.Argv, " ") != "kubectl get pods" || !slices.Contains(inv.Env, "KUBECONFIG="+filepath.Join(h.home, "kube", "g.yaml")) {
 		t.Errorf("kubectl: %q %q", inv.Argv, inv.Env)
@@ -171,20 +171,20 @@ func TestKubectl(t *testing.T) {
 		t.Errorf("audit: %+v", e)
 	}
 
-	_, err := h.run("kubectl", "-c", "g", "exec", "-it", "p", "--", "sh") // readonly: no shells
+	_, err := h.run("-c", "g", "kubectl", "exec", "-it", "p", "--", "sh") // readonly: no shells
 	wantErr(t, err, "readonly — blocked shell command")
 	fakePrompts(t, false, nil)
-	_, err = h.run("kubectl", "-c", "prod", "delete", "pod", "x")
+	_, err = h.run("-c", "prod", "kubectl", "delete", "pod", "x")
 	wantErr(t, err, "aborted")
 	if e := lastAudit(t); e.Class != "destructive" || e.Decision != "declined" {
 		t.Errorf("audit: %+v", e)
 	}
 
-	_, err = h.run("kubectl", "-c", "bare", "get", "pods")
+	_, err = h.run("-c", "bare", "kubectl", "get", "pods")
 	wantErr(t, err, "context bare has no clusters")
-	_, err = h.run("kubectl", "-c")
-	wantErr(t, err, "needs a value")
-	_, err = h.run("kubectl", "-c", "nope", "get")
+	_, err = h.run("-c")
+	wantErr(t, err, "needs an argument")
+	_, err = h.run("-c", "nope", "kubectl", "get")
 	wantErr(t, err, "unknown context")
 }
 

@@ -149,7 +149,7 @@ func TestShellErrors(t *testing.T) {
 // kubectl exec is a session too: start and end entries.
 func TestKubectlExecIsASession(t *testing.T) {
 	h := newKubeHarness(t)
-	h.mustRun("kubectl", "-c", "prod", "-y", "exec", "web-1", "--", "sh")
+	h.mustRun("-c", "prod", "-y", "kubectl", "exec", "web-1", "--", "sh")
 	if es := readAudit(t); len(es) != 2 || es[0].Event != "start" || es[1].Event != "end" || es[0].Class != "shell" {
 		t.Errorf("audit: %+v", es)
 	}
