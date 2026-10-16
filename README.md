@@ -308,12 +308,13 @@ mek   1 Contexts   2 Tunnels   3 Access   4 Audit
 | 3 Access | the chosen context's targets and clusters | `enter` a shell on a target, or write a cluster's kubeconfig · `k` K9s on a cluster |
 | 4 Audit | the last 500 entries, newest first | `/` search · `b` only blocked / declined · `c` only the chosen context · `esc` clear |
 
-The context chosen on tab 1 is the one tabs 3 and 4 use. Everything the UI does runs mek
-itself — `mek use`, `mek -c dev tunnel db -b`, `mek -c dev shell bastion` — so the guard and
-the audit log work exactly as when typed: a protected context asks first (in the UI, or in the
-terminal for shells), a readonly one still blocks shells. Shells, logins and K9s take over the
-terminal and return to the UI when they end; when one fails, it waits for Enter so the error
-can be read. Tunnels and the audit log refresh every second.
+- **The chosen context:** the one on tab 1 is the one tabs 3 and 4 use.
+- **Everything runs mek itself** — `mek use`, `mek -c dev tunnel db -b`, `mek -c dev shell
+  bastion` — so the guard and the audit log work as when typed: a protected context asks first
+  (in the UI, or in the terminal for shells), a readonly one still blocks shells.
+- **Shells, logins, K9s and the wizard** take over the terminal and return to the UI when they
+  end; when one fails, it waits for Enter so the error can be read.
+- **Tunnels and the audit log** refresh every second.
 
 ### Several accounts at once
 
@@ -388,6 +389,26 @@ jq -c 'select(.context == "prod" and .class != "read")' ~/.mek/audit.jsonl   # e
 jq -c 'select(.decision == "blocked")' ~/.mek/audit.jsonl                    # what the guard stopped
 ```
 
+### Using the native CLIs alongside mek
+
+mek doesn't replace `aws` or `gcloud`; it runs them with the context's settings.
+
+- Run `aws` / `gcloud` yourself, without mek, and nothing changes: mek never edits
+  `~/.aws/config` or `~/.config/gcloud`.
+- **AWS SSO contexts**: mek rewrites `~/.mek/aws/config` on every run, so
+  `mek aws configure set …` doesn't stick there — change the account, role or region in
+  `config.yaml`. **`aws_profile` contexts** use your own `~/.aws/config`; configure them with
+  `aws configure` as usual.
+- **GCP contexts** each have their own gcloud config, which keeps what you set:
+  `mek -c gcp-dev gcloud config set compute/zone asia-southeast1-b`. The project, account and
+  region come from `config.yaml` and win over gcloud's own settings.
+- To type plain `aws …` / `gcloud …` / `kubectl …` in a context, export it into the shell:
+  `eval "$(mek env prod)"`. Commands typed that way skip mek's guard and audit log.
+  (`mek use -s prod` switches mek's own commands in this shell — and plain `kubectl` / K9s,
+  through `KUBECONFIG` — but not plain `aws` or `gcloud`.)
+- To see what mek runs for each command — the exports and the command — turn on
+  [show-cmd](#seeing-the-native-command).
+
 ### Seeing the native command
 
 Want to see what mek runs — to learn the CLIs, check what a context does, or copy it into a
@@ -442,24 +463,6 @@ Turn it on or off — the first that says wins:
 
 `mek show-cmd` on its own says whether it is on and what decided it
 (`show-cmd is off — MEK_SHOW_CMD=0 in this shell`).
-
-### Using the native CLIs alongside mek
-
-mek doesn't replace `aws` or `gcloud`; it runs them with the context's settings.
-
-- Run `aws` / `gcloud` yourself, without mek, and nothing changes: mek never edits
-  `~/.aws/config` or `~/.config/gcloud`.
-- **AWS SSO contexts**: mek rewrites `~/.mek/aws/config` on every run, so
-  `mek aws configure set …` doesn't stick there — change the account, role or region in
-  `config.yaml`. **`aws_profile` contexts** use your own `~/.aws/config`; configure them with
-  `aws configure` as usual.
-- **GCP contexts** each have their own gcloud config, which keeps what you set:
-  `mek -c gcp-dev gcloud config set compute/zone asia-southeast1-b`. The project, account and
-  region come from `config.yaml` and win over gcloud's own settings.
-- To type plain `aws …` / `gcloud …` / `kubectl …` in a context, export it into the shell:
-  `eval "$(mek env prod)"`. Commands typed that way skip mek's guard and audit log.
-  (`mek use -s prod` switches mek's own commands in this shell — and plain `kubectl` / K9s,
-  through `KUBECONFIG` — but not plain `aws` or `gcloud`.)
 
 ### Terraform, SDKs and other tools
 
@@ -614,8 +617,7 @@ if it is committed anyway. Things it is for:
 
 1. **The team's context with your role** — `mek ctx edit orders-dev`, then *your own copy* in
    `mek.local.yaml`, does it for you ([how](#change-a-context)). By hand: copy the whole
-   context and change what is yours (a context comes whole from one file, so copying only
-   `role:` would drop the rest):
+   context (only `role:` would drop the rest) and change what is yours:
 
    ```yaml
    contexts:
@@ -662,8 +664,8 @@ replaced by your own `mek.local.yaml` isn't warned about.) The audit log records
 
 ### Questions
 
-- **Why can't I put just `tunnels:` in mek.local.yaml?** A context comes whole from one file;
-  copy the context, then add to it.
+- **Why can't I put just `tunnels:` in mek.local.yaml?** A context comes whole from one file
+  (see above): copy the context, then add to it.
 - **I left the project and the context is gone.** A project's contexts exist inside it only.
   A context chosen there with `mek use` makes mek say so elsewhere; for project work,
   `mek use -s orders-dev` (this shell only) suits better.
@@ -935,7 +937,7 @@ team's account with your role:
 ✓ copied orders-dev to ./mek.local.yaml — yours is used in this project; the team's stays as it is
 ```
 
-The copy is whole (a context comes whole from one file), so its tunnels and clusters came too.
+The copy is the whole context, so its tunnels and clusters came too.
 It can add `protected` / `readonly`, but not drop one the team's `mek.yaml` sets
 ([Project config](#project-config-mekyaml-and-meklocalyaml)).
 
@@ -969,6 +971,8 @@ Add a tunnel to orders-dev
   ▸ a host, through an instance  e.g. a database: RDS, a private IP, Redis
     a port on an instance  a service on the instance itself
 ```
+
+On a GCP context there is a third choice, *Cloud SQL* (below).
 
 **A database through a bastion** — the instance is one of the context's targets or a running
 instance (by its Name tag), and RDS and Aurora endpoints are listed with their port:
