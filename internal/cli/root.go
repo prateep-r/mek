@@ -58,7 +58,20 @@ What protected and readonly do: mek help guard.`,
 		// mek's flags before a wrapped CLI's name are mek's; those after it
 		// are the CLI's (mek -c prod gcloud --project other …).
 		TraverseChildren: true,
+		// Traversing skips cobra's check for a mistyped command: do it here.
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return cmd.Help()
+			}
+			msg := fmt.Sprintf("unknown command %q for \"mek\"", args[0])
+			if s := cmd.SuggestionsFor(args[0]); len(s) > 0 {
+				msg += "\n\nDid you mean this?\n\t" + strings.Join(s, "\n\t")
+			}
+			return fmt.Errorf("%s\nRun 'mek --help' for usage", msg)
+		},
 	}
+	// …which makes mek runnable: keep "mek [flags]" out of its usage.
+	root.SetUsageTemplate(strings.Replace(root.UsageTemplate(), "{{if .Runnable}}", "{{if and .Runnable .HasParent}}", 1))
 	pf := root.PersistentFlags()
 	pf.StringVarP(&a.opts.context, "context", "c", "", "context for this command (overrides the current context and $MEK_CONTEXT)")
 	pf.BoolVarP(&a.opts.yes, "yes", "y", false, "answer yes to write confirmations on protected contexts")

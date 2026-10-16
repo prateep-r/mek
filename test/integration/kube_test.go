@@ -88,7 +88,7 @@ func TestKubeGKE(t *testing.T) {
 // mek kubectl runs kubectl with the context's KUBECONFIG, guarded and audited.
 func TestKubectlPassthrough(t *testing.T) {
 	e := kubeSetup(t)
-	r := e.run("kubectl", "-c", "prod", "get", "pods")
+	r := e.run("-c", "prod", "kubectl", "get", "pods")
 	if r.Code != 0 {
 		t.Fatalf("get: %+v", r)
 	}
@@ -98,7 +98,7 @@ func TestKubectlPassthrough(t *testing.T) {
 	}
 
 	// Protected: a delete without --confirm fails closed (no terminal).
-	r = e.run("kubectl", "-c", "prod", "delete", "pod", "web-1")
+	r = e.run("-c", "prod", "kubectl", "delete", "pod", "web-1")
 	if r.Code == 0 || len(e.calls()) != 1 {
 		t.Errorf("delete must not run: %+v", r)
 	}
@@ -114,7 +114,7 @@ func TestKubectlPassthrough(t *testing.T) {
 		t.Errorf("--from-literal value leaked into the audit log:\n%s", b)
 	}
 
-	if r := e.run("kubectl", "-c", "bare", "get", "pods"); r.Code == 0 || !strings.Contains(r.Stderr, "has no clusters") {
+	if r := e.run("-c", "bare", "kubectl", "get", "pods"); r.Code == 0 || !strings.Contains(r.Stderr, "has no clusters") {
 		t.Errorf("no clusters: %+v", r)
 	}
 }

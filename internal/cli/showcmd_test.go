@@ -92,7 +92,7 @@ func TestShowCmdRuns(t *testing.T) {
 	}
 	// mek's flags after the CLI name, as passthrough takes them.
 	t.Setenv("MEK_SHOW_CMD", "")
-	if out := stderr(t, func() { h.mustRun("aws", "--show-cmd", "-c", "uat", "s3", "ls") }); !strings.Contains(out, "↳ runs:") {
+	if out := stderr(t, func() { h.mustRun("--show-cmd", "-c", "uat", "aws", "s3", "ls") }); !strings.Contains(out, "↳ runs:") {
 		t.Errorf("--show-cmd after aws:\n%s", out)
 	}
 	if out := stderr(t, func() { h.mustRun("--no-show-cmd", "-c", "uat", "aws", "s3", "ls") }); strings.Contains(out, "↳ runs:") {
@@ -167,16 +167,16 @@ func TestShowCmdReviewFixes(t *testing.T) {
 	h := newHarness(t, testConfig)
 	t.Setenv("MEK_SHOW_CMD", "")
 
-	// Passthrough reads mek's own bool flags with their values.
-	if out := stderr(t, func() { h.mustRun("aws", "--show-cmd=false", "-c", "uat", "s3", "ls") }); strings.Contains(out, "↳ runs:") {
+	// mek's own bool flags, with their values, before the CLI's name.
+	if out := stderr(t, func() { h.mustRun("--show-cmd=false", "-c", "uat", "aws", "s3", "ls") }); strings.Contains(out, "↳ runs:") {
 		t.Errorf("--show-cmd=false after aws:\n%s", out)
 	}
-	if out := stderr(t, func() { h.mustRun("aws", "--no-show-cmd", "--show-cmd", "-c", "uat", "s3", "ls") }); !strings.Contains(out, "↳ runs:") {
+	if out := stderr(t, func() { h.mustRun("--no-show-cmd", "--show-cmd", "-c", "uat", "aws", "s3", "ls") }); !strings.Contains(out, "↳ runs:") {
 		t.Errorf("the last flag wins:\n%s", out)
 	}
-	h.mustRun("aws", "--yes=true", "--no-local=false", "-c", "uat", "s3", "ls")
-	_, err := h.run("aws", "--yes=maybe", "-c", "uat", "s3", "ls")
-	wantErr(t, err, `--yes: "maybe" isn't true or false`)
+	h.mustRun("--yes=true", "--no-local=false", "-c", "uat", "aws", "s3", "ls")
+	_, err := h.run("--yes=maybe", "-c", "uat", "aws", "s3", "ls")
+	wantErr(t, err, `invalid argument "maybe"`)
 	_, err = h.run("--show-cmd=maybe", "show-cmd")
 	wantErr(t, err, "invalid argument")
 

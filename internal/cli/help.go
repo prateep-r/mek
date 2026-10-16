@@ -108,10 +108,10 @@ func guardHelp() string {
 	examples := map[guard.Class]string{
 		guard.Read:        "describe-*, list-*, get-*, s3 ls, kubectl get/logs, --dry-run",
 		guard.Write:       "create-*, update-*, s3 cp, deploy, kubectl apply/scale, unknown verbs",
-		guard.Destructive: "delete-*, terminate-*, stop-*, s3 rm, sync --delete, kubectl delete/drain",
+		guard.Destructive: "delete-*, terminate-*, stop-*, s3 rm/mv, sync --delete, kubectl delete/drain",
 		guard.Unknown:     "anything through mek exec",
-		guard.Shell:       "mek shell, aws ssm start-session, gcloud compute ssh, az network bastion ssh, kubectl exec",
-		guard.Tunnel:      "mek tunnel, port forwarding, kubectl port-forward/proxy",
+		guard.Shell:       "mek shell, aws ssm start-session, gcloud compute ssh, az network bastion ssh, kubectl exec/proxy",
+		guard.Tunnel:      "mek tunnel, port forwarding, kubectl port-forward",
 	}
 	word := map[guard.Decision]string{guard.Allow: "run", guard.Confirm: "ask y/N",
 		guard.ConfirmTyped: "type the context name", guard.Block: "blocked"}
