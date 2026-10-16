@@ -7,6 +7,7 @@
 package guard
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/prateep-r/mek/internal/config"
@@ -78,10 +79,13 @@ var (
 		"select", "batch-get", "filter", "preview", "estimate", "validate",
 		"simulate", "test", "check", "detect", "view", "tail", "wait", "help",
 	}
+	// Read-looking prefixes that act: test-invoke-method runs the backend.
+	awsNotRead             = []string{"test-invoke"}
 	awsDestructivePrefixes = []string{
 		"delete", "terminate", "remove", "purge", "deregister", "revoke", "detach",
 		"disassociate", "cancel", "stop", "reset", "reboot", "disable", "abort",
 		"release", "deactivate", "unassign", "failover", "batch-delete", "drop",
+		"schedule-key-deletion",
 	}
 	// Services that only touch local state.
 	awsLocalServices = map[string]bool{"configure": true, "sso": true, "help": true, "history": true}
@@ -105,6 +109,32 @@ func positionals(args []string, valueFlags map[string]bool) []string {
 	return out
 }
 
+// beforeDashDash is args up to a bare "--": after it, the arguments are a
+// command's own (kubectl exec … -- df -h).
+func beforeDashDash(args []string) []string {
+	for i, a := range args {
+		if a == "--" {
+			return args[:i]
+		}
+	}
+	return args
+}
+
+// lastBool is the last of --flag / --no-flag in args (the CLI's own rule:
+// the last one wins); false when neither is there.
+func lastBool(args []string, flag string) bool {
+	on := false
+	for _, a := range args {
+		switch a {
+		case "--" + flag:
+			on = true
+		case "--no-" + flag:
+			on = false
+		}
+	}
+	return on
+}
+
 // HasFlag reports whether args contain flag, as `--flag` or `--flag=value`.
 func HasFlag(args []string, flag string) bool {
 	for _, a := range args {
@@ -115,18 +145,23 @@ func HasFlag(args []string, flag string) bool {
 	return false
 }
 
-// FlagValue returns the value of `--flag value` or `--flag=value` ("" if absent).
+// FlagValue returns the value of `--flag value` or `--flag=value` ("" if
+// absent); given twice, the last, as the CLIs take it.
 func FlagValue(args []string, flag string) string {
+	v := ""
 	for i, a := range args {
-		if v, ok := strings.CutPrefix(a, flag+"="); ok {
-			return v
-		}
-		if a == flag && i+1 < len(args) {
-			return args[i+1]
+		if after, ok := strings.CutPrefix(a, flag+"="); ok {
+			v = after
+		} else if a == flag && i+1 < len(args) {
+			v = args[i+1]
 		}
 	}
-	return ""
+	return v
 }
+
+// hasPrefixOf is hasPrefix with its arguments the other way round, for
+// slices.Contains's shape.
+func hasPrefixOf(prefixes []string, s string) bool { return hasPrefix(s, prefixes) }
 
 func hasPrefix(s string, prefixes []string) bool {
 	for _, p := range prefixes {
@@ -154,7 +189,7 @@ func ClassifyAWS(args []string) Class {
 		switch op {
 		case "ls", "presign":
 			return Read
-		case "rm", "rb":
+		case "rm", "rb", "mv": // mv deletes the source
 			return Destructive
 		case "sync":
 			if HasFlag(args, "--delete") {
@@ -163,16 +198,18 @@ func ClassifyAWS(args []string) Class {
 		}
 		return Write
 	}
-	if HasFlag(args, "--dry-run") {
+	if lastBool(args, "dry-run") {
 		return Read
 	}
 	if svc == "ssm" && op == "start-session" { // the session itself, not an API change
-		if strings.Contains(FlagValue(args, "--document-name"), "PortForwarding") {
+		if strings.HasPrefix(FlagValue(args, "--document-name"), "AWS-StartPortForwardingSession") {
 			return Tunnel
 		}
-		return Shell
+		return Shell // a custom document may do anything a shell can
 	}
 	switch {
+	case hasPrefix(op, awsNotRead):
+		return Write
 	case hasPrefix(op, awsReadPrefixes):
 		return Read
 	case hasPrefix(op, awsDestructivePrefixes):
@@ -195,10 +232,16 @@ var (
 		"config": true, "auth": true, "help": true, "info": true, "version": true,
 		"components": true, "topic": true, "init": true, "cheat-sheet": true, "feedback": true,
 	}
-	// ls/cat/du/hash and rm are `gcloud storage` verbs; access reads a secret version.
-	gcloudReadVerbs        = []string{"list", "describe", "get", "read", "tail", "print", "show", "search", "lookup", "help", "test", "validate", "check", "wait", "ls", "cat", "du", "hash", "access"}
-	gcloudDestructiveVerbs = []string{"delete", "remove", "destroy", "purge", "stop", "reset", "abandon", "cancel", "disable", "revoke", "detach", "suspend", "failover", "rm"}
-	gcloudWriteVerbs       = []string{"create", "update", "set", "add", "deploy", "apply", "patch", "start", "resume", "resize", "import", "export", "enable", "attach", "ssh", "scp", "restart", "restore", "rollback", "promote", "move", "copy", "upload", "submit", "execute", "replace", "undelete", "reboot", "scale", "migrate"}
+	// ls/cat/du/hash, rm and mv are `gcloud storage` verbs; access reads a
+	// secret version; seek rewinds a subscription (acks are lost). Verbs
+	// that only look unknown are listed too, so that a name after them
+	// (scheduler jobs run list-users) is not taken for the verb.
+	gcloudReadVerbs        = []string{"list", "describe", "get", "read", "tail", "print", "show", "search", "lookup", "help", "test-iam-permissions", "validate", "check", "wait", "ls", "cat", "du", "hash", "access"}
+	gcloudDestructiveVerbs = []string{"delete", "remove", "destroy", "purge", "stop", "reset", "abandon", "cancel", "disable", "revoke", "detach", "suspend", "failover", "rm", "mv", "seek"}
+	gcloudWriteVerbs       = []string{"create", "update", "set", "add", "deploy", "apply", "patch", "start", "resume", "resize", "import", "export", "enable", "attach", "scp", "restart", "restore", "rollback", "promote", "move", "copy", "upload", "submit", "execute", "replace", "undelete", "reboot", "scale", "migrate", "pull", "publish", "ack", "modify-ack-deadline", "run"}
+	// Verbs that open a session: compute ssh, cloud-shell ssh, sql connect
+	// (a database shell), compute connect-to-serial-port (a console).
+	gcloudShellVerbs = map[string]bool{"ssh": true, "connect": true, "connect-to-serial-port": true}
 )
 
 // ClassifyGCloud classifies `gcloud <group>... <verb> ...` arguments.
@@ -217,12 +260,15 @@ func ClassifyGCloud(args []string) Class {
 	if pos[start] == "storage" && HasFlag(args, "--delete-unmatched-destination-objects") {
 		return Destructive // storage rsync that deletes extra destination objects
 	}
-	if rest := pos[start:]; len(rest) >= 2 && rest[0] == "compute" {
-		switch rest[1] {
-		case "ssh":
+	if rest := pos[start:]; len(rest) >= 2 && rest[0] == "compute" && rest[1] == "start-iap-tunnel" {
+		return Tunnel
+	}
+	for _, p := range pos[start+1:] {
+		if gcloudShellVerbs[p] {
 			return Shell
-		case "start-iap-tunnel":
-			return Tunnel
+		}
+		if hasPrefix(p, gcloudReadVerbs) || hasPrefix(p, gcloudWriteVerbs) || hasPrefix(p, gcloudDestructiveVerbs) {
+			break // the verb comes first: what follows it are names
 		}
 	}
 	return classifyVerbs(pos[start+1:], gcloudReadVerbs, gcloudWriteVerbs, gcloudDestructiveVerbs)
@@ -230,38 +276,57 @@ func ClassifyGCloud(args []string) Class {
 
 // ---------- az (Azure) ----------
 
+// az's global flags that take a value, for flags put before the command.
 var azValueFlags = map[string]bool{
-	"--subscription": true, "--resource-group": true, "-g": true, "--output": true, "-o": true,
-	"--query": true, "--name": true, "-n": true, "--location": true, "-l": true, "--ids": true,
+	"--subscription": true, "--output": true, "-o": true, "--query": true,
 }
 
 var (
 	// Groups that only touch az's own files: its login, config and extensions.
+	// (account and bicep are not: account set changes the subscription the
+	// context's commands act on, account lock and bicep publish the cloud.)
 	azLocalGroups = map[string]bool{
-		"login": true, "logout": true, "account": true, "config": true, "configure": true,
+		"login": true, "logout": true, "config": true, "configure": true,
 		"extension": true, "version": true, "upgrade": true, "interactive": true, "find": true,
-		"init": true, "feedback": true, "cloud": true, "self-test": true, "bicep": true,
+		"init": true, "feedback": true, "cloud": true, "self-test": true,
 	}
 	azReadVerbs        = []string{"list", "show", "get", "exists", "check", "wait", "query", "tail", "download", "browse"}
-	azDestructiveVerbs = []string{"delete", "remove", "purge", "deallocate", "stop", "reset", "revoke", "detach", "disable", "cancel", "abort", "failover", "regenerate", "reimage", "unregister"}
+	azDestructiveVerbs = []string{"delete", "remove", "purge", "deallocate", "stop", "reset", "revoke", "detach", "disable", "cancel", "abort", "failover", "regenerate", "reimage", "unregister", "flush", "generalize"}
 	azWriteVerbs       = []string{"create", "update", "set", "add", "start", "restart", "deploy", "apply", "import", "enable", "attach", "assign", "scale", "resize", "upgrade", "invoke", "run", "swap", "move", "copy", "upload", "patch", "restore", "approve", "grant", "register", "rotate"}
 )
 
-// ClassifyAzure classifies `az <group>... <command> ...` arguments.
+// ClassifyAzure classifies `az <group>... <command> ...` arguments. az takes
+// no positional arguments: the words before the first flag are the command,
+// and its last word is the verb (monitor log-analytics query-pack delete).
 func ClassifyAzure(args []string) Class {
-	pos := positionals(args, azValueFlags)
-	if len(pos) == 0 || azLocalGroups[pos[0]] || HasFlag(args, "--help") || HasFlag(args, "-h") {
-		return Read
+	for len(args) > 0 && strings.HasPrefix(args[0], "-") { // az -o table vm list
+		if azValueFlags[args[0]] && len(args) > 1 {
+			args = args[1:]
+		}
+		args = args[1:]
 	}
-	if pos[0] == "network" && len(pos) >= 3 && pos[1] == "bastion" {
-		switch pos[2] {
-		case "ssh", "rdp":
-			return Shell
-		case "tunnel":
-			return Tunnel
+	path := args
+	for i, a := range args {
+		if strings.HasPrefix(a, "-") {
+			path = args[:i]
+			break
 		}
 	}
-	return classifyVerbs(pos[1:], azReadVerbs, azWriteVerbs, azDestructiveVerbs)
+	// -h right after the command is help; later, it may be a flag's value.
+	help := len(path) < len(args) && (args[len(path)] == "-h" || args[len(path)] == "--help")
+	if len(path) < 2 || help || azLocalGroups[path[0]] {
+		return Read // a bare group prints its commands
+	}
+	verb := path[len(path)-1]
+	switch {
+	case path[0] == "network" && path[1] == "bastion" && (verb == "ssh" || verb == "rdp"):
+		return Shell
+	case path[0] == "network" && path[1] == "bastion" && verb == "tunnel":
+		return Tunnel
+	case path[0] == "bicep" && verb != "publish", path[0] == "account" && verb == "clear":
+		return Read // builds, formats, the CLI's own install; az's token cache
+	}
+	return classifyVerbs([]string{verb}, azReadVerbs, azWriteVerbs, azDestructiveVerbs)
 }
 
 // ---------- hcloud (Huawei Cloud KooCLI) ----------
@@ -302,7 +367,7 @@ func ClassifyHuawei(args []string) Class {
 		switch pos[1] {
 		case "ls", "stat":
 			return Read
-		case "rm", "rb":
+		case "rm", "rb", "abort": // abort drops the parts uploaded so far
 			return Destructive
 		}
 		return Write
@@ -339,16 +404,20 @@ func pascalWords(s string) []string {
 }
 
 // classifyVerbs lets the first known verb after the top-level group decide,
-// for CLIs shaped like `<cli> <group> [<subgroup>...] <verb>`.
+// for CLIs shaped like `<cli> <group> [<subgroup>...] <verb>`: first a word
+// that is a verb (os-login ssh-keys remove: remove), then one that starts
+// like one (get-iam-policy).
 func classifyVerbs(rest []string, read, write, destructive []string) Class {
-	for _, p := range rest {
-		switch {
-		case hasPrefix(p, destructive):
-			return Destructive
-		case hasPrefix(p, read):
-			return Read
-		case hasPrefix(p, write):
-			return Write
+	for _, match := range []func([]string, string) bool{slices.Contains[[]string], hasPrefixOf} {
+		for _, p := range rest {
+			switch {
+			case match(destructive, p):
+				return Destructive
+			case match(read, p):
+				return Read
+			case match(write, p):
+				return Write
+			}
 		}
 	}
 	if len(rest) == 0 {

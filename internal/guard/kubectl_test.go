@@ -47,7 +47,13 @@ func TestClassifyKubectl(t *testing.T) {
 		"attach p":                                       Shell,
 		"debug node/n -it --image busybox":               Shell,
 		"port-forward svc/db 5432":                       Tunnel,
-		"proxy":                                          Tunnel,
+		"proxy":                                          Shell, // the whole API on localhost
+		"exec p -- ls -h":                                Shell, // ls's -h, not kubectl's
+		"exec p -- tool --dry-run":                       Shell,
+		"delete ns prod -- --help":                       Destructive,
+		"apply -f x.yaml --prune -l app=a":               Destructive,
+		"--as-uid u delete ns prod":                      Destructive,
+		"--profile cpu get pods":                         Read,
 		"delete --help":                                  Read,
 		"exec -h":                                        Read,
 		"frobnicate x":                                   Write,
