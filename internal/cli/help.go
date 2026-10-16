@@ -140,8 +140,9 @@ HOW COMMANDS ARE JUDGED
 ` + b.String() + `
 ANSWERING AHEAD
   -y, --yes                answers yes to writes (and shells, tunnels) on protected contexts
-  --confirm <context>      confirms a destructive command (the name must match)
-  Without a terminal to ask on (CI, a pipe), a command that needs an answer
+  --confirm <context>      answers every question on that context, destructive
+                           ones included (the name must match)
+  Without a terminal to ask on (CI, a cron job), a command that needs an answer
   doesn't run.
 
 THE AUDIT LOG
