@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -55,6 +56,7 @@ func (m *model) run(a action, yes bool) tea.Cmd {
 	if a.interactive {
 		return execInTerminal(cmd, func(err error) tea.Msg { return doneMsg{a: a, err: err} })
 	}
+	cmd.Env = append(os.Environ(), "MEK_SHOW_CMD=0") // its output becomes the status line
 	return func() tea.Msg {
 		out, err := output(cmd)
 		return doneMsg{a: a, out: lastLine(string(out)), err: err}

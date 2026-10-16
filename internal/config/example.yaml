@@ -52,3 +52,7 @@ contexts:
   #     web: {instance: web-1, zone: asia-southeast1-b}          # zone is looked up if omitted
   #   tunnels:
   #     sql: {cloudsql: "my-project-id:asia-southeast1:db", local_port: 15432}   # needs `mek login --adc`
+
+# How mek behaves for you (only in this file, not in a project's mek.yaml).
+# settings:
+#   show_cmd: true     # print each command mek runs as you'd type it yourself (mek show-cmd on|off)

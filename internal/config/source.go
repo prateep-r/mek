@@ -51,6 +51,9 @@ func (l Layers) Read() (*Config, error) {
 			return nil, err
 		}
 		out.Files = append(out.Files, c.Files...)
+		if out.Settings == nil {
+			out.Settings = c.Settings
+		}
 		for name, ctx := range c.Contexts {
 			won, ok := out.Contexts[name]
 			if !ok {

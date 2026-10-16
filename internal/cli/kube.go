@@ -137,6 +137,7 @@ func (a *app) newKubeTokenCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			a.machine = true // kubectl reads this output: show-cmd stays out of it
 			return a.runPlain(l.prov.TokenCommand(name, location), l.env.Apply(os.Environ()))
 		},
 	}

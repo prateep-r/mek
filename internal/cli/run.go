@@ -26,7 +26,7 @@ func (a *app) runPlain(argv, env []string) error { return a.plainTo(argv, env, n
 // plainTo is runPlain with stdout sent to w (nil: the terminal).
 func (a *app) plainTo(argv, env []string, w io.Writer) error {
 	inv := &runner.Invocation{Argv: argv, Env: env, Stdout: w}
-	return inv.Err(a.exec.Run(inv))
+	return inv.Err(a.showCmd(a.exec).Run(inv))
 }
 
 // newPassthroughCmd forwards everything after `mek <cli>` to the real CLI.
@@ -111,7 +111,7 @@ func (a *app) pipeline() runner.Runner { return a.pipelineTo(a.exec) }
 // pipelineTo is the pipeline ending in terminal instead of exec (a Strategy
 // for where the command finally runs: here, or under a tunnel supervisor).
 func (a *app) pipelineTo(terminal runner.Runner) runner.Runner {
-	return runner.Chain(terminal, audit.Recorder(warnAudit), a.guard, audit.SessionStart(warnAudit))
+	return runner.Chain(terminal, audit.Recorder(warnAudit), a.guard, audit.SessionStart(warnAudit), a.showCmd)
 }
 
 // guarded runs argv in the context through the pipeline.
@@ -147,7 +147,7 @@ func (a *app) query(l *loaded) provider.Query {
 		var out, stderr bytes.Buffer
 		inv := &runner.Invocation{Context: l.ctx, Argv: argv, Env: l.env.Apply(os.Environ()), Class: guard.Read, Stdout: &out}
 		if l.quiet || l.draft {
-			inv.Stderr = &stderr
+			inv.Stderr, inv.Quiet = &stderr, true
 		}
 		if err := inv.Err(a.pipeline().Run(inv)); err != nil {
 			what := strings.Join(argv[:min(3, len(argv))], " ")
@@ -258,6 +258,10 @@ func (a *app) takeGlobalFlags(args []string) ([]string, error) {
 			}
 		case "-y", "--yes":
 			a.opts.yes = true
+		case "--show-cmd":
+			a.opts.showCmd = true
+		case "--no-show-cmd":
+			a.opts.noShowCmd = true
 		case "--no-local":
 			config.NoProject = true
 		default:
