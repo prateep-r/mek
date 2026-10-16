@@ -1,13 +1,17 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
-	"regexp"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/prateep-r/mek/internal/config"
 	"github.com/prateep-r/mek/internal/provider"
@@ -21,6 +25,7 @@ import (
 // that really run are shown.
 func (a *app) showCmd(next runner.Runner) runner.Runner {
 	return runner.Func(func(inv *runner.Invocation) error {
+		// Quiet: a wizard's lookup, or output a program reads (mek kube token).
 		if !inv.Quiet && a.showCmdOn() {
 			ui.Info("%s", ui.Dim(nativeCommand(inv.Argv, inv.Env, os.Environ())))
 		}
@@ -57,7 +62,7 @@ func nativeCommand(argv, env, base []string) string {
 	}
 	words := make([]string, len(argv))
 	for i, w := range argv {
-		words[i] = shellWord(w)
+		words[i] = provider.ShellWord(w)
 	}
 	b.WriteString("    " + strings.Join(words, " ") + "\n")
 	b.WriteString("    # typed yourself, it skips mek's guard and audit log")
@@ -73,35 +78,19 @@ func envMap(env []string) map[string]string {
 	return m
 }
 
-var plainWord = regexp.MustCompile(`^[A-Za-z0-9_@%+=:,./-]+$`)
-
-// shellWord quotes a word for a POSIX shell, only when it needs it.
-func shellWord(s string) string {
-	if plainWord.MatchString(s) {
-		return s
-	}
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
-// showCmdState says whether show-cmd is on, and what decided it:
-// --show-cmd / --no-show-cmd, then $MEK_SHOW_CMD, then settings.show_cmd in
-// ~/.mek/config.yaml, else off. Output meant for a program (mek kube token,
-// which kubectl runs) never has it.
+// showCmdState says whether show-cmd is on, and what decided it: the last
+// of --show-cmd / --no-show-cmd, then $MEK_SHOW_CMD, then settings.show_cmd
+// in ~/.mek/config.yaml, else off.
 func (a *app) showCmdState() (on bool, why string) {
-	switch {
-	case a.machine:
-		return false, "output for a program"
-	case a.opts.noShowCmd:
-		return false, "--no-show-cmd"
-	case a.opts.showCmd:
-		return true, "--show-cmd"
+	if f := a.opts.showCmd; f.set {
+		return f.on, f.name
 	}
 	if v := os.Getenv("MEK_SHOW_CMD"); v != "" {
 		if on, ok := onOff(v); ok {
 			return on, "MEK_SHOW_CMD=" + v + " in this shell"
 		}
 	}
-	if s := a.savedShowCmd(); s != nil {
+	if s, _ := a.savedShowCmd(); s != nil {
 		return *s, "settings.show_cmd in " + config.Show(config.Path())
 	}
 	return false, "the default"
@@ -113,15 +102,64 @@ func (a *app) showCmdOn() bool {
 }
 
 // savedShowCmd is settings.show_cmd from ~/.mek/config.yaml (nil: not set),
-// read once, and only when a command runs.
-func (a *app) savedShowCmd() *bool {
-	if !a.settingsRead {
-		a.settingsRead = true
-		if c, err := (config.File{Path: config.Path()}).Read(); err == nil && c.Settings != nil {
-			a.settingShowCmd = c.Settings.ShowCmd
+// read once — and only once a command runs — even if the rest of the file
+// has a problem.
+func (a *app) savedShowCmd() (*bool, error) {
+	a.settings.Do(func() {
+		b, err := os.ReadFile(config.Path())
+		if errors.Is(err, fs.ErrNotExist) {
+			return
 		}
+		var s *config.Settings
+		if err == nil {
+			s, err = config.ReadSettings(b)
+		}
+		if s != nil {
+			a.settingShowCmd = s.ShowCmd
+		}
+		a.settingsErr = err
+	})
+	return a.settingShowCmd, a.settingsErr
+}
+
+// showCmdFlag is --show-cmd or --no-show-cmd: one setting, so of the two
+// the one given last wins (pflag reads flags in order).
+type showCmdFlag struct {
+	set, on bool
+	name    string // the flag that set it
+}
+
+type showCmdValue struct {
+	f    *showCmdFlag
+	name string
+	on   bool // what the flag means, given without a value
+}
+
+func (v showCmdValue) String() string { return "false" }
+func (v showCmdValue) Type() string   { return "bool" }
+
+func (v showCmdValue) Set(s string) error {
+	b, err := strconv.ParseBool(s)
+	if err != nil {
+		return err
 	}
-	return a.settingShowCmd
+	*v.f = showCmdFlag{set: true, on: b == v.on, name: v.name}
+	if !b {
+		v.f.name += "=false"
+	}
+	return nil
+}
+
+func showCmdFlags(pf *pflag.FlagSet, f *showCmdFlag) {
+	for _, d := range []struct {
+		name, usage string
+		on          bool
+	}{
+		{"show-cmd", "print each command mek runs as you would type it yourself (see mek show-cmd)", true},
+		{"no-show-cmd", "don't print it, whatever MEK_SHOW_CMD or settings.show_cmd say", false},
+	} {
+		pf.VarPF(showCmdValue{f, "--" + d.name, d.on}, d.name, "", d.usage).NoOptDefVal = "true"
+	}
 }
 
 func onOff(v string) (on, ok bool) {
@@ -169,7 +207,10 @@ On or off, the first that says wins:
 			if len(args) == 0 {
 				on, why := a.showCmdState()
 				fmt.Fprintf(cmd.OutOrStdout(), "show-cmd is %s — %s\n", word(on), why)
-				if s := a.savedShowCmd(); s != nil && *s != on {
+				switch s, err := a.savedShowCmd(); {
+				case err != nil:
+					fmt.Fprintf(cmd.OutOrStdout(), "  (can't read settings.show_cmd from %s: %v)\n", config.Show(config.Path()), err)
+				case s != nil && *s != on:
 					fmt.Fprintf(cmd.OutOrStdout(), "  (%s says %s)\n", config.Show(config.Path()), word(*s))
 				}
 				return nil
@@ -178,11 +219,11 @@ On or off, the first that says wins:
 			if !ok {
 				return fmt.Errorf("mek show-cmd %s: want on or off", args[0])
 			}
-			path := config.Path()
-			if err := editConfig(path, config.Template(path), func(e *config.Editor) error { return e.SetSetting("show_cmd", on) }); err != nil {
+			if err := saveShowCmd(on); err != nil {
 				return err
 			}
-			a.settingsRead = false
+			path := config.Path()
+			a.settings, a.settingsErr = sync.Once{}, nil
 			ui.Info("%s show-cmd %s, in %s", ui.Green("✓"), word(on), config.Show(path))
 			if now, why := a.showCmdState(); now != on {
 				ui.Info("  but %s turns it %s here", why, word(now))
@@ -197,4 +238,19 @@ func word(on bool) string {
 		return "on"
 	}
 	return "off"
+}
+
+// saveShowCmd sets settings.show_cmd in ~/.mek/config.yaml. The config isn't
+// validated as a whole: a problem elsewhere (a context, a project's file) is
+// no reason to refuse a setting of your own; the file must parse (SetSetting).
+func saveShowCmd(on bool) error {
+	path := config.Path()
+	e, err := config.Open(path, config.Template(path), 0o600)
+	if err == nil {
+		err = e.SetSetting("show_cmd", on)
+	}
+	if err != nil {
+		return err
+	}
+	return e.Save()
 }

@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/prateep-r/mek/internal/config"
@@ -34,9 +35,12 @@ type recorder struct {
 	respond func(argv []string) (stdout string, code int)
 	fail    error  // returned as if the command couldn't start
 	stderr  string // written to a command's stderr, when mek captures it
+	mu      sync.Mutex
 }
 
 func (r *recorder) Run(inv *runner.Invocation) error {
+	r.mu.Lock() // the wizard looks things up at once
+	defer r.mu.Unlock()
 	r.invs = append(r.invs, inv)
 	inv.ExitCode = r.code
 	if r.respond != nil {

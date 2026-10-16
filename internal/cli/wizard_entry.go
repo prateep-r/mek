@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 
@@ -41,6 +43,7 @@ type entryWizard struct {
 	name   string            // adding: the name given on the command line
 	extra  map[string]string // what a lookup found with each value (zone, port, …)
 	labels map[string]string // and its name, for a default
+	mu     sync.Mutex        // over extra and labels: lookups may run at once
 }
 
 // openEntry loads the context to change: -c, or picked from a list (the
@@ -84,6 +87,8 @@ func (e *entryWizard) lookup(argv []string, parse func([]byte) ([]provider.Found
 		return nil, err
 	}
 	found, err := parse(out)
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	for _, f := range found {
 		e.extra[f.Value], e.labels[f.Value] = f.Extra, f.Label
 	}
@@ -93,9 +98,9 @@ func (e *entryWizard) lookup(argv []string, parse func([]byte) ([]provider.Found
 var notAlias = regexp.MustCompile(`[^a-z0-9._-]+`)
 
 // alias makes a default entry name of a cloud's name ("" if it can't).
-func alias(s string) string {
+func alias(section, s string) string {
 	a := strings.Trim(notAlias.ReplaceAllString(strings.ToLower(s), "-"), "-._")
-	if config.CheckAlias("tunnels", a) != nil {
+	if config.CheckAlias(section, a) != nil {
 		return ""
 	}
 	return a
@@ -140,7 +145,21 @@ func (e *entryWizard) edited(a wizard.Answers) (*config.Editor, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ed, ed.Set(e.ctx.Name, e.changed(a))
+	c, sec, ok := e.changed(a), e.kind.section(), true
+	if e.old != "" && e.old != a["name"] { // renamed
+		if ok, err = ed.DeleteEntry(e.ctx.Name, sec, e.old); err != nil {
+			return nil, err
+		}
+	}
+	if ok { // the entry alone, the rest of the context (its comments) as it was
+		if ok, err = ed.SetEntry(e.ctx.Name, sec, a["name"], e.kind.entry(c, a["name"])); err != nil {
+			return nil, err
+		}
+	}
+	if !ok { // written in flow style ({…}): the whole context
+		err = ed.Set(e.ctx.Name, c)
+	}
+	return ed, err
 }
 
 func (e *entryWizard) preview(a wizard.Answers) (string, error) {
@@ -204,7 +223,8 @@ func (e *entryWizard) pickEntry() (string, error) {
 	return a["name"], nil
 }
 
-// pickContext asks which context, the current one first.
+// pickContext asks which context, this shell's ($MEK_CONTEXT) or the
+// saved current one first.
 func pickContext(cfg *config.Config, title string) (string, error) {
 	if len(cfg.Contexts) == 0 {
 		return "", errors.New("no contexts yet — add one: mek ctx add")
@@ -218,8 +238,11 @@ func pickContext(cfg *config.Config, title string) (string, error) {
 		}
 		opts = append(opts, wizard.Option{Value: n, Hint: hint})
 	}
-	cur := wizard.Answers{"name": config.Current()}
-	a, err := runForm(wizard.New(title).Prefill(cur).Select("name", "Context", wizard.Options(opts...), false))
+	cur := os.Getenv("MEK_CONTEXT")
+	if cur == "" {
+		cur = config.Current()
+	}
+	a, err := runForm(wizard.New(title).Prefill(wizard.Answers{"name": cur}).Select("name", "Context", wizard.Options(opts...), false))
 	if err != nil {
 		return "", err
 	}
@@ -283,12 +306,15 @@ func (a *app) newEntryRmCmd(k entryKind) *cobra.Command {
 		Short: "Remove a context's " + noun + " (asks first; --yes doesn't)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
+			if a.opts.context == "" && yes { // no list to pick from: this shell's context, if it has one
+				a.opts.context = os.Getenv("MEK_CONTEXT")
+			}
 			if a.opts.context == "" && !yes {
 				if err := needTerminal("ctx " + noun + " rm without -c"); err != nil {
 					return err
 				}
 			} else if a.opts.context == "" {
-				return fmt.Errorf("which context? mek -c <context> ctx %s rm %s --yes", noun, args[0])
+				return fmt.Errorf("which context? mek -c <context> ctx %s rm %s --yes (or mek use -s <context> first)", noun, args[0])
 			}
 			e, err := a.openEntry(k)
 			if err != nil {
@@ -309,7 +335,12 @@ func (a *app) newEntryRmCmd(k entryKind) *cobra.Command {
 			}
 			c := cloneContext(e.ctx)
 			k.remove(c, name)
-			if err := editConfig(e.ctx.Source, nil, func(ed *config.Editor) error { return ed.Set(e.ctx.Name, c) }); err != nil {
+			if err := editConfig(e.ctx.Source, nil, func(ed *config.Editor) error {
+				if ok, err := ed.DeleteEntry(e.ctx.Name, k.section(), name); ok || err != nil {
+					return err
+				}
+				return ed.Set(e.ctx.Name, c) // written in flow style: the whole context
+			}); err != nil {
 				return err
 			}
 			ui.Info("%s removed %s %s from %s", ui.Green("✓"), noun, name, e.ctx.Name)

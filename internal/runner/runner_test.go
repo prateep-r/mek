@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -121,7 +122,7 @@ func TestExitCode(t *testing.T) {
 func TestRunStoppable(t *testing.T) {
 	stop := make(chan struct{})
 	go func() { time.Sleep(100 * time.Millisecond); close(stop) }()
-	code, err := RunStoppable([]string{"sh", "-c", "sleep 30"}, nil, os.Stdout, nil, stop)
+	code, err := RunStoppable([]string{"sh", "-c", "sleep 30"}, nil, nil, os.Stdout, nil, stop)
 	if err != nil || code != 128+15 {
 		t.Errorf("stopped: %d %v", code, err)
 	}
@@ -129,8 +130,8 @@ func TestRunStoppable(t *testing.T) {
 
 func TestExecStderr(t *testing.T) {
 	var out, errs bytes.Buffer
-	inv := &Invocation{Argv: []string{"sh", "-c", "echo out; echo oops >&2"}, Stdout: &out, Stderr: &errs}
-	if err := Exec.Run(inv); err != nil || out.String() != "out\n" || errs.String() != "oops\n" {
+	inv := &Invocation{Argv: []string{"sh", "-c", "read x; echo out $x; echo oops >&2"}, Stdin: strings.NewReader("in\n"), Stdout: &out, Stderr: &errs}
+	if err := Exec.Run(inv); err != nil || out.String() != "out in\n" || errs.String() != "oops\n" {
 		t.Errorf("err %v, stdout %q, stderr %q", err, out.String(), errs.String())
 	}
 }

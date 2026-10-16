@@ -87,7 +87,7 @@ func TestEditorShapes(t *testing.T) {
 		t.Error("not new")
 	}
 	e.Set("g", c)
-	if got := string(e.Bytes()); got != "contexts:\n  # examples\n  g:\n    provider: gcp\n    project: p\n" {
+	if got := string(e.Bytes()); got != "contexts:\n  # examples\n\n  g:\n    provider: gcp\n    project: p\n" {
 		t.Errorf("template: %q", got)
 	}
 	if err := e.Save(); err != nil || e.IsNew() {
@@ -252,9 +252,15 @@ func TestSettingsLayers(t *testing.T) {
 	t.Setenv("MEK_HOME", home)
 	t.Setenv("HOME", t.TempDir())
 	os.WriteFile(Path(), []byte("settings: {show_cmd: true}\ncontexts:\n  a: {provider: aws, aws_profile: a}\n"), 0o600)
-	c, err := Load()
-	if err != nil || c.Settings == nil || c.Settings.ShowCmd == nil || !*c.Settings.ShowCmd {
-		t.Fatalf("settings: %+v %v", c.Settings, err)
+	if _, err := Load(); err != nil { // settings: is a key ~/.mek/config.yaml may have
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(Path())
+	if st, err := ReadSettings(b); err != nil || st == nil || st.ShowCmd == nil || !*st.ShowCmd {
+		t.Fatalf("settings: %+v %v", st, err)
+	}
+	if st, err := ReadSettings([]byte("contexts: {}\n")); st != nil || err != nil {
+		t.Errorf("none: %+v %v", st, err)
 	}
 	repo := t.TempDir()
 	os.Mkdir(filepath.Join(repo, ".git"), 0o700)
@@ -262,5 +268,188 @@ func TestSettingsLayers(t *testing.T) {
 	t.Chdir(repo)
 	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "settings: belong in") {
 		t.Errorf("a project's settings: %v", err)
+	}
+}
+
+// Removing the context a template got leaves the template's examples.
+func TestEditorTemplateKept(t *testing.T) {
+	tpl := "# mek.local.yaml\ncontexts:\n  # sandbox:\n  #   provider: aws\n"
+	e := &Editor{Path: "l.yaml", src: []byte(tpl)}
+	e.Set("mine", &Context{Provider: "gcp", Project: "p"})
+	e.Delete("mine")
+	if got := string(e.Bytes()); !strings.HasPrefix(got, tpl) {
+		t.Errorf("template's comments gone:\n%s", got)
+	}
+}
+
+func TestEditorRename(t *testing.T) {
+	src := "contexts:\n  # mine, keep\n  dev: {provider: gcp, project: p}\n  # other\n  b: {provider: gcp, project: q}\n"
+	e := &Editor{Path: "c.yaml", src: []byte(src)}
+	if err := e.Rename("dev", "dev2", &Context{Provider: "gcp", Project: "p"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(e.Bytes()); got != "contexts:\n  # mine, keep\n  dev2:\n    provider: gcp\n    project: p\n  # other\n  b: {provider: gcp, project: q}\n" {
+		t.Errorf("rename:\n%s", got)
+	}
+	if err := e.Rename("nope", "x", &Context{}); err == nil {
+		t.Error("renamed a context that isn't there")
+	}
+	flow := &Editor{Path: "c.yaml", src: []byte("contexts: {dev: {provider: gcp, project: p}}\n")}
+	flow.Rename("dev", "dev2", &Context{Provider: "gcp", Project: "p"})
+	if got := string(flow.Bytes()); !strings.Contains(got, "dev2:") || strings.Contains(got, "dev:") {
+		t.Errorf("flow rename:\n%s", got)
+	}
+	bad := &Editor{Path: "c.yaml", src: []byte("contexts: [\n")}
+	if bad.Rename("a", "b", &Context{}) == nil {
+		t.Error("broken file")
+	}
+}
+
+func TestEditorEntries(t *testing.T) {
+	src := `contexts:
+  dev:
+    provider: aws # mine
+    aws_profile: dev
+    tunnels:
+      # the database
+      db: {via: bastion, host: db.internal, port: 5432}
+      cache:
+        via: bastion
+        port: 6379
+    targets:
+      bastion: {instance: "tag:Name=bastion"}   # keep
+  flowy: {provider: aws, aws_profile: x}
+  half:
+    provider: aws
+    aws_profile: y
+    tunnels: {db: {via: b, port: 1}}
+`
+	e := &Editor{Path: "c.yaml", src: []byte(src)}
+	set := func(ctx, sec, key string, v any) bool {
+		t.Helper()
+		ok, err := e.SetEntry(ctx, sec, key, v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	if !set("dev", "tunnels", "db", &Tunnel{Via: "bastion", Host: "db2.internal", Port: 5432}) ||
+		!set("dev", "tunnels", "web", &Tunnel{Via: "bastion", Port: 80}) ||
+		!set("dev", "clusters", "main", &Cluster{Name: "eks"}) {
+		t.Fatal("block style: not set in place")
+	}
+	want := `contexts:
+  dev:
+    provider: aws # mine
+    aws_profile: dev
+    tunnels:
+      # the database
+      db:
+        via: bastion
+        host: db2.internal
+        port: 5432
+      cache:
+        via: bastion
+        port: 6379
+      web:
+        via: bastion
+        port: 80
+    targets:
+      bastion: {instance: "tag:Name=bastion"}   # keep
+    clusters:
+      main:
+        name: eks
+  flowy: {provider: aws, aws_profile: x}
+`
+	if got := string(e.Bytes()); !strings.HasPrefix(got, want) {
+		t.Errorf("set:\n%s", got)
+	}
+	ok, err := e.DeleteEntry("dev", "tunnels", "cache")
+	if !ok || err != nil || strings.Contains(string(e.Bytes()), "6379") || !strings.Contains(string(e.Bytes()), "web:") {
+		t.Errorf("delete one: %v %v\n%s", ok, err, e.Bytes())
+	}
+	if ok, _ := e.DeleteEntry("dev", "clusters", "main"); !ok || strings.Contains(string(e.Bytes()), "clusters:") {
+		t.Errorf("delete the last one, the section too:\n%s", e.Bytes())
+	}
+	if _, err := e.DeleteEntry("dev", "tunnels", "nope"); err == nil {
+		t.Error("deleted an entry that isn't there")
+	}
+	if _, err := Parse(e.Bytes()); err != nil {
+		t.Errorf("result doesn't load: %v\n%s", err, e.Bytes())
+	}
+	// Flow style on the way: the caller rewrites the context.
+	for _, c := range [][2]string{{"flowy", "tunnels"}, {"half", "tunnels"}, {"nope", "tunnels"}} {
+		if ok, err := e.SetEntry(c[0], c[1], "x", &Tunnel{}); ok || err != nil {
+			t.Errorf("%v: %v %v", c, ok, err)
+		}
+		if ok, err := e.DeleteEntry(c[0], c[1], "x"); ok || err != nil {
+			t.Errorf("delete %v: %v %v", c, ok, err)
+		}
+	}
+	for _, src := range []string{"contexts: {a: {provider: aws}}\n", "contexts: [\n"} {
+		f := &Editor{Path: "c.yaml", src: []byte(src)}
+		if ok, _ := f.SetEntry("a", "tunnels", "x", &Tunnel{}); ok {
+			t.Errorf("%q: set in place", src)
+		}
+	}
+}
+
+func TestSaveThroughSymlink(t *testing.T) {
+	dir := t.TempDir()
+	real := filepath.Join(dir, "dotfiles", "mek.yaml")
+	os.MkdirAll(filepath.Dir(real), 0o700)
+	os.WriteFile(real, []byte("contexts: {}\n"), 0o600)
+	link := filepath.Join(dir, "config.yaml")
+	os.Symlink(real, link)
+	e, err := Open(link, nil, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Set("g", &Context{Provider: "gcp", Project: "p"})
+	if err := e.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if fi, _ := os.Lstat(link); fi.Mode()&os.ModeSymlink == 0 {
+		t.Error("the link became a file")
+	}
+	if b, _ := os.ReadFile(real); !strings.Contains(string(b), "g:") {
+		t.Errorf("the file it points to wasn't written:\n%s", b)
+	}
+}
+
+func TestSetSettingMultiline(t *testing.T) {
+	for in, want := range map[string]string{
+		"settings:\n  show_cmd:\n    false\ncontexts: {}\n": "settings:\n  show_cmd: true\ncontexts: {}\n",
+		"settings:\n  other:\n    sub: 1\n":                 "settings:\n  other:\n    sub: 1\n  show_cmd: true\n",
+	} {
+		e := &Editor{Path: "c.yaml", src: []byte(in)}
+		if err := e.SetSetting("show_cmd", true); err != nil || string(e.Bytes()) != want {
+			t.Errorf("%q: %v\n got %q\nwant %q", in, err, e.Bytes(), want)
+		}
+	}
+}
+
+// mek init still works after mek show-cmd on made a file of settings only.
+func TestInitKeepsSettings(t *testing.T) {
+	t.Setenv("MEK_HOME", t.TempDir())
+	os.WriteFile(Path(), []byte("contexts:\n\nsettings:\n  show_cmd: true\n"), 0o600)
+	if _, err := Init(false); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(Path())
+	if !strings.Contains(string(b), "example-uat:") || !strings.Contains(string(b), "settings:\n  show_cmd: true\n") {
+		t.Errorf("init over settings:\n%s", b)
+	}
+	if _, err := Init(false); err == nil || !strings.Contains(err.Error(), "already exists") { // contexts now: kept
+		t.Errorf("second init: %v", err)
+	}
+	os.WriteFile(Path(), []byte("contexts: [\n"), 0o600)
+	if _, err := Init(false); err == nil {
+		t.Error("init over a broken file")
+	}
+	os.Remove(Path())
+	os.Mkdir(Path(), 0o700)
+	if _, err := Init(false); err == nil {
+		t.Error("init over a directory")
 	}
 }

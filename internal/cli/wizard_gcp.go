@@ -36,7 +36,7 @@ func (gcpFlow) steps(f *wizard.Form, w *ctxWizard) {
 		Help("who mek login signs in as")
 	f.Exec("gcp_login", "Log in to Google", func(a wizard.Answers) string {
 		return strings.Join(provider.GCloudLoginCommand(a["gcp_account"]), " ") + "  (a browser opens)"
-	}, w.gcpLogin).When(func(a wizard.Answers) bool { return on(a) && !provider.GCloudLoggedIn(w.gcloudDir(a)) }).
+	}, w.gcpLogin).When(func(a wizard.Answers) bool { return on(a) && w.needsGCPLogin(a) }).
 		Help("to list your projects — or skip, and type the project id")
 	f.Load("project", "Project", w.projects).When(on).Check(required("a project id")).Help("the projects your account can see")
 	f.Select("gcp_region", "Region", wizard.Options(regionOptions(gcpRegions, "gcloud's default")...), true).
@@ -65,11 +65,12 @@ func (gcpFlow) apply(_ *ctxWizard, a wizard.Answers, c *config.Context) {
 }
 
 // gcloudDir is where the wizard's gcloud commands run: the edited context's
-// own login, another context's login of the same account, or a fresh one
-// (gcloud/.wizard) that becomes the new context's when it is saved.
+// own login (another account logs in there too), another context's login of
+// the same account, or a fresh one (gcloud/.wizard) that becomes the new
+// context's when it is saved.
 func (w *ctxWizard) gcloudDir(a wizard.Answers) string {
 	acct := a["gcp_account"]
-	if w.old != nil && w.old.Provider == config.ProviderGCP && (acct == "" || acct == w.old.Account) {
+	if w.old != nil && w.old.Provider == config.ProviderGCP {
 		return provider.GCloudDir(w.old)
 	}
 	for _, n := range w.cfg.Names() {
@@ -78,6 +79,16 @@ func (w *ctxWizard) gcloudDir(a wizard.Answers) string {
 		}
 	}
 	return provider.GCloudWizardDir()
+}
+
+// needsGCPLogin: no login in gcloudDir yet, or the edited context now names
+// an account it hasn't logged in as.
+func (w *ctxWizard) needsGCPLogin(a wizard.Answers) bool {
+	if !provider.GCloudLoggedIn(w.gcloudDir(a)) {
+		return true
+	}
+	acct := a["gcp_account"]
+	return w.old != nil && w.old.Provider == config.ProviderGCP && acct != "" && acct != w.old.Account
 }
 
 func (w *ctxWizard) gcpDraft(a wizard.Answers) *loaded {

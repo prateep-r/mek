@@ -3,6 +3,7 @@ package cli
 import (
 	"net"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -315,8 +316,8 @@ func TestEntryWizardFiles(t *testing.T) {
 		t.Error("saved into a directory")
 	}
 
-	if alias("ls") != "" || alias("Web Server #1") != "web-server-1" {
-		t.Errorf("alias: %q %q", alias("ls"), alias("Web Server #1"))
+	if alias("tunnels", "ls") != "" || alias("clusters", "ls") != "ls" || alias("clusters", "token") != "" || alias("targets", "Web Server #1") != "web-server-1" {
+		t.Errorf("alias: %q %q %q", alias("tunnels", "ls"), alias("clusters", "ls"), alias("targets", "Web Server #1"))
 	}
 }
 
@@ -371,5 +372,96 @@ func TestEntryWizardEdits(t *testing.T) {
 	h.mustRun("-c", "g", "ctx", "tunnel", "edit", "sql")
 	if got := readFile(t, config.Path()); !strings.Contains(got, "sql:\n        local_port: 15432\n        cloudsql: p:r:i\n        private_ip: true\n") {
 		t.Errorf("cloud sql edit:\n%s", got)
+	}
+}
+
+// The review's fixes: entries edited in place, comments kept; $MEK_CONTEXT
+// honoured; lookups that can't read the keyboard.
+func TestEntryInPlace(t *testing.T) {
+	cfg := `contexts:
+  dev:
+    provider: aws # the team's
+    aws_profile: p
+    region: ap-southeast-1
+    targets:
+      bastion: {instance: "tag:Name=bastion"}   # the jump host
+    tunnels:
+      # the database
+      db: {via: bastion, host: old.db, port: 5432}
+`
+	h := newHarness(t, cfg)
+	h.exec.respond = cloud
+	answering(t, []string{"down", "enter", "down", "enter", "type:8080", "enter", "enter", "type:web", "enter", "enter"})
+	h.mustRun("-c", "dev", "ctx", "tunnel", "add")
+	got := readFile(t, config.Path())
+	for _, keep := range []string{"provider: aws # the team's", "bastion: {instance: \"tag:Name=bastion\"}   # the jump host",
+		"# the database\n      db: {via: bastion, host: old.db, port: 5432}", "      web:\n        via: i-0ddd3333eeee4444f\n        port: 8080\n"} {
+		if !strings.Contains(got, keep) {
+			t.Errorf("lost %q:\n%s", keep, got)
+		}
+	}
+	// Renamed: the old entry goes, the new one is added; the rest stays.
+	answering(t, []string{"enter", "enter", "enter", "enter", "enter", "ctrl+u", "type:pg", "enter", "enter"})
+	h.mustRun("-c", "dev", "ctx", "tunnel", "edit", "db")
+	got = readFile(t, config.Path())
+	if strings.Contains(got, "  db:") || !strings.Contains(got, "      pg:\n        via: bastion\n        host: old.db\n") || !strings.Contains(got, "# the jump host") {
+		t.Errorf("renamed:\n%s", got)
+	}
+	// Removed in place.
+	h.mustRun("-c", "dev", "ctx", "tunnel", "rm", "web", "--yes")
+	if got := readFile(t, config.Path()); strings.Contains(got, "web:") || !strings.Contains(got, "# the jump host") {
+		t.Errorf("rm:\n%s", got)
+	}
+
+	// The file turned into something that isn't YAML under the form.
+	for _, args := range [][]string{{"edit", "pg"}, {"add"}} {
+		keys := []string{"enter", "enter", "enter", "enter", "enter", "ctrl+u", "type:pg2", "enter", "enter"}
+		if args[0] == "add" {
+			keys = []string{"down", "enter", "enter", "type:81", "enter", "enter", "type:w", "enter", "enter"}
+		}
+		answering(t, keys)
+		play := runForm
+		runForm = func(f *wizard.Form) (wizard.Answers, error) {
+			a, err := play(f)
+			os.WriteFile(config.Path(), []byte("contexts: [\n"), 0o600)
+			return a, err
+		}
+		if _, err := h.run(append([]string{"-c", "dev", "ctx", "tunnel"}, args...)...); err == nil || !strings.Contains(err.Error(), "can't edit") {
+			t.Errorf("%v on a broken file: %v", args, err)
+		}
+		os.WriteFile(config.Path(), []byte(cfg), 0o600)
+	}
+}
+
+func TestMekContextHonoured(t *testing.T) {
+	h := entryHarness(t)
+	h.mustRun("use", "noreg")
+	t.Setenv("MEK_CONTEXT", "g")
+	screens := answering(t, []string{})
+	h.run("ctx", "tunnel", "add")
+	if s := (*screens)[0]; !strings.Contains(s, "▸ g ") {
+		t.Errorf("the picker starts on this shell's context:\n%s", s)
+	}
+	h2 := newHarness(t, entryConfig)
+	t.Setenv("MEK_CONTEXT", "aws")
+	if out := stderr(t, func() { h2.mustRun("ctx", "tunnel", "rm", "db", "--yes") }); !strings.Contains(out, "removed tunnel db from aws") {
+		t.Errorf("rm --yes in this shell's context: %s", out)
+	}
+	// A renamed context this shell uses: said.
+	h3 := newHarness(t, testConfig)
+	t.Setenv("MEK_CONTEXT", "gcp")
+	answering(t, []string{"ctrl+u", "type:gcp2", "enter", "enter", "enter", "down", "enter", "enter", "enter", "enter", "enter"})
+	if out := stderr(t, func() { h3.mustRun("ctx", "edit", "gcp") }); !strings.Contains(out, "this shell's MEK_CONTEXT is still gcp: mek use -s gcp2") {
+		t.Errorf("rename note: %s", out)
+	}
+}
+
+func TestLookupsCantReadTheKeyboard(t *testing.T) {
+	h := entryHarness(t)
+	answering(t, []string{"enter"})
+	h.run("-c", "g", "ctx", "target", "add")
+	inv := h.exec.invs[0]
+	if inv.Stdin == nil || !slices.Contains(inv.Env, "CLOUDSDK_CORE_DISABLE_PROMPTS=1") || !inv.Quiet {
+		t.Errorf("lookup: stdin %v, quiet %v, env %v", inv.Stdin, inv.Quiet, inv.Env)
 	}
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/prateep-r/mek/internal/config"
 	"github.com/prateep-r/mek/internal/runner"
+	"github.com/prateep-r/mek/internal/tui"
 )
 
 func TestNativeCommand(t *testing.T) {
@@ -51,20 +52,31 @@ func TestShowCmdState(t *testing.T) {
 	if got := state(&app{}); !strings.HasPrefix(got, "on — settings.show_cmd") {
 		t.Errorf("bad env: %s", got)
 	}
+	// Flags: the last of the two wins, whatever the environment says.
 	t.Setenv("MEK_SHOW_CMD", "0")
-	if got := state(&app{opts: globalOpts{showCmd: true}}); got != "on — --show-cmd" {
-		t.Errorf("flag: %s", got)
+	for args, want := range map[string]string{
+		"--show-cmd":               "on — --show-cmd",
+		"--show-cmd --no-show-cmd": "off — --no-show-cmd",
+		"--no-show-cmd --show-cmd": "on — --show-cmd",
+		"--show-cmd=false":         "off — --show-cmd=false",
+		"--no-show-cmd=false":      "on — --no-show-cmd=false",
+	} {
+		if out := h.mustRun(append(strings.Fields(args), "show-cmd")...); !strings.HasPrefix(out, "show-cmd is "+want+"\n") {
+			t.Errorf("%s: %q", args, out)
+		}
 	}
-	if got := state(&app{opts: globalOpts{showCmd: true, noShowCmd: true}}); got != "off — --no-show-cmd" {
-		t.Errorf("both flags: %s", got)
-	}
-	if got := state(&app{machine: true, opts: globalOpts{showCmd: true}}); got != "off — output for a program" {
-		t.Errorf("machine: %s", got)
-	}
-	os.WriteFile(config.Path(), []byte("contexts: [\n"), 0o600) // unreadable: as if unset
+	// A context with a typo doesn't hide the setting; a file that isn't YAML says so.
 	t.Setenv("MEK_SHOW_CMD", "")
+	os.WriteFile(config.Path(), []byte("settings: {show_cmd: true}\ncontexts:\n  a: {provider: aws, protcted: true}\n"), 0o600)
+	if got := state(&app{}); !strings.HasPrefix(got, "on — settings.show_cmd") {
+		t.Errorf("typo elsewhere: %s", got)
+	}
+	os.WriteFile(config.Path(), []byte("contexts: [\n"), 0o600)
 	if got := state(&app{}); got != "off — the default" {
 		t.Errorf("broken config: %s", got)
+	}
+	if out := h.mustRun("show-cmd"); !strings.Contains(out, "can't read settings.show_cmd from") {
+		t.Errorf("broken config, said: %q", out)
 	}
 	_ = h
 }
@@ -149,4 +161,46 @@ func TestShowCmdCommand(t *testing.T) {
 	if err == nil {
 		t.Error("wrote into a directory")
 	}
+}
+
+func TestShowCmdReviewFixes(t *testing.T) {
+	h := newHarness(t, testConfig)
+	t.Setenv("MEK_SHOW_CMD", "")
+
+	// Passthrough reads mek's own bool flags with their values.
+	if out := stderr(t, func() { h.mustRun("aws", "--show-cmd=false", "-c", "uat", "s3", "ls") }); strings.Contains(out, "↳ runs:") {
+		t.Errorf("--show-cmd=false after aws:\n%s", out)
+	}
+	if out := stderr(t, func() { h.mustRun("aws", "--no-show-cmd", "--show-cmd", "-c", "uat", "s3", "ls") }); !strings.Contains(out, "↳ runs:") {
+		t.Errorf("the last flag wins:\n%s", out)
+	}
+	h.mustRun("aws", "--yes=true", "--no-local=false", "-c", "uat", "s3", "ls")
+	_, err := h.run("aws", "--yes=maybe", "-c", "uat", "s3", "ls")
+	wantErr(t, err, `--yes: "maybe" isn't true or false`)
+	_, err = h.run("--show-cmd=maybe", "show-cmd")
+	wantErr(t, err, "invalid argument")
+
+	// A problem elsewhere doesn't stop a setting of your own.
+	repo := t.TempDir()
+	os.WriteFile(filepath.Join(repo, config.TeamFile), []byte("contexts:\n  bad: {provider: aws}\n"), 0o644)
+	t.Chdir(repo)
+	if out := stderr(t, func() { h.mustRun("show-cmd", "on") }); !strings.Contains(out, "✓ show-cmd on") {
+		t.Errorf("project's file broken: %s", out)
+	}
+	os.WriteFile(config.Path(), []byte("contexts: [\n"), 0o600)
+	_, err = h.run("show-cmd", "off")
+	wantErr(t, err, "can't edit")
+
+	// mek ui passes its flag on to the mek commands it runs.
+	old, oldTerm := runUI, isTerminal
+	t.Cleanup(func() { runUI, isTerminal = old, oldTerm })
+	isTerminal = func() bool { return true }
+	h = newHarness(t, testConfig)
+	runUI = func(tui.Source, string, string) error {
+		if v := os.Getenv("MEK_SHOW_CMD"); v != "0" {
+			t.Errorf("MEK_SHOW_CMD=%q", v)
+		}
+		return nil
+	}
+	h.mustRun("--no-show-cmd", "ui")
 }

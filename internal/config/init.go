@@ -44,18 +44,32 @@ func Template(path string) []byte {
 // Example returns the commented example config.
 func Example() []byte { return exampleConfig }
 
-// Init writes the example config if no config exists yet.
+// Init writes the example config if no config exists yet — or if the one
+// there has no contexts (only settings, from mek show-cmd on), whose
+// settings it keeps.
 func Init(force bool) (string, error) {
 	p := Path()
-	if _, err := os.Stat(p); err == nil && !force {
-		return p, fmt.Errorf("%s already exists (use --force to overwrite)", p)
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+	body := exampleConfig
+	b, err := os.ReadFile(p)
+	switch {
+	case errors.Is(err, os.ErrNotExist), force:
+	case err != nil:
 		return p, err
+	default:
+		cur, derr := decode(b, p, false)
+		if derr != nil || len(cur.Contexts) > 0 {
+			return p, fmt.Errorf("%s already exists (use --force to overwrite)", p)
+		}
+		e := &Editor{Path: p, src: bytes.Clone(exampleConfig)}
+		if cur.Settings != nil && cur.Settings.ShowCmd != nil {
+			e.SetSetting("show_cmd", *cur.Settings.ShowCmd) // the example parses
+		}
+		body = e.Bytes()
 	}
 	if err := os.MkdirAll(Dir(), 0o700); err != nil {
 		return p, err
 	}
-	return p, os.WriteFile(p, exampleConfig, 0o600)
+	return p, os.WriteFile(p, body, 0o600)
 }
 
 // InitProject writes a project's mek.yaml (local false) or mek.local.yaml

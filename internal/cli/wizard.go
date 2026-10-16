@@ -244,11 +244,10 @@ func (w *ctxWizard) edited(a wizard.Answers) (*config.Editor, error) {
 	if err != nil {
 		return nil, err
 	}
-	var del error
-	if w.old != nil && path == w.old.Source && a["name"] != w.old.Name { // renamed
-		del = e.Delete(w.old.Name)
+	if w.old != nil && path == w.old.Source && a["name"] != w.old.Name { // renamed: in place, its comments kept
+		return e, e.Rename(w.old.Name, a["name"], w.build(a))
 	}
-	return e, errors.Join(del, e.Set(a["name"], w.build(a)))
+	return e, e.Set(a["name"], w.build(a))
 }
 
 // preview is what Review shows: the context as it will be written, and
@@ -323,6 +322,9 @@ func (w *ctxWizard) report(a wizard.Answers, path string) error {
 				return err
 			}
 			ui.Info("  the current context is now %s", name)
+		}
+		if os.Getenv("MEK_CONTEXT") == w.old.Name {
+			ui.Info("  this shell's MEK_CONTEXT is still %s: mek use -s %s", w.old.Name, name)
 		}
 	default:
 		ui.Info("%s saved %s in %s", ok, name, config.Show(path))

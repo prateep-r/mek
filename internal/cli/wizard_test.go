@@ -580,3 +580,37 @@ func TestCtxAddGCPLoginAsked(t *testing.T) {
 		t.Errorf("failed lookup:\n%s", s)
 	}
 }
+
+func TestCtxRenameKeepsComments(t *testing.T) {
+	h := newHarness(t, "contexts:\n  # my sandbox\n  sb:\n    provider: gcp\n    project: p\n  # other\n  o: {provider: gcp, project: q}\n")
+	gcloudLogin(t, filepath.Join(config.Dir(), "gcloud", "sb"))
+	answering(t, []string{"ctrl+u", "type:sandbox", "enter", "enter", "enter", "enter", "enter", "enter", "enter"})
+	h.mustRun("ctx", "edit", "sb")
+	if got := readFile(t, config.Path()); !strings.HasPrefix(got, "contexts:\n  # my sandbox\n  sandbox:\n") || !strings.Contains(got, "  # other\n  o: {") {
+		t.Errorf("rename:\n%s", got)
+	}
+}
+
+// Editing a GCP context to another account: its own login directory, and a
+// login offered for the new account.
+func TestCtxEditGCPAccount(t *testing.T) {
+	h := newHarness(t, testConfig)
+	own := filepath.Join(config.Dir(), "gcloud", "gcp")
+	gcloudLogin(t, own) // logged in as me@example.com
+	screens := answering(t, []string{"enter", "enter", "down", "enter", "type:new@example.com", "enter"})
+	h.run("ctx", "edit", "gcp")
+	if s := (*screens)[0]; !strings.Contains(s, "? Log in to Google") || !strings.Contains(s, "gcloud auth login new@example.com") {
+		t.Errorf("no login for the new account:\n%s", s)
+	}
+	h.exec.respond = func([]string) (string, int) { return `[{"projectId":"acme-dev"}]`, 0 }
+	answering(t, []string{"enter", "enter", "down", "enter", "type:new@example.com", "enter", "enter", "enter", "enter", "enter", "enter"})
+	h.mustRun("ctx", "edit", "gcp")
+	for _, inv := range h.exec.invs {
+		if !slices.Contains(inv.Env, "CLOUDSDK_CONFIG="+own) {
+			t.Errorf("%v ran outside the context's own login: %v", inv.Argv, inv.Env)
+		}
+	}
+	if !strings.Contains(readFile(t, config.Path()), "account: new@example.com") {
+		t.Error("not saved")
+	}
+}

@@ -74,6 +74,16 @@ type Settings struct {
 	ShowCmd *bool `yaml:"show_cmd,omitempty"` // print the native command before running it
 }
 
+// ReadSettings reads the settings: of a config file's bytes, whatever the
+// rest of it holds (a context with a typo doesn't hide them). Missing: nil.
+func ReadSettings(b []byte) (*Settings, error) {
+	var c struct {
+		Settings *Settings `yaml:"settings"`
+	}
+	err := yaml.Unmarshal(b, &c)
+	return c.Settings, err
+}
+
 type state struct {
 	Current string `yaml:"current"`
 }

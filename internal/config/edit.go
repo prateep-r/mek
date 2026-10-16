@@ -184,12 +184,153 @@ func (e *Editor) Set(name string, c *Context) error {
 			return nil
 		}
 	}
-	at := l.endLine // after the last entry…
+	at, lines := l.endLine, render(name, c, l.indent) // after the last entry…
 	if len(l.entries) == 0 {
 		at = l.tailEnd // …or, with none yet, after contexts: and the comments under it (a template's examples)
+		if at > l.keyLine {
+			lines = append([]string{""}, lines...) // apart from them: removing it later leaves them be
+		}
 	}
-	e.splice(l.lines, at+1, at, render(name, c, l.indent))
+	e.splice(l.lines, at+1, at, lines)
 	return nil
+}
+
+// Rename replaces context old with c called name, where old was: the
+// comments above it stay with it.
+func (e *Editor) Rename(old, name string, c *Context) error {
+	l, err := e.layout()
+	if err != nil {
+		return err
+	}
+	if l.flow {
+		return e.rewrite(l, func(cs map[string]*Context) error {
+			delete(cs, old)
+			cs[name] = c
+			return nil
+		})
+	}
+	for _, en := range l.entries {
+		if en.name == old {
+			e.splice(l.lines, en.first, en.last, render(name, c, l.indent))
+			return nil
+		}
+	}
+	return fmt.Errorf("%s has no context %q", Show(e.Path), old)
+}
+
+// pairEnd is the last line of pairs[i]: up to the next pair, or to limit for
+// the last one, without the blank and comment lines before what follows.
+func pairEnd(lines []string, pairs []*ast.MappingValueNode, i, limit int) int {
+	if i+1 < len(pairs) {
+		limit = line(pairs[i+1].Key) - 1
+	}
+	return trimBack(lines, line(pairs[i].Key), limit)
+}
+
+// renderAt writes {key: v} as YAML lines, indented.
+func renderAt(key string, v any, indent int) []string {
+	out := strings.Split(SnippetOf(map[string]any{key: v}), "\n")
+	for i := range out {
+		out[i] = strings.Repeat(" ", indent) + out[i]
+	}
+	return out
+}
+
+// section finds the block mapping of a context's section (tunnels,
+// targets, clusters). ok is false when something on the way is in flow
+// style: the caller then rewrites the whole context (Set).
+type section struct {
+	lines              []string
+	ctxPairs           []*ast.MappingValueNode // the context's keys
+	ctxIndent, ctxLast int                     // their indentation; the context's last line
+	at                 int                     // the section among ctxPairs (-1: none)
+	pairs              []*ast.MappingValueNode // its entries
+	last               int                     // its last line
+}
+
+func (e *Editor) section(ctx, name string) (*section, bool, error) {
+	l, err := e.layout()
+	if err != nil || l.flow {
+		return nil, false, err
+	}
+	f, _ := parser.ParseBytes(e.src, parser.ParseComments) // layout parsed it
+	var cv ast.Node
+	for _, p := range pairs(f.Docs[0].Body) {
+		if keyName(p) == "contexts" {
+			for _, c := range pairs(p.Value) {
+				if keyName(c) == ctx {
+					cv = c.Value
+				}
+			}
+		}
+	}
+	m, ok := cv.(*ast.MappingNode)
+	if !ok || m.IsFlowStyle {
+		return nil, false, nil
+	}
+	sec := &section{lines: l.lines, ctxPairs: m.Values, ctxIndent: m.Values[0].Key.GetToken().Position.Column - 1, at: -1}
+	for _, en := range l.entries {
+		if en.name == ctx {
+			sec.ctxLast = en.last
+		}
+	}
+	for i, p := range m.Values {
+		if keyName(p) != name {
+			continue
+		}
+		sm, ok := p.Value.(*ast.MappingNode)
+		if !ok || sm.IsFlowStyle {
+			return nil, false, nil
+		}
+		sec.at, sec.pairs, sec.last = i, sm.Values, pairEnd(l.lines, m.Values, i, sec.ctxLast)
+	}
+	return sec, true, nil
+}
+
+// SetEntry sets one entry of a context's section — tunnels.db, say — in
+// place, leaving the rest of the context (comments, other entries) as it
+// was. ok is false when the context or section is written in flow style
+// ({…}); the caller then rewrites the whole context with Set.
+func (e *Editor) SetEntry(ctx, name, key string, v any) (ok bool, err error) {
+	sec, ok, err := e.section(ctx, name)
+	if !ok || err != nil {
+		return false, err
+	}
+	if sec.at < 0 { // no such section yet: at the end of the context
+		lines := append([]string{strings.Repeat(" ", sec.ctxIndent) + name + ":"}, renderAt(key, v, sec.ctxIndent+2)...)
+		e.splice(sec.lines, sec.ctxLast+1, sec.ctxLast, lines)
+		return true, nil
+	}
+	indent := sec.pairs[0].Key.GetToken().Position.Column - 1
+	for i, p := range sec.pairs {
+		if keyName(p) == key {
+			e.splice(sec.lines, line(p.Key), pairEnd(sec.lines, sec.pairs, i, sec.last), renderAt(key, v, indent))
+			return true, nil
+		}
+	}
+	e.splice(sec.lines, sec.last+1, sec.last, renderAt(key, v, indent))
+	return true, nil
+}
+
+// DeleteEntry removes one entry of a context's section in place (the
+// section too, when it was the only one); ok as for SetEntry.
+func (e *Editor) DeleteEntry(ctx, name, key string) (ok bool, err error) {
+	sec, ok, err := e.section(ctx, name)
+	if !ok || err != nil {
+		return false, err
+	}
+	for i, p := range sec.pairs {
+		if keyName(p) != key {
+			continue
+		}
+		first, last := line(p.Key), pairEnd(sec.lines, sec.pairs, i, sec.last)
+		if len(sec.pairs) == 1 { // the section goes with it
+			first = line(sec.ctxPairs[sec.at].Key)
+		}
+		e.splice(sec.lines, first, last, nil)
+		return true, nil
+	}
+	return false, fmt.Errorf("%s: context %q has no %s.%s", Show(e.Path), ctx, name, key)
 }
 
 // rewrite turns a flow-style contexts: {…} into block style, changed by
@@ -256,17 +397,20 @@ func (e *Editor) SetSetting(key string, value any) error {
 		if keyName(p) != "settings" {
 			continue
 		}
+		limit := len(lines) - 1
+		if i+1 < len(root) {
+			limit = line(root[i+1].Key) - 1
+		}
 		if m, ok := p.Value.(*ast.MappingNode); ok && !m.IsFlowStyle {
-			indent := strings.Repeat(" ", m.Values[0].Key.GetToken().Position.Column-1)
-			kv := indent + SnippetOf(map[string]any{key: value})
-			for _, c := range m.Values {
+			kv := renderAt(key, value, m.Values[0].Key.GetToken().Position.Column-1)
+			for j, c := range m.Values {
 				if keyName(c) == key {
-					e.splice(lines, line(c.Key), line(c.Key), []string{kv})
+					e.splice(lines, line(c.Key), pairEnd(lines, m.Values, j, limit), kv)
 					return nil
 				}
 			}
-			at := line(m.Values[len(m.Values)-1].Key)
-			e.splice(lines, at+1, at, []string{kv})
+			at := pairEnd(lines, m.Values, len(m.Values)-1, limit)
+			e.splice(lines, at+1, at, kv)
 			return nil
 		}
 		// settings: {…}, or empty: rewritten as a block.
@@ -278,11 +422,7 @@ func (e *Editor) SetSetting(key string, value any) error {
 			cur.Settings = map[string]any{}
 		}
 		cur.Settings[key] = value
-		last := len(lines) - 1
-		if i+1 < len(root) {
-			last = line(root[i+1].Key) - 1
-		}
-		e.splice(lines, line(p.Key), trimBack(lines, line(p.Key), last), strings.Split(SnippetOf(map[string]any{"settings": cur.Settings}), "\n"))
+		e.splice(lines, line(p.Key), trimBack(lines, line(p.Key), limit), strings.Split(SnippetOf(map[string]any{"settings": cur.Settings}), "\n"))
 		return nil
 	}
 	text := strings.TrimRight(string(e.src), "\n")
@@ -293,12 +433,18 @@ func (e *Editor) SetSetting(key string, value any) error {
 	return nil
 }
 
-// Save writes the file atomically (creating its directory).
+// Save writes the file atomically (creating its directory). A symlink —
+// to a dotfiles repository, say — stays one: the file it points to is
+// written.
 func (e *Editor) Save() error {
 	if err := os.MkdirAll(filepath.Dir(e.Path), 0o700); err != nil {
 		return err
 	}
-	if err := fsutil.WriteFileAtomic(e.Path, e.src, e.perm); err != nil {
+	path := e.Path
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		path = real
+	}
+	if err := fsutil.WriteFileAtomic(path, e.src, e.perm); err != nil {
 		return err
 	}
 	e.isNew = false

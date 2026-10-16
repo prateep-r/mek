@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/spf13/cobra"
 
@@ -19,11 +20,10 @@ import (
 
 // globalOpts are flags accepted before any subcommand.
 type globalOpts struct {
-	context string // --context / -c
-	yes     bool   // --yes / -y : accept y/N confirmations
-	confirm string // --confirm <ctx> : accept typed confirmations non-interactively
-	// --show-cmd / --no-show-cmd: print each command as typed without mek
-	showCmd, noShowCmd bool
+	context string      // --context / -c
+	yes     bool        // --yes / -y : accept y/N confirmations
+	confirm string      // --confirm <ctx> : accept typed confirmations non-interactively
+	showCmd showCmdFlag // --show-cmd / --no-show-cmd, the last given
 }
 
 // app holds the state one command tree shares, instead of package globals, so
@@ -31,11 +31,10 @@ type globalOpts struct {
 type app struct {
 	opts globalOpts
 	exec runner.Runner // runs processes; tests swap in a fake
-	// machine: the output is for a program (mek kube token): show-cmd stays off.
-	machine bool
 	// settings.show_cmd from ~/.mek/config.yaml, read once (savedShowCmd).
-	settingsRead   bool
+	settings       sync.Once
 	settingShowCmd *bool
+	settingsErr    error
 }
 
 // NewRoot builds the command tree.
@@ -62,8 +61,7 @@ What protected and readonly do: mek help guard.`,
 	pf.StringVar(&a.opts.confirm, "confirm", "", "confirm destructive commands non-interactively by passing the context name")
 	pf.StringVar(&config.ProjectFlag, "project", "", "read the project config (mek.yaml, mek.local.yaml) from this directory instead of looking up from here")
 	pf.BoolVar(&config.NoProject, "no-local", false, "ignore project config files (mek.yaml, mek.local.yaml); also MEK_NO_LOCAL=1")
-	pf.BoolVar(&a.opts.showCmd, "show-cmd", false, "print each command mek runs as you would type it yourself (see mek show-cmd)")
-	pf.BoolVar(&a.opts.noShowCmd, "no-show-cmd", false, "don't print it, whatever MEK_SHOW_CMD or settings.show_cmd say")
+	showCmdFlags(pf, &a.opts.showCmd)
 	_ = root.RegisterFlagCompletionFunc("context", completeContexts)
 
 	// Groups for `mek help`; cobra lists each group's commands alphabetically.
