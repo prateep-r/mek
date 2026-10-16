@@ -462,7 +462,7 @@ func TestHelpTopics(t *testing.T) {
 	}
 	cfg := h.mustRun("help", "config")
 	for _, want := range []string{"./mek.local.yaml", "./mek.yaml", "~/.mek/config.yaml", "mek init --project", "mek init --local",
-		"--project DIR", "--no-local", "MEK_NO_LOCAL=1", "can't be switched off", "aws_profile", "~/.config/mek", "EXAMPLE"} {
+		"--project DIR", "--no-local", "MEK_NO_LOCAL=1", "can't be switched off", "aws_profile", "WHERE MEK KEEPS THINGS", "EXAMPLE"} {
 		if !strings.Contains(cfg, want) {
 			t.Errorf("help config missing %q", want)
 		}

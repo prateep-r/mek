@@ -2,8 +2,7 @@
 
 Translucent circles overlap into one cloud (เมฆ, *mek*): one circle per
 supported cloud, in that cloud's brand color, brought together in one place —
-AWS the larger, GCP the smaller. Add a circle when mek supports another cloud
-(v0.4.0–v0.9.0 had four, with Azure `#0078D4` and Huawei Cloud `#C7000B`).
+AWS the larger, GCP the smaller. Add a circle, in its brand color, when mek supports another cloud.
 
 | File | Use |
 |---|---|

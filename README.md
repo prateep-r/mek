@@ -16,7 +16,7 @@ Think *K9s/Lens, but for cloud accounts*.
 | **AWS** | IAM Identity Center (SSO), or any AWS CLI profile | SSM Session Manager | EKS | RDS and Aurora, through a tunnel |
 | **GCP** | your Google account through gcloud (a key file in CI) | IAP, with SSH | GKE | Cloud SQL, through the Auth Proxy |
 
-Azure and Huawei Cloud aren't supported (they were in v0.3–v0.9 and are paused; the code is in the `v0.9.0` tag).
+Other clouds, such as Azure and Huawei Cloud, aren't supported.
 
 ```bash
 mek ctx add                    # add an account by answering questions (or edit the YAML)
@@ -1444,13 +1444,6 @@ overrides it:
 hash of its account (`dev-1a2b3c4d`), so two projects' `dev` never share a login. AWS SSO
 tokens stay in the AWS CLI's own cache (`~/.aws/sso/cache`); mek stores no keys.
 
-**Moving from `~/.config/mek`.** mek before v0.16 kept everything in `~/.config/mek` (or
-`$XDG_CONFIG_HOME/mek`). The first run of a newer mek moves it to `~/.mek` in one rename —
-logins, keys and the audit log come along — and leaves a link at the old path,
-so `KUBECONFIG` lines pointing there keep working. While
-tunnels still run from the old directory it waits; stop them (`mek tunnel stop --all`) and it
-moves on the next run. `XDG_CONFIG_HOME` no longer applies.
-
 ### Specification
 
 `config.yaml` is YAML — and so are a project's `mek.yaml` and `mek.local.yaml`, with the same
@@ -1769,11 +1762,10 @@ official tools need. Ask whoever runs the account for:
 | `context "x" isn't defined here — it may be a project's (mek.yaml)` | it was chosen inside a project: go back there, `mek use <context>`, or `-c <context>` |
 | `⚠ prod from ./mek.yaml replaces your prod in ~/.mek/config.yaml` | the repository defines a context with your context's name; rename one, or check the project's is the one you mean (your guard stays on) |
 | `✗ ./mek.local.yaml is committed` (doctor) | `git rm --cached mek.local.yaml`, and list it in `.gitignore` |
-| `can't move ~/.config/mek to ~/.mek` | move the directory yourself (`mv ~/.config/mek ~/.mek`), then run mek again |
 | `no context selected — run mek use <context> or pass --context` | `mek use <context>`, or pass `-c <context>` |
 | `unknown context "x"` | check the name with `mek ctx ls` |
 | `unknown field "…"` (with the file and line) | a misspelt key in `config.yaml`, `mek.yaml` or `mek.local.yaml` — compare with the [specification](#specification) |
-| `unknown provider "azure"` | mek supports AWS and GCP; Azure and Huawei Cloud are paused (use v0.9.0 for them) |
+| `unknown provider "azure"` | mek supports AWS and GCP only |
 | an SSO / token expired error from aws, or `… (logged in? try: mek -c dev login)` | `mek login <context>` |
 | `confirmation required but no terminal is available` | add `--yes` (writes) or `--confirm <context>` (destructive) |
 | `session-manager-plugin is needed for this` | install it (the message has the command), then retry |
@@ -1793,7 +1785,7 @@ official tools need. Ask whoever runs the account for:
 - Needs the official CLIs installed; passthrough speed equals the CLI's speed.
 - mek can't grant more than your IAM role/permissions allow.
 - AWS login supports IAM Identity Center (SSO) and existing profiles; SAML-only IdPs without Identity Center are not built in (use `aws_profile` with your existing tooling).
-- mek supports AWS and GCP. Azure and Huawei Cloud were in v0.3.0–v0.9.0 and are paused; that code is in the `v0.9.0` tag.
+- mek supports AWS and GCP only.
 - Every kubectl request through mek's kubeconfig fetches a fresh token (about 0.5–1 s); mek never caches tokens.
 - The kubeconfig records mek's path and `PATH` when it is written; run `mek kube` again after moving mek or the cloud CLIs.
 - `mek shell` on GCP runs ssh with the context's own home directory, so your `~/.ssh/config` doesn't apply to it.
@@ -1813,7 +1805,7 @@ official tools need. Ask whoever runs the account for:
 4. ✅ Config wizard (`mek ctx add` / `edit` / `rm`, and a context's targets, clusters and tunnels), with lists from the cloud
 5. A resource catalog in the terminal UI, generated from AWS/GCP API models
 6. Desktop GUI (Wails)
-7. Azure and Huawei Cloud again, later (they were in v0.3.0–v0.9.0)
+7. More clouds: Azure, Huawei Cloud
 
 ## Development
 
