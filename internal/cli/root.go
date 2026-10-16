@@ -59,7 +59,7 @@ What protected and readonly do: mek help guard.`,
 	pf := root.PersistentFlags()
 	pf.StringVarP(&a.opts.context, "context", "c", "", "context for this command (overrides the current context and $MEK_CONTEXT)")
 	pf.BoolVarP(&a.opts.yes, "yes", "y", false, "answer yes to write confirmations on protected contexts")
-	pf.StringVar(&a.opts.confirm, "confirm", "", "confirm destructive commands non-interactively by passing the context name")
+	pf.StringVar(&a.opts.confirm, "confirm", "", "answer every confirmation on that context, destructive ones included, by passing its name")
 	pf.StringVar(&config.ProjectFlag, "project", "", "read the project config (mek.yaml, mek.local.yaml) from this directory instead of looking up from here")
 	pf.BoolVar(&config.NoProject, "no-local", false, "ignore project config files (mek.yaml, mek.local.yaml); also MEK_NO_LOCAL=1")
 	showCmdFlags(pf, &a.opts.showCmd)
