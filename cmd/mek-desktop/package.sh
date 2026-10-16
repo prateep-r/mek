@@ -3,6 +3,8 @@
 # and packages it with the mek CLI it runs, into dist/desktop:
 #   macOS  mek-desktop_<version>_darwin_<arch>.zip   — mek.app (unsigned)
 #   Linux  mek-desktop_<version>_linux_<arch>.tar.gz — needs GTK 4 and WebKitGTK 6.0
+#          mek-desktop_<version>_linux_<arch>.deb    — the same, installed in
+#          /usr/lib/mek-desktop with a menu entry; apt brings GTK and WebKitGTK
 # each with its SHA-256 in <file>.sha256.
 # Usage: package.sh <version> [arch]   (arch: amd64 or arm64; default: this machine's)
 set -eu
@@ -66,6 +68,37 @@ PLIST
 else
   file="$name.tar.gz"
   tar -C "$work" -czf "$out/$file" mek-desktop mek
+  deb="$work/deb"
+  mkdir -p "$deb/DEBIAN" "$deb/usr/lib/mek-desktop" "$deb/usr/bin" "$deb/usr/share/applications" "$deb/usr/share/icons/hicolor/512x512/apps"
+  cp "$work/mek-desktop" "$work/mek" "$deb/usr/lib/mek-desktop/"
+  ln -s ../lib/mek-desktop/mek-desktop "$deb/usr/bin/mek-desktop" # it runs the mek beside its real path
+  cp "$root/assets/logo/mek-icon-512.png" "$deb/usr/share/icons/hicolor/512x512/apps/mek-desktop.png"
+  cat > "$deb/usr/share/applications/mek-desktop.desktop" <<ENTRY
+[Desktop Entry]
+Type=Application
+Name=mek
+Comment=Cloud contexts, tunnels, resources and the audit log
+Exec=/usr/bin/mek-desktop
+Icon=mek-desktop
+Categories=Development;Utility;
+ENTRY
+  cat > "$deb/DEBIAN/control" <<CONTROL
+Package: mek-desktop
+Version: ${version#v}
+Architecture: $arch
+Maintainer: Prateep Ruangritkul <prateep.bas@gmail.com>
+Depends: libgtk-4-1, libwebkitgtk-6.0-4
+Section: devel
+Priority: optional
+Homepage: https://github.com/prateep-r/mek
+Description: Desktop app for mek
+ Cloud contexts (AWS, GCP, Azure, Huawei Cloud), tunnels, resources and the
+ audit log in one window. Every action runs mek, so its guard and audit log
+ apply.
+CONTROL
+  dpkg-deb --build --root-owner-group "$deb" "$out/$name.deb" >/dev/null
+  (cd "$out" && shasum -a 256 "$name.deb" > "$name.deb.sha256")
+  echo "$out/$name.deb"
 fi
 # Its checksum beside it, in checksums.txt's format: shasum -a 256 -c <file>.sha256
 (cd "$out" && shasum -a 256 "$file" > "$file.sha256")
