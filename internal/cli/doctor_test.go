@@ -51,7 +51,7 @@ func TestDoctorAllGood(t *testing.T) {
 	})
 	h.mustRun("use", "uat")
 	out := h.mustRun("doctor")
-	for _, want := range []string{"config.yaml — 1 contexts", "current: uat", "aws-cli/2.17.0", "(version unknown)", strings.Repeat("v", 60) + "…", "all good"} {
+	for _, want := range []string{"config.yaml — 1 context", "current: uat", "aws-cli/2.17.0", "(version unknown)", strings.Repeat("v", 60) + "…", "all good"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("doctor output missing %q:\n%s", want, out)
 		}

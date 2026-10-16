@@ -76,6 +76,9 @@ func configFiles(out io.Writer, p ui.Palette, cfg *config.Config) (problems int)
 			}
 		}
 		what := fmt.Sprintf("%d contexts", n)
+		if n == 1 {
+			what = "1 context"
+		}
 		if len(replaced) > 0 {
 			what += ", replacing " + strings.Join(replaced, ", ") + " from below"
 		}

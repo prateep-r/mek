@@ -131,8 +131,10 @@ gcloud or kubectl. They guard against mistakes — a delete typed in the prod
 terminal you took for dev, a script run with the wrong context — not against
 someone who means harm.
 
-  protected: true   writes ask y/N; destructive commands need the context's name typed
-  readonly: true    writes, destructive commands and shells are blocked
+  protected: true   writes, shells, tunnels and mek exec ask y/N; destructive
+                    commands need the context's name typed
+  readonly: true    writes, destructive commands, shells and mek exec are blocked;
+                    reads and tunnels run
 
 HOW COMMANDS ARE JUDGED
   mek classifies a command from its operation name, then the context decides:

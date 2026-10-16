@@ -72,7 +72,6 @@ func editConfig(path string, template []byte, change func(*config.Editor) error)
 }
 
 func (a *app) newCtxRmCmd() *cobra.Command {
-	var yes bool
 	cmd := &cobra.Command{
 		Use:   "rm <context>",
 		Short: "Remove a context from the file it is defined in",
@@ -97,7 +96,7 @@ used from then on, and mek says which.
 			if err != nil {
 				return err
 			}
-			if !yes {
+			if !a.opts.yes { // -y / --yes
 				ok, err := confirm(fmt.Sprintf("Remove context %s from %s?", ctx.Name, config.Show(ctx.Source)))
 				if errors.Is(err, ui.ErrNoTTY) {
 					return errors.New("no terminal to ask on — pass --yes to remove it")
@@ -118,6 +117,5 @@ used from then on, and mek says which.
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&yes, "yes", false, "don't ask")
 	return cmd
 }
