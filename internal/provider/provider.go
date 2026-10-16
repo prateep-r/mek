@@ -90,3 +90,16 @@ type Provider interface {
 	// Describe is a one-line human summary of the target.
 	Describe() string
 }
+
+// ArgsRewriter is a Provider whose CLI takes the context only as flags
+// (KooCLI has no environment variables for its profile and region): it
+// adds them to what `mek <cli>` runs.
+type ArgsRewriter interface {
+	RewriteArgs(args []string) []string
+}
+
+// LoginChecker is a Provider that can tell, before mek login runs anything,
+// that the login can't work (a profile that doesn't exist).
+type LoginChecker interface {
+	CheckLogin() error
+}

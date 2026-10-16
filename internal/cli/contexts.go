@@ -191,7 +191,7 @@ func (a *app) newLoginCmd() *cobra.Command {
 	var adc bool
 	cmd := &cobra.Command{
 		Use:   "login [context] [-- <login flags>]",
-		Short: "Log in to a context (AWS IAM Identity Center / gcloud / az)",
+		Short: "Log in to a context (AWS IAM Identity Center / gcloud / az / hcloud)",
 		Long: `Log in to a context using the official CLI's own login flow.
 
 AWS: runs "aws sso login". Contexts that share the same sso_start_url share
@@ -200,6 +200,8 @@ GCP: runs "gcloud auth login" in the context's isolated config dir;
 add --adc to also create Application Default Credentials for SDKs/terraform.
 Azure: runs "az login --tenant" in the context's isolated config dir, then
 "az account set" to the context's subscription.
+Huawei Cloud: an SSO profile runs "hcloud configure sso"; a profile with keys
+(AKSK) or an agency has no login step and is used as it is.
 
 Flags after -- go to the CLI's own login command, e.g. without a browser or
 in CI (the login still lands in the context's isolated config):
@@ -224,10 +226,19 @@ in CI (the login still lands in the context's isolated config):
 				return err
 			}
 			ui.Info("→ logging in to %s %s", ui.Bold(l.ctx.Name), ui.Dim(l.prov.Describe()))
+			if c, ok := l.prov.(provider.LoginChecker); ok {
+				if err := c.CheckLogin(); err != nil {
+					return err
+				}
+			}
 			cmds := l.prov.LoginCommands(adc)
-			// Extra flags belong to the actual login (the first command), not to
-			// follow-ups like `gcloud auth application-default login`.
-			cmds[0] = append(cmds[0], loginFlags(cmd, args)...)
+			if len(cmds) == 0 {
+				ui.Info("  %s has no login step: its credentials are used as they are", l.ctx.Name)
+			} else {
+				// Extra flags belong to the actual login (the first command), not to
+				// follow-ups like `gcloud auth application-default login`.
+				cmds[0] = append(cmds[0], loginFlags(cmd, args)...)
+			}
 			env := l.env.Apply(os.Environ())
 			for _, argv := range cmds {
 				if err := a.runPlain(argv, env); err != nil {

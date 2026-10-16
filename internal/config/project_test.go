@@ -176,6 +176,12 @@ func TestKey(t *testing.T) {
 	if az.Key() == az2.Key() {
 		t.Errorf("azure subscriptions share a key: %s", az.Key())
 	}
+	hw := &Context{Name: "dev", Provider: ProviderHuawei, HcloudProfile: "a", InProject: true}
+	hw2 := *hw
+	hw2.HcloudProfile = "b"
+	if hw.Key() == hw2.Key() {
+		t.Errorf("huawei profiles share a key: %s", hw.Key())
+	}
 }
 
 func TestShow(t *testing.T) {

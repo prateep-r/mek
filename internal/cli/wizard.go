@@ -31,7 +31,7 @@ type providerFlow interface {
 	apply(w *ctxWizard, a wizard.Answers, c *config.Context)
 }
 
-var flows = []providerFlow{awsFlow{}, gcpFlow{}, azureFlow{}}
+var flows = []providerFlow{awsFlow{}, gcpFlow{}, azureFlow{}, huaweiFlow{}}
 
 func flowFor(cloud string) providerFlow {
 	for _, fl := range flows {
@@ -381,7 +381,7 @@ It asks, in order:
   Save it in   inside a project only: mek.local.yaml (yours, not committed),
                mek.yaml (the team's — commit it) or ~/.mek/config.yaml (yours,
                on every project). A file that has the name already isn't offered.
-  Cloud        AWS, GCP or Azure
+  Cloud        AWS, GCP, Azure or Huawei Cloud
   AWS          IAM Identity Center: the access portal (portals your other
                contexts use are listed) and its region; then, logged in to the
                portal (it offers to log in first), the accounts you can reach
@@ -394,6 +394,8 @@ It asks, in order:
   Azure        logged in (it offers to), the tenants and their subscriptions
                are listed; then the subscription's Bastion hosts (for shells
                and tunnels, or none) and a region
+  Huawei Cloud a KooCLI profile (listed from ~/.hcloud/config.json; make one
+               with hcloud configure init) and a region
   Guard        normal, protected (changes ask; deletes need the name typed)
                or readonly (changes are blocked)
   Save?        the YAML it will write, and where: Save, Back or Cancel

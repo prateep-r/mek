@@ -294,7 +294,7 @@ func TestCtxWizardErrors(t *testing.T) {
 		t.Error("saved into a directory")
 	}
 
-	if flowFor("huawei") != nil {
+	if flowFor("oracle") != nil {
 		t.Error("a flow for a cloud mek doesn't have")
 	}
 	if ownContexts(t.TempDir()) != nil {

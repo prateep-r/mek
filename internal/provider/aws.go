@@ -60,7 +60,7 @@ func ssoRegion(c *config.Context) string {
 }
 
 func validateAWS(c *config.Context) error {
-	if err := notAzure(c); err != nil {
+	if err := cmpErr(notAzure(c), notHuawei(c)); err != nil {
 		return err
 	}
 	if c.UseMetadata {

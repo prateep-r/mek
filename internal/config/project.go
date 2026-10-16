@@ -73,8 +73,11 @@ func (c *Context) Key() string {
 		return c.Name
 	}
 	fields := []string{c.Provider, c.SSOStartURL, c.SSORegion, c.AccountID, c.Role, c.AWSProfile, c.Project, c.Account}
-	if c.Provider == ProviderAzure {
+	switch c.Provider {
+	case ProviderAzure:
 		fields = append(fields, c.TenantID, c.SubscriptionID)
+	case ProviderHuawei:
+		fields = append(fields, c.HcloudProfile)
 	}
 	id := strings.Join(fields, "\x00")
 	sum := sha256.Sum256([]byte(id))

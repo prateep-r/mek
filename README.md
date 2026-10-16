@@ -9,15 +9,17 @@
 in, switches between them and runs the official CLIs with the right credentials.
 Think *K9s/Lens, but for cloud accounts*.
 
-**Supported clouds: AWS, Google Cloud (GCP) and Microsoft Azure** — on macOS and Linux.
+**Supported clouds: AWS, Google Cloud (GCP), Microsoft Azure and Huawei Cloud** — on macOS and Linux.
 
 | Cloud | Signing in | Shells and tunnels | Kubernetes | Databases |
 |---|---|---|---|---|
 | **AWS** | IAM Identity Center (SSO), or any AWS CLI profile | SSM Session Manager | EKS | RDS and Aurora, through a tunnel |
 | **GCP** | your Google account through gcloud (a key file in CI) | IAP, with SSH | GKE | Cloud SQL, through the Auth Proxy |
 | **Azure** | your Microsoft Entra ID account through az | Azure Bastion | AKS | any private IP, through Bastion |
+| **Huawei Cloud** | a KooCLI profile you made (SSO, or keys) | — | — | — |
 
-Other clouds, such as Huawei Cloud, aren't supported.
+Huawei Cloud contexts run `hcloud` (KooCLI) with the guard and the audit log; they have no
+shells, tunnels, clusters or Resources tab ([why](#limitations)). Other clouds aren't supported.
 
 ```bash
 mek ctx add                    # add an account by answering questions (or edit the YAML)
@@ -31,7 +33,7 @@ mek -c prod tunnel db -b       # localhost:15432 → a private database
 mek exec -- terraform plan     # any tool, same credentials
 ```
 
-- **Every CLI feature, day one** — `mek aws …` / `mek gcloud …` / `mek az …` pass everything through to the real CLI.
+- **Every CLI feature, day one** — `mek aws …` / `mek gcloud …` / `mek az …` / `mek hcloud …` pass everything through to the real CLI.
 - **No long-lived keys** — AWS uses IAM Identity Center (SSO) through the AWS CLI's own token cache; GCP and Azure use an isolated gcloud or az config per context; kubeconfigs fetch a fresh token on every request.
 - **Your files stay untouched** — mek writes its own AWS config instead of editing `~/.aws/config`, keeps gcloud off `~/.config/gcloud` and az off `~/.azure`, and never writes `~/.kube/config` or `~/.ssh`.
 - **Prod guard** — `protected` contexts confirm writes and require typing the context name for destructive commands; `readonly` contexts block them.
@@ -104,6 +106,7 @@ macOS where there is one):
 | AWS contexts | [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) |
 | GCP contexts | [Google Cloud CLI](https://cloud.google.com/sdk/docs/install) |
 | Azure contexts | [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) |
+| Huawei Cloud contexts | [KooCLI](https://support.huaweicloud.com/intl/en-us/qs-hcli/hcli_02_003.html) (`hcloud`), with a profile you made: `hcloud configure init` |
 | `mek kubectl`, kubeconfigs | [kubectl](https://kubernetes.io/docs/tasks/tools/) |
 | GKE clusters | [gke-gcloud-auth-plugin](https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_plugin) |
 | AKS clusters | [kubelogin](https://azure.github.io/kubelogin/install.html) |
@@ -230,7 +233,7 @@ $ mek doctor
 ```
 
 `mek doctor` checks the config and lists every CLI and plugin mek can use — `aws`, `gcloud`,
-`az`, `session-manager-plugin`, `gke-gcloud-auth-plugin`, `cloud-sql-proxy`, `ssh`, `kubelogin`,
+`az`, `hcloud`, `session-manager-plugin`, `gke-gcloud-auth-plugin`, `cloud-sql-proxy`, `ssh`, `kubelogin`,
 `kubectl`, `k9s` — marking the ones your contexts need as required, with the install command for anything
 missing. It also flags AWS CLI v1.
 
@@ -445,6 +448,11 @@ mek doesn't replace `aws`, `gcloud` or `az`; it runs them with the context's set
   set (`mek -c az-dev az config set defaults.group=rg-app`). az's extensions are your own,
   shared by every context: `az extension add` once, without mek. The tenant, subscription and
   region come from `config.yaml`.
+- **Huawei Cloud contexts** name one of your KooCLI profiles; mek adds `--cli-profile` and
+  `--cli-region` to each API command (`mek -c hw hcloud ECS ListServersDetails` runs
+  `hcloud ECS ListServersDetails --cli-profile=sso-prod --cli-region=ap-southeast-3`), since
+  KooCLI has no environment variables for them. KooCLI's own commands (`configure`,
+  `version`) are passed as they are. mek never writes `~/.hcloud`.
 - To type plain `aws …` / `gcloud …` / `az …` / `kubectl …` in a context, export it into the shell:
   `eval "$(mek env prod)"`. Commands typed that way skip mek's guard and audit log.
   (`mek use -s prod` switches mek's own commands in this shell — and plain `kubectl` / K9s,
@@ -794,7 +802,7 @@ Add a context
 
 1. **Name** — what you'll type after `mek use` and `-c`; a name that's taken says where
    (`acme-dev is already in ~/.mek/config.yaml — change it with: mek ctx edit acme-dev`).
-2. **Cloud** — AWS, GCP or Azure.
+2. **Cloud** — AWS, GCP, Azure or Huawei Cloud.
 3. **Sign in with** — IAM Identity Center, or a profile from `~/.aws/config` (next example).
 4. **Access portal** — portals your other contexts use are listed; for a new one, *type it
    yourself…* and give its URL. A listed portal's region is known; a new one's is asked
@@ -955,6 +963,37 @@ az-prod:
   bastion:
     name: bas-hub
     resource_group: rg-network
+```
+
+</details>
+
+### Add a Huawei Cloud context
+
+<details>
+<summary>Show the example</summary>
+
+mek uses a KooCLI profile you made with `hcloud configure init` (or `hcloud configure set`);
+it reads `~/.hcloud/config.json` and never writes it:
+
+```console
+$ mek ctx add hw-prod
+Add a context
+✓ Name: hw-prod
+✓ Cloud: Huawei Cloud
+? KooCLI profile
+  from ~/.hcloud/config.json — make one with: hcloud configure init
+  ▸ default  AKSK ap-southeast-2
+    sso-prod  SSO ap-southeast-3
+    type it yourself…
+```
+
+Then the region (*none*: the profile's own) and the guard:
+
+```yaml
+hw-prod:
+  provider: huawei
+  region: ap-southeast-3
+  hcloud_profile: sso-prod
 ```
 
 </details>
@@ -1604,61 +1643,64 @@ tokens stay in the AWS CLI's own cache (`~/.aws/sso/cache`); mek stores no keys.
 keys except `settings:`, which only `~/.mek/config.yaml` may have. Every key mek reads is in
 this one table; paths under a context are relative to `contexts.<name>`; a key that isn't in
 it is an error. "—" means the key doesn't apply to that cloud: under `clusters`, `targets` and
-`tunnels`, for `use_metadata`, for the Azure keys, and on an Azure context, setting it is an
-error; an AWS key on a GCP context (or the other way round) is ignored. Rules marked
+`tunnels`, for `use_metadata`, for the Azure and Huawei keys, and on an Azure or Huawei
+context, setting it is an error; an AWS key on a GCP context (or the other way round) is
+ignored. Rules marked
 *arg* mean no leading `-` and no control characters, because the value becomes a CLI argument.
 
-| Key | Type | Required | Default | AWS | GCP | Azure | Rules | Effect |
-|---|---|---|---|---|---|---|---|---|
-| `contexts` | map: *name* → context | no | no contexts | ✓ | ✓ | ✓ | top-level key | every cloud target, by the name you type (`mek use <name>`, `-c <name>`) |
-| `contexts.<name>` | map | — | — | ✓ | ✓ | ✓ | name: `^[A-Za-z0-9][A-Za-z0-9._-]*$`; can't be empty | one context. The name becomes a directory and an AWS profile name (`mek-<name>`) |
-| **Every context** | | | | | | | | |
-| `provider` | string | **yes** | — | `aws` | `gcp` | `azure` | one of the three | which cloud and CLI the context drives |
-| `region` | string | no | none | ✓ | ✓ | ✓ | no line breaks | AWS: `AWS_REGION` / `AWS_DEFAULT_REGION`, the profile's region, the default for `sso_region` and EKS clusters. GCP: `CLOUDSDK_COMPUTE_REGION`. Azure: `AZURE_DEFAULTS_LOCATION`, where new resources go |
-| `protected` | bool | no | `false` | ✓ | ✓ | ✓ | | changes ask first ([how the guard works](#how-the-guard-works)) |
-| `readonly` | bool | no | `false` | ✓ | ✓ | ✓ | | changes are blocked; with `protected` too, tunnels ask ([how the guard works](#how-the-guard-works)) |
-| **AWS — IAM Identity Center (SSO)** | | | | | | | | |
-| `sso_start_url` | string (URL) | **yes** (SSO) | — | ✓ | — | — | no line breaks | the portal. Contexts with the same URL share one `[sso-session]`: one `mek login` covers them all |
-| `sso_region` | string | **yes** (SSO), unless `region` is set | `region` | ✓ | — | — | equal across contexts sharing an `sso_start_url` | the region IAM Identity Center lives in |
-| `account_id` | string | **yes** (SSO) | — | ✓ | — | — | exactly 12 digits; quote it | the account |
-| `role` | string | **yes** (SSO) | — | ✓ | — | — | no line breaks | the permission set |
-| **AWS — existing profile** | | | | | | | | |
-| `aws_profile` | string | **yes** (instead of the SSO keys) | — | ✓ | — | — | no line breaks | use this profile from your own `~/.aws/config` untouched (SSO, keys, `credential_process`, assume-role…); the SSO keys are then ignored |
-| **GCP** | | | | | | | | |
-| `project` | string | **yes** | — | — | ✓ | — | no line breaks | the project ID: `CLOUDSDK_CORE_PROJECT`, `GOOGLE_CLOUD_PROJECT` |
-| `account` | string (e-mail) | no | gcloud's active account | — | ✓ | — | no line breaks | `gcloud auth login <account>`, `CLOUDSDK_CORE_ACCOUNT` |
-| `use_metadata` | bool | no | `false` | — | ✓ | — | AWS, Azure: an error | on a GCP VM: let gcloud act as the VM's service account when the context has no login. Off, mek sets `CLOUDSDK_CORE_CHECK_GCE_METADATA=false`, so a context that isn't logged in fails instead of quietly using the machine's identity |
-| **Azure** | | | | | | | | |
-| `tenant_id` | string | **yes** | — | — | — | ✓ | no line breaks | the Microsoft Entra tenant, by id or domain: `az login --tenant`, `AZURE_TENANT_ID`, `ARM_TENANT_ID` |
-| `subscription_id` | string (GUID) | **yes** | — | — | — | ✓ | a GUID | `az account set`, `AZURE_SUBSCRIPTION_ID`, `ARM_SUBSCRIPTION_ID` |
-| `bastion` | map | no (yes for shells and tunnels) | none | — | — | ✓ | `name` and `resource_group`, both *arg* | the Azure Bastion (Standard SKU or above, native client support on) that shells and tunnels go through |
-| **Kubernetes clusters** (`mek kube`, `mek kubectl`) | | | | | | | | |
-| `clusters` | map: *alias* → cluster | no | none | ✓ | ✓ | ✓ | alias: name rule, not `token` | the kube context is `<name>/<alias>`; `mek kube <alias>` makes it current |
-| `clusters.<alias>.name` | string | **yes** | — | EKS name | GKE name | AKS name | *arg* | the cluster in the cloud (must be `ACTIVE` / `RUNNING`) |
-| `clusters.<alias>.region` | string | AWS: yes, unless the context has `region` | the context's `region` | ✓ | — | — | *arg* | the EKS cluster's region |
-| `clusters.<alias>.location` | string | GCP: **yes** | — | — | ✓ | — | *arg* | the GKE cluster's zone or region |
-| `clusters.<alias>.resource_group` | string | Azure: **yes** | — | — | — | ✓ | *arg* | the AKS cluster's resource group |
-| `clusters.<alias>.endpoint` | `private` / `dns` | no | the cluster's endpoint | — | ✓ | — | one of the two | which GKE endpoint the kubeconfig uses: `private` = its internal IP (from inside the VPC or over VPN), `dns` = its DNS-based endpoint (from anywhere IAM allows, if it allows external traffic) — see [private clusters](#private-clusters) |
-| `clusters.<alias>.namespace` | string | no | `default` | ✓ | ✓ | ✓ | *arg* | the kube context's default namespace |
-| **Hosts** (`mek shell`, tunnel hops) | | | | | | | | |
-| `targets` | map: *alias* → target | no | none | ✓ | ✓ | ✓ | alias: name rule, not `ls` `list` `stop` `logs` | hosts by short name: `mek shell <alias>`, `via: <alias>` |
-| `targets.<alias>.instance` | string | **yes** | — | `i-…` / `mi-…` (8–17 hex digits), or `tag:Key=Value` | a VM name: `^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$` | a VM name, or its resource id | *arg* | the host; a tag must match exactly one running instance |
-| `targets.<alias>.zone` | string | no | looked up (the one running VM of that name) | — | ✓ | — | *arg* | the VM's zone |
-| `targets.<alias>.user` | string | no | gcloud's (your local user); Azure: your Entra ID login | — | ✓ | ✓ | *arg* | the SSH user (SSM picks the OS user on AWS; on Azure, for `auth: ssh-key`) |
-| `targets.<alias>.resource_group` | string | no | looked up (the one VM of that name in the subscription) | — | — | ✓ | *arg* | the VM's resource group |
-| `targets.<alias>.auth` | `aad` / `ssh-key` | no | `aad` | — | — | ✓ | `ssh-key` needs `user` | how the shell logs in: your Microsoft Entra ID account (no key; the VM needs the Entra ID login extension), or the context's key `~/.mek/ssh/<key>/id_ed25519` |
-| `targets.<alias>.bastion` | map | no | the context's `bastion` | — | — | ✓ | like `bastion` | this VM's own Bastion |
-| **Tunnels** (`mek tunnel`) | | | | | | | | |
-| `tunnels` | map: *alias* → tunnel | no | none | ✓ | ✓ | ✓ | alias: name rule, not `ls` `list` `stop` `logs` | named port forwards: `mek tunnel <alias>` |
-| `tunnels.<alias>.via` | string | **yes**, except Cloud SQL and Azure's `host` | — | a target alias, instance id or `tag:Key=Value` | a target alias or VM name | a target alias, VM name or resource id | *arg* | the host the tunnel goes through. `via` + `port`: a port on that host (AWS SSM port forwarding; GCP `start-iap-tunnel`) |
-| `tunnels.<alias>.host` | string | no | — | ✓ | ✓ | an IP, without `via` | *arg*; Azure: an IP | another host reached through `via` (an RDS endpoint, an internal IP): AWS SSM to a remote host; GCP `ssh -L` — which counts as a **shell**. On Azure, without `via`: an IP the context's Bastion connects to itself |
-| `tunnels.<alias>.port` | int | **yes** with `via` or `host` | — | ✓ | ✓ | ✓ | 1–65535 | the remote port |
-| `tunnels.<alias>.local_port` | int | **yes** for Cloud SQL | `port` + 10000 | ✓ | ✓ | ✓ | 1–65535; set it when `port` > 55535 | the port on `127.0.0.1`; `mek tunnel --local` overrides it |
-| `tunnels.<alias>.cloudsql` | string | no | — | — | ✓ | — | *arg*; no `via`/`host`/`port` with it | a Cloud SQL instance, by its connection name `PROJECT:REGION:INSTANCE`, through the Cloud SQL Auth Proxy (needs `mek login --adc`) |
-| `tunnels.<alias>.private_ip` | bool | no | `false` | — | ✓ | — | only with `cloudsql` | reach Cloud SQL over its private IP |
-| **Settings** (`~/.mek/config.yaml` only) | | | | | | | | |
-| `settings` | map | no | none | ✓ | ✓ | ✓ | top-level key; in a project's file, an error | how mek behaves for you |
-| `settings.show_cmd` | bool | no | `false` | ✓ | ✓ | ✓ | | print each command mek runs as typed yourself ([show-cmd](#seeing-the-native-command)); `mek show-cmd on` / `off` sets it |
+| Key | Type | Required | Default | AWS | GCP | Azure | Huawei | Rules | Effect |
+|---|---|---|---|---|---|---|---|---|---|
+| `contexts` | map: *name* → context | no | no contexts | ✓ | ✓ | ✓ | ✓ | top-level key | every cloud target, by the name you type (`mek use <name>`, `-c <name>`) |
+| `contexts.<name>` | map | — | — | ✓ | ✓ | ✓ | ✓ | name: `^[A-Za-z0-9][A-Za-z0-9._-]*$`; can't be empty | one context. The name becomes a directory and an AWS profile name (`mek-<name>`) |
+| **Every context** | | | | | | | | | |
+| `provider` | string | **yes** | — | `aws` | `gcp` | `azure` | `huawei` | one of the four | which cloud and CLI the context drives |
+| `region` | string | no | none | ✓ | ✓ | ✓ | ✓ | no line breaks | AWS: `AWS_REGION` / `AWS_DEFAULT_REGION`, the profile's region, the default for `sso_region` and EKS clusters. GCP: `CLOUDSDK_COMPUTE_REGION`. Azure: `AZURE_DEFAULTS_LOCATION`, where new resources go. Huawei: `--cli-region` on each API command, `HW_REGION_NAME` |
+| `protected` | bool | no | `false` | ✓ | ✓ | ✓ | ✓ | | changes ask first ([how the guard works](#how-the-guard-works)) |
+| `readonly` | bool | no | `false` | ✓ | ✓ | ✓ | ✓ | | changes are blocked; with `protected` too, tunnels ask ([how the guard works](#how-the-guard-works)) |
+| **AWS — IAM Identity Center (SSO)** | | | | | | | | | |
+| `sso_start_url` | string (URL) | **yes** (SSO) | — | ✓ | — | — | — | no line breaks | the portal. Contexts with the same URL share one `[sso-session]`: one `mek login` covers them all |
+| `sso_region` | string | **yes** (SSO), unless `region` is set | `region` | ✓ | — | — | — | equal across contexts sharing an `sso_start_url` | the region IAM Identity Center lives in |
+| `account_id` | string | **yes** (SSO) | — | ✓ | — | — | — | exactly 12 digits; quote it | the account |
+| `role` | string | **yes** (SSO) | — | ✓ | — | — | — | no line breaks | the permission set |
+| **AWS — existing profile** | | | | | | | | | |
+| `aws_profile` | string | **yes** (instead of the SSO keys) | — | ✓ | — | — | — | no line breaks | use this profile from your own `~/.aws/config` untouched (SSO, keys, `credential_process`, assume-role…); the SSO keys are then ignored |
+| **GCP** | | | | | | | | | |
+| `project` | string | **yes** | — | — | ✓ | — | — | no line breaks | the project ID: `CLOUDSDK_CORE_PROJECT`, `GOOGLE_CLOUD_PROJECT` |
+| `account` | string (e-mail) | no | gcloud's active account | — | ✓ | — | — | no line breaks | `gcloud auth login <account>`, `CLOUDSDK_CORE_ACCOUNT` |
+| `use_metadata` | bool | no | `false` | — | ✓ | — | — | AWS, Azure: an error | on a GCP VM: let gcloud act as the VM's service account when the context has no login. Off, mek sets `CLOUDSDK_CORE_CHECK_GCE_METADATA=false`, so a context that isn't logged in fails instead of quietly using the machine's identity |
+| **Azure** | | | | | | | | | |
+| `tenant_id` | string | **yes** | — | — | — | ✓ | — | no line breaks | the Microsoft Entra tenant, by id or domain: `az login --tenant`, `AZURE_TENANT_ID`, `ARM_TENANT_ID` |
+| `subscription_id` | string (GUID) | **yes** | — | — | — | ✓ | — | a GUID | `az account set`, `AZURE_SUBSCRIPTION_ID`, `ARM_SUBSCRIPTION_ID` |
+| `bastion` | map | no (yes for shells and tunnels) | none | — | — | ✓ | — | `name` and `resource_group`, both *arg* | the Azure Bastion (Standard SKU or above, native client support on) that shells and tunnels go through |
+| **Huawei Cloud** | | | | | | | | | |
+| `hcloud_profile` | string | **yes** | — | — | — | — | ✓ | no line breaks; a profile in `~/.hcloud/config.json` | the KooCLI profile (SSO, keys or an agency) — mek adds `--cli-profile` to each API command and sets `HW_PROFILE`; `mek login` runs `hcloud configure sso` for an SSO profile. `clusters`, `targets` and `tunnels` are errors on a Huawei context |
+| **Kubernetes clusters** (`mek kube`, `mek kubectl`) | | | | | | | | | |
+| `clusters` | map: *alias* → cluster | no | none | ✓ | ✓ | ✓ | — | alias: name rule, not `token` | the kube context is `<name>/<alias>`; `mek kube <alias>` makes it current |
+| `clusters.<alias>.name` | string | **yes** | — | EKS name | GKE name | AKS name | — | *arg* | the cluster in the cloud (must be `ACTIVE` / `RUNNING`) |
+| `clusters.<alias>.region` | string | AWS: yes, unless the context has `region` | the context's `region` | ✓ | — | — | — | *arg* | the EKS cluster's region |
+| `clusters.<alias>.location` | string | GCP: **yes** | — | — | ✓ | — | — | *arg* | the GKE cluster's zone or region |
+| `clusters.<alias>.resource_group` | string | Azure: **yes** | — | — | — | ✓ | — | *arg* | the AKS cluster's resource group |
+| `clusters.<alias>.endpoint` | `private` / `dns` | no | the cluster's endpoint | — | ✓ | — | — | one of the two | which GKE endpoint the kubeconfig uses: `private` = its internal IP (from inside the VPC or over VPN), `dns` = its DNS-based endpoint (from anywhere IAM allows, if it allows external traffic) — see [private clusters](#private-clusters) |
+| `clusters.<alias>.namespace` | string | no | `default` | ✓ | ✓ | ✓ | — | *arg* | the kube context's default namespace |
+| **Hosts** (`mek shell`, tunnel hops) | | | | | | | | | |
+| `targets` | map: *alias* → target | no | none | ✓ | ✓ | ✓ | — | alias: name rule, not `ls` `list` `stop` `logs` | hosts by short name: `mek shell <alias>`, `via: <alias>` |
+| `targets.<alias>.instance` | string | **yes** | — | `i-…` / `mi-…` (8–17 hex digits), or `tag:Key=Value` | a VM name: `^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$` | a VM name, or its resource id | — | *arg* | the host; a tag must match exactly one running instance |
+| `targets.<alias>.zone` | string | no | looked up (the one running VM of that name) | — | ✓ | — | — | *arg* | the VM's zone |
+| `targets.<alias>.user` | string | no | gcloud's (your local user); Azure: your Entra ID login | — | ✓ | ✓ | — | *arg* | the SSH user (SSM picks the OS user on AWS; on Azure, for `auth: ssh-key`) |
+| `targets.<alias>.resource_group` | string | no | looked up (the one VM of that name in the subscription) | — | — | ✓ | — | *arg* | the VM's resource group |
+| `targets.<alias>.auth` | `aad` / `ssh-key` | no | `aad` | — | — | ✓ | — | `ssh-key` needs `user` | how the shell logs in: your Microsoft Entra ID account (no key; the VM needs the Entra ID login extension), or the context's key `~/.mek/ssh/<key>/id_ed25519` |
+| `targets.<alias>.bastion` | map | no | the context's `bastion` | — | — | ✓ | — | like `bastion` | this VM's own Bastion |
+| **Tunnels** (`mek tunnel`) | | | | | | | | | |
+| `tunnels` | map: *alias* → tunnel | no | none | ✓ | ✓ | ✓ | — | alias: name rule, not `ls` `list` `stop` `logs` | named port forwards: `mek tunnel <alias>` |
+| `tunnels.<alias>.via` | string | **yes**, except Cloud SQL and Azure's `host` | — | a target alias, instance id or `tag:Key=Value` | a target alias or VM name | a target alias, VM name or resource id | — | *arg* | the host the tunnel goes through. `via` + `port`: a port on that host (AWS SSM port forwarding; GCP `start-iap-tunnel`) |
+| `tunnels.<alias>.host` | string | no | — | ✓ | ✓ | an IP, without `via` | — | *arg*; Azure: an IP | another host reached through `via` (an RDS endpoint, an internal IP): AWS SSM to a remote host; GCP `ssh -L` — which counts as a **shell**. On Azure, without `via`: an IP the context's Bastion connects to itself |
+| `tunnels.<alias>.port` | int | **yes** with `via` or `host` | — | ✓ | ✓ | ✓ | — | 1–65535 | the remote port |
+| `tunnels.<alias>.local_port` | int | **yes** for Cloud SQL | `port` + 10000 | ✓ | ✓ | ✓ | — | 1–65535; set it when `port` > 55535 | the port on `127.0.0.1`; `mek tunnel --local` overrides it |
+| `tunnels.<alias>.cloudsql` | string | no | — | — | ✓ | — | — | *arg*; no `via`/`host`/`port` with it | a Cloud SQL instance, by its connection name `PROJECT:REGION:INSTANCE`, through the Cloud SQL Auth Proxy (needs `mek login --adc`) |
+| `tunnels.<alias>.private_ip` | bool | no | `false` | — | ✓ | — | — | only with `cloudsql` | reach Cloud SQL over its private IP |
+| **Settings** (`~/.mek/config.yaml` only) | | | | | | | | | |
+| `settings` | map | no | none | ✓ | ✓ | ✓ | ✓ | top-level key; in a project's file, an error | how mek behaves for you |
+| `settings.show_cmd` | bool | no | `false` | ✓ | ✓ | ✓ | ✓ | | print each command mek runs as typed yourself ([show-cmd](#seeing-the-native-command)); `mek show-cmd on` / `off` sets it |
 
 Block style and flow style (`dev: {provider: aws, …}`) are both fine. Everything is checked
 when mek loads the file, before any command runs; the first problem is reported with its
@@ -1736,16 +1778,17 @@ What mek gives the commands it runs: AWS gets `AWS_PROFILE`, `AWS_CONFIG_FILE` (
 `AWS_REGION` and `AWS_DEFAULT_REGION`; GCP gets `CLOUDSDK_CONFIG`, `CLOUDSDK_CORE_PROJECT` and
 friends, plus `GOOGLE_APPLICATION_CREDENTIALS` once `mek login --adc` created them; Azure gets
 `AZURE_CONFIG_DIR`, `AZURE_EXTENSION_DIR`, `AZURE_TENANT_ID` / `AZURE_SUBSCRIPTION_ID` and
-their `ARM_` twins for terraform, and `AZURE_DEFAULTS_LOCATION`; contexts
+their `ARM_` twins for terraform, and `AZURE_DEFAULTS_LOCATION`; Huawei Cloud gets `HW_PROFILE`
+and `HW_REGION_NAME` (and `--cli-profile` / `--cli-region` on each API command); contexts
 with clusters (or a kubeconfig from `mek kube --name`) get `KUBECONFIG`. `--show-cmd` prints
 exactly what a command gets. Credentials from your shell that would override the context
-(`AWS_ACCESS_KEY_ID`, `GOOGLE_APPLICATION_CREDENTIALS`, `AZURE_CLIENT_SECRET`, …) are removed.
+(`AWS_ACCESS_KEY_ID`, `GOOGLE_APPLICATION_CREDENTIALS`, `AZURE_CLIENT_SECRET`, `HW_SECRET_KEY`, …) are removed.
 
 ## How the guard works
 
-**`protected` and `readonly` are mek's own settings, not the cloud's.** AWS, GCP and Azure
-never see them: mek checks each command on your machine before handing it to `aws`, `gcloud`,
-`az` or `kubectl`. They are there for mistakes — a delete typed in the prod terminal you took for
+**`protected` and `readonly` are mek's own settings, not the cloud's.** The clouds never see
+them: mek checks each command on your machine before handing it to `aws`, `gcloud`, `az`,
+`hcloud` or `kubectl`. They are there for mistakes — a delete typed in the prod terminal you took for
 dev, a script run with the wrong context — not for someone who means harm.
 
 | Setting | Effect |
@@ -1758,9 +1801,9 @@ prints the same rules, from the code itself):
 
 | Class | Examples | plain | `protected` | `readonly` |
 |---|---|---|---|---|
-| read | `describe-*`, `list-*`, `get-*` (aws), `list` / `describe` (gcloud), `list` / `show` (az), `s3 ls`, `kubectl get`/`logs`, `--dry-run` | run | run | run |
+| read | `describe-*`, `list-*`, `get-*` (aws), `list` / `describe` (gcloud), `list` / `show` (az), `List*` / `Show*` (hcloud), `s3 ls`, `kubectl get`/`logs`, `--dry-run` | run | run | run |
 | write | `create-*`, `update-*`, `create` / `deploy`, `s3 cp`, `kubectl apply`/`scale`, unknown verbs | run | ask y/N | blocked |
-| destructive | `delete-*`, `terminate-*`, `stop-*`, `delete` / `stop` (gcloud), `delete` / `stop` / `deallocate` (az), `s3 rm`, `sync --delete`, `kubectl delete`/`drain` | run | type the context name | blocked |
+| destructive | `delete-*`, `terminate-*`, `stop-*`, `delete` / `stop` (gcloud), `delete` / `stop` / `deallocate` (az), `Delete*` / `Stop*` (hcloud), `s3 rm`, `sync --delete`, `kubectl delete`/`drain` | run | type the context name | blocked |
 | unknown | anything via `mek exec` | run | ask y/N | blocked |
 | shell | `mek shell`, `aws ssm start-session`, `gcloud compute ssh`, `az network bastion ssh`, `kubectl exec`/`attach`/`debug` | run | ask y/N | blocked |
 | tunnel | `mek tunnel`, SSM port forwarding, `gcloud compute start-iap-tunnel`, `az network bastion tunnel`, `kubectl port-forward`/`proxy` | run | ask y/N | run |
@@ -1808,9 +1851,9 @@ mek help wizard             # mek ctx add / edit: the keys, what it looks up, ho
 ```console
 $ mek help
 mek (เมฆ, "cloud") manages cloud contexts — an AWS account+role, a GCP
-project or an Azure subscription — and runs the official CLIs (aws, gcloud,
-az) with the right credentials, plus a safety guard and audit log for
-protected contexts.
+project, an Azure subscription or a Huawei Cloud profile — and runs the
+official CLIs (aws, gcloud, az, hcloud) with the right credentials, plus a
+safety guard and audit log for protected contexts.
 
 Contexts come from ~/.mek/config.yaml and, inside a project, its mek.yaml
 (the team's) and mek.local.yaml (yours): mek help config.
@@ -1823,7 +1866,7 @@ Usage:
 Contexts:
   ctx         Show the current context (use `mek ctx ls` to list all)
   init        Create ~/.mek/config.yaml (or a project's mek.yaml / mek.local.yaml) from a commented example
-  login       Log in to a context (AWS IAM Identity Center / gcloud / az)
+  login       Log in to a context (AWS IAM Identity Center / gcloud / az / hcloud)
   ui          Browse and use contexts, tunnels, shells, clusters, cloud resources and the audit log in one screen
   use         Switch the current context (every shell), or only this shell with -s
 
@@ -1833,6 +1876,7 @@ Run commands:
   env         Print shell exports for a context: eval "$(mek env)"
   exec        Run any command (terraform, kubectl, scripts...) with the context's credentials
   gcloud      Run any Google Cloud CLI command in the current context
+  hcloud      Run any Huawei Cloud KooCLI command in the current context
   kubectl     Run kubectl on the current context's clusters (see `mek kube`)
 
 Access (shells, tunnels, Kubernetes):
@@ -1948,7 +1992,8 @@ official tools need. Ask whoever runs the account for:
 | `no context selected — run mek use <context> or pass --context` | `mek use <context>`, or pass `-c <context>` |
 | `unknown context "x"` | check the name with `mek ctx ls` |
 | `unknown field "…"` (with the file and line) | a misspelt key in `config.yaml`, `mek.yaml` or `mek.local.yaml` — compare with the [specification](#specification) |
-| `unknown provider "huawei"` | mek supports AWS, GCP and Azure |
+| `unknown provider "…"` | mek supports AWS, GCP, Azure and Huawei Cloud |
+| `KooCLI profile "x" not found` / `no KooCLI config at …` | make the profile with `hcloud configure init --cli-profile=x`, or fix `hcloud_profile` |
 | `az extension bastion and ssh is needed` | `az extension add --name bastion --name ssh`, once, without mek (extensions are shared by every context) |
 | `aks cluster … uses local accounts` | mek needs a cluster with Microsoft Entra ID integration (local accounts are long-lived certificates) |
 | `VM vm-1: 2 found` | pass `--resource-group`, or set `resource_group` on the target |
@@ -1971,7 +2016,12 @@ official tools need. Ask whoever runs the account for:
 - Needs the official CLIs installed; passthrough speed equals the CLI's speed.
 - mek can't grant more than your IAM role/permissions allow.
 - AWS login supports IAM Identity Center (SSO) and existing profiles; SAML-only IdPs without Identity Center are not built in (use `aws_profile` with your existing tooling).
-- mek supports AWS, GCP and Azure.
+- mek supports AWS, GCP, Azure and Huawei Cloud.
+- Huawei Cloud contexts run `hcloud` only: no `mek kube` (CCE hands out long-lived client
+  certificates, and mek keeps no keys), no `mek shell` or `mek tunnel` (there is no session
+  service like SSM, IAP or Bastion to go through), and no Resources tab (KooCLI fetches its API
+  definitions online, so there is no model to build a catalog from). Their credentials are the
+  KooCLI profile's: keys stay keys.
 - Azure shells and tunnels go through Azure Bastion only (not Just-in-Time access or a public IP); AKS clusters need Microsoft Entra ID integration.
 - Every kubectl request through mek's kubeconfig fetches a fresh token (about 0.5–1 s); mek never caches tokens.
 - The kubeconfig records mek's path and `PATH` when it is written; run `mek kube` again after moving mek or the cloud CLIs.
@@ -1992,7 +2042,7 @@ official tools need. Ask whoever runs the account for:
 4. ✅ Config wizard (`mek ctx add` / `edit` / `rm`, and a context's targets, clusters and tunnels), with lists from the cloud
 5. ✅ Resources in the terminal UI, generated from the AWS CLI's, gcloud's and az's command models
 6. ✅ Azure
-7. Huawei Cloud
+7. ✅ Huawei Cloud (KooCLI profiles, the guard and the audit log)
 8. Desktop GUI (Wails)
 
 ## Development

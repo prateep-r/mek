@@ -40,6 +40,12 @@ var clouds = []cloud{
 		write:       []string{"vm", "create", "-g", "rg", "-n", "vm-1", "--image", "Ubuntu2204"},
 		destructive: []string{"vm", "delete", "-g", "rg", "-n", "vm-1", "--yes"},
 		secret:      []string{"vm", "user", "update", "-g", "rg", "-n", "vm-1", "-u", "ops", "--password=S3cret-azure"}},
+	{name: "huawei", cli: "hcloud",
+		ctx:         `provider: huawei, hcloud_profile: p, region: ap-southeast-2`,
+		read:        []string{"ECS", "ListServersDetails"},
+		write:       []string{"ECS", "CreateServers", "--cli-jsonInput=s.json"},
+		destructive: []string{"ECS", "DeleteServers", "--servers.1.id=x"},
+		secret:      []string{"IAM", "CreateTemporaryAccessKeyByToken", "--auth.identity.token.id=t", "--password=S3cret-huawei"}},
 }
 
 // allClouds is a config with, per cloud, a plain, a protected and a readonly context.
@@ -160,8 +166,9 @@ func TestConcurrentAcrossClouds(t *testing.T) {
 		"az": func(env map[string]string) bool {
 			return env["AZURE_CONFIG_DIR"] == filepath.Join(e.mekHome, "azure", "azure")
 		},
+		"hcloud": func(env map[string]string) bool { return env["HW_PROFILE"] == "p" },
 	}
-	ctxFor := map[string]string{"aws": "aws", "gcloud": "gcp", "az": "azure"}
+	ctxFor := map[string]string{"aws": "aws", "gcloud": "gcp", "az": "azure", "hcloud": "huawei"}
 	calls := e.calls()
 	if len(calls) != perCloud*len(clouds) {
 		t.Fatalf("%d calls, want %d", len(calls), perCloud*len(clouds))

@@ -43,11 +43,11 @@ func NewRoot() *cobra.Command { return newRoot(&app{exec: runner.Exec}) }
 func newRoot(a *app) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "mek",
-		Short: "Log in, switch and run commands across AWS, GCP and Azure",
+		Short: "Log in, switch and run commands across AWS, GCP, Azure and Huawei Cloud",
 		Long: `mek (เมฆ, "cloud") manages cloud contexts — an AWS account+role, a GCP
-project or an Azure subscription — and runs the official CLIs (aws, gcloud,
-az) with the right credentials, plus a safety guard and audit log for
-protected contexts.
+project, an Azure subscription or a Huawei Cloud profile — and runs the
+official CLIs (aws, gcloud, az, hcloud) with the right credentials, plus a
+safety guard and audit log for protected contexts.
 
 Contexts come from ~/.mek/config.yaml and, inside a project, its mek.yaml
 (the team's) and mek.local.yaml (yours): mek help config.

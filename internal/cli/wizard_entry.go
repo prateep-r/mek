@@ -63,6 +63,9 @@ func (a *app) openEntry(k entryKind) (*entryWizard, error) {
 	if err != nil {
 		return nil, err
 	}
+	if ctx.Provider == config.ProviderHuawei {
+		return nil, fmt.Errorf("%s is a huawei context: those have no %s", name, k.section())
+	}
 	e := &entryWizard{app: a, kind: k, ctx: ownContexts(ctx.Source)[name], extra: map[string]string{}, labels: map[string]string{}}
 	return e, nil
 }

@@ -123,9 +123,9 @@ func guardHelp() string {
 			word[guard.Decide(&config.Context{Protected: true}, c)], word[guard.Decide(&config.Context{ReadOnly: true}, c)], examples[c])
 	}
 	w.Flush()
-	return `protected and readonly are mek's own settings — not the cloud's. AWS, GCP and
-Azure never see them: mek checks each command on your machine before handing it
-to aws, gcloud, az or kubectl. They guard against mistakes — a delete typed in the prod
+	return `protected and readonly are mek's own settings — not the cloud's. The clouds
+never see them: mek checks each command on your machine before handing it to
+aws, gcloud, az, hcloud or kubectl. They guard against mistakes — a delete typed in the prod
 terminal you took for dev, a script run with the wrong context — not against
 someone who means harm.
 
@@ -151,7 +151,7 @@ THE AUDIT LOG
 WHAT THE GUARD DOESN'T COVER
   The cloud's own permissions decide what is possible: IAM roles, permission
   sets, SCPs, GCP IAM, Azure RBAC. A role that can delete prod can delete it
-  without mek. Running aws / gcloud / az / kubectl yourself, or after "mek env" / "mek use -s",
+  without mek. Running aws / gcloud / az / hcloud / kubectl yourself, or after "mek env" / "mek use -s",
   skips the guard; "mek exec" does not (its commands are "unknown").
   For an account that must stay read-only, use a read-only role in the cloud
   and readonly: true in mek: mek then says so before anything is sent.
