@@ -84,6 +84,22 @@ func (s *session) step(text string, keys ...string) {
 	}
 }
 
+// settled waits until the terminal has been quiet a moment (a typed filter
+// applied), then types keys. Bubble Tea redraws only what changed, so a
+// filter line never shows whole in the output to wait for.
+func (s *session) settled(keys ...string) {
+	s.t.Helper()
+	last, quietSince := "", time.Now()
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		if now := s.screen(); now != last {
+			last, quietSince = now, time.Now()
+		} else if time.Since(quietSince) > 400*time.Millisecond {
+			break
+		}
+	}
+	s.step("", keys...)
+}
+
 func (s *session) exited() {
 	s.t.Helper()
 	select {
@@ -123,11 +139,11 @@ contexts:
 	s.step("? Sign in with", "enter")
 	s.step("https://acme.awsapps.com/start", "enter") // seed's portal: its region and login come with it
 	s.step("444455556666", "4444")                    // the accounts the login reaches, listed
-	s.step("filter: 4444", "enter")
+	s.settled("enter")
 	s.step(adm, adm) // the roles in that account
-	s.step("filter: "+adm, "enter")
+	s.settled("enter")
 	s.step("? Region", "us-east-1")
-	s.step("filter: us-east-1", "enter")
+	s.settled("enter")
 	s.step("? Guard", "enter")
 	s.step(`account_id: "444455556666"`, "enter")
 	s.exited()
@@ -155,9 +171,9 @@ contexts:
 	s = startSession(t, u.vars, "-c", "dev", "ctx", "tunnel", "add")
 	s.step("? Forward to", "enter")
 	s.step(bastion, bastion)
-	s.step("filter: "+bastion, "enter")
+	s.settled("enter")
 	s.step(db, db)
-	s.step("filter: "+db, "enter")
+	s.settled("enter")
 	s.step("? Port", "enter") // the database's, filled in
 	s.step("? Local port", "ctrl+u", "25432", "enter")
 	s.step("? Name", "enter") // the database's name, filled in
@@ -167,14 +183,14 @@ contexts:
 	// A target and a cluster, the same way.
 	s = startSession(t, u.vars, "-c", "dev", "ctx", "target", "add")
 	s.step(bastion, bastion)
-	s.step("filter: "+bastion, "enter")
+	s.settled("enter")
 	s.step("? Refer to it by", "enter") // its Name tag
 	s.step("? Name", "ctrl+u", "jump", "enter")
 	s.step("[Save]", "enter")
 	s.exited()
 	s = startSession(t, u.vars, "-c", "dev", "ctx", "cluster", "add")
 	s.step(eks, eks)
-	s.step("filter: "+eks, "enter")
+	s.settled("enter")
 	s.step("? Namespace", "enter")
 	s.step("? Name", "ctrl+u", "main", "enter")
 	s.step("[Save]", "enter")
