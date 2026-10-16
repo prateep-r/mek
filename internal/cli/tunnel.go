@@ -37,7 +37,7 @@ func (a *app) newTunnelCmd() *cobra.Command {
 	var o tunnelOpts
 	cmd := &cobra.Command{
 		Use:   "tunnel [name]",
-		Short: "Forward a local port to a private host (AWS SSM, GCP IAP, Cloud SQL)",
+		Short: "Forward a local port to a private host (AWS SSM, GCP IAP, Cloud SQL, Azure Bastion)",
 		Long: `Forward a port on localhost to a host in a private network, through the
 cloud's own session service. It stays in the foreground; Ctrl-C closes it.
 
@@ -45,6 +45,7 @@ cloud's own session service. It stays in the foreground; Ctrl-C closes it.
   mek -c prod tunnel --via bastion --to mydb.xyz.rds.amazonaws.com:5432
   mek -c prod tunnel --via i-0abc1234def567890 --to :8080   # a port on the instance itself
   mek -c gcp tunnel --cloudsql my-project:asia-southeast1:db --local 15432
+  mek -c az tunnel --to 10.1.2.3:5432                       # azure: Bastion connects to the IP itself
 
   mek -c prod tunnel db -b                                  # in the background, reconnecting
   mek tunnel ls                                             # every context's tunnels
@@ -57,7 +58,8 @@ failures and giving up after 5 minutes of them. --no-restart turns that off.
 
 The local port defaults to the remote port + 10000. A tunnel only moves bytes,
 so readonly contexts allow it; protected contexts ask first. GCP tunnels to
-another host log in to the VM over SSH, so they count as a shell.`,
+another host log in to the VM over SSH, so they count as a shell. Azure
+tunnels go through the context's Bastion (a target's own, for a port on it).`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: a.completeTunnels,
 		RunE: func(_ *cobra.Command, args []string) error {

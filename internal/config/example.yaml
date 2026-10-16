@@ -53,6 +53,20 @@ contexts:
   #   tunnels:
   #     sql: {cloudsql: "my-project-id:asia-southeast1:db", local_port: 15432}   # needs `mek login --adc`
 
+  # Azure subscription. Each context gets its own isolated az config dir.
+  # example-azure:
+  #   provider: azure
+  #   tenant_id: your-org.onmicrosoft.com            # Microsoft Entra tenant: id or domain
+  #   subscription_id: 00000000-1111-2222-3333-444444444444
+  #   region: southeastasia                          # optional: where new resources go
+  #   bastion: {name: bas-hub, resource_group: rg-network}   # Azure Bastion for shells and tunnels
+  #   clusters:
+  #     aks: {name: aks-prod, resource_group: rg-aks}
+  #   targets:
+  #     jump: {instance: vm-jump, resource_group: rg-app}     # your Entra ID login: no key
+  #   tunnels:
+  #     pg: {host: 10.20.0.4, port: 5432}            # Bastion connects to the IP itself
+
 # How mek behaves for you (only in this file, not in a project's mek.yaml).
 # settings:
 #   show_cmd: true     # print each command mek runs as you'd type it yourself (mek show-cmd on|off)

@@ -191,19 +191,22 @@ func (a *app) newLoginCmd() *cobra.Command {
 	var adc bool
 	cmd := &cobra.Command{
 		Use:   "login [context] [-- <login flags>]",
-		Short: "Log in to a context (AWS IAM Identity Center / gcloud)",
+		Short: "Log in to a context (AWS IAM Identity Center / gcloud / az)",
 		Long: `Log in to a context using the official CLI's own login flow.
 
 AWS: runs "aws sso login". Contexts that share the same sso_start_url share
 one login, so you usually log in once per day for all accounts.
 GCP: runs "gcloud auth login" in the context's isolated config dir;
 add --adc to also create Application Default Credentials for SDKs/terraform.
+Azure: runs "az login --tenant" in the context's isolated config dir, then
+"az account set" to the context's subscription.
 
 Flags after -- go to the CLI's own login command, e.g. without a browser or
 in CI (the login still lands in the context's isolated config):
 
   mek login dev    -- --no-browser                   # aws sso login
-  mek login ci-gcp -- --cred-file=key.json           # gcloud auth login`,
+  mek login ci-gcp -- --cred-file=key.json           # gcloud auth login
+  mek login ci-az  -- --identity                     # az login, a managed identity`,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if n := len(contextArgs(cmd, args)); n > 1 {
 				return fmt.Errorf("accepts at most 1 context, got %d (put login flags after --)", n)
