@@ -98,6 +98,11 @@ mek use -s does that by itself.`,
 				env := provider.Env{Set: map[string]string{"MEK_CONTEXT": ctx.Name}}
 				kubeEnv(ctx, &env) // kubectl and K9s typed in this shell follow the context
 				fmt.Fprint(cmd.OutOrStdout(), env.Shell())
+				if outIsTerminal(cmd.OutOrStdout()) { // nobody runs them: the shell is as it was
+					ui.Info("%s this shell didn't switch: run eval \"$(mek use -s %s)\", or set up mek shell-init (mek shell-init --help)",
+						ui.Yellow("note:"), ctx.Name)
+					return nil
+				}
 				ui.Info("%s this shell now uses %s %s %s", ui.Green("✓"), ui.Bold(ctx.Name),
 					ui.Dim(provider.For(cfg, ctx).Describe()), tags(ui.Err(), ctx))
 				return nil

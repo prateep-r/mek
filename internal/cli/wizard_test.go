@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/prateep-r/mek/internal/config"
+	"github.com/prateep-r/mek/internal/kube"
 	"github.com/prateep-r/mek/internal/provider"
 	"github.com/prateep-r/mek/internal/wizard"
 )
@@ -584,10 +585,32 @@ func TestCtxAddGCPLoginAsked(t *testing.T) {
 func TestCtxRenameKeepsComments(t *testing.T) {
 	h := newHarness(t, "contexts:\n  # my sandbox\n  sb:\n    provider: gcp\n    project: p\n  # other\n  o: {provider: gcp, project: q}\n")
 	gcloudLogin(t, filepath.Join(config.Dir(), "gcloud", "sb"))
+	os.MkdirAll(filepath.Join(config.Dir(), "ssh", "sb"), 0o700)
+	os.WriteFile(filepath.Join(config.Dir(), "ssh", "sb", "google_compute_engine"), nil, 0o600)
+	os.MkdirAll(kube.Dir(), 0o700)
+	os.WriteFile(kube.Path("sb"), nil, 0o600)
 	answering(t, []string{"ctrl+u", "type:sandbox", "enter", "enter", "enter", "enter", "enter", "enter", "enter"})
-	h.mustRun("ctx", "edit", "sb")
+	out := stderr(t, func() { h.mustRun("ctx", "edit", "sb") })
 	if got := readFile(t, config.Path()); !strings.HasPrefix(got, "contexts:\n  # my sandbox\n  sandbox:\n") || !strings.Contains(got, "  # other\n  o: {") {
 		t.Errorf("rename:\n%s", got)
+	}
+	// Its login and SSH keys follow it; its kubeconfig named sb, so it goes.
+	for _, p := range []string{filepath.Join(config.Dir(), "gcloud", "sandbox"), filepath.Join(config.Dir(), "ssh", "sandbox", "google_compute_engine")} {
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("not moved: %v", err)
+		}
+	}
+	if _, err := os.Stat(kube.Path("sb")); err == nil || !strings.Contains(out, "mek -c sandbox kube writes it again") {
+		t.Errorf("old kubeconfig kept: %s", out)
+	}
+
+	// A login or keys that can't move are said, not lost silently.
+	os.MkdirAll(filepath.Join(config.Dir(), "gcloud", "o2", "taken"), 0o700)
+	os.MkdirAll(filepath.Join(config.Dir(), "ssh", "o2", "taken"), 0o700)
+	answering(t, []string{"ctrl+u", "type:o2", "enter", "enter", "enter", "enter", "enter", "enter", "enter"})
+	out = stderr(t, func() { h.mustRun("ctx", "edit", "sandbox") })
+	if !strings.Contains(out, "the login stayed behind") || !strings.Contains(out, "its SSH keys stayed in") {
+		t.Errorf("no warning:\n%s", out)
 	}
 }
 
@@ -627,5 +650,16 @@ func TestCtxAddCanceledLeavesNoLogin(t *testing.T) {
 	h.run("ctx", "add")
 	if _, err := os.Stat(wizardDir); !os.IsNotExist(err) {
 		t.Errorf(".wizard left after a cancel: %v", err)
+	}
+}
+
+func TestCheckBastion(t *testing.T) {
+	for v, ok := range map[string]bool{"rg/b": true, "": false, "b": false, "/b": false, "rg/": false, "rg/b/x": false} {
+		if err := checkBastion(false)(v, nil); (err == nil) != ok {
+			t.Errorf("checkBastion(%q) = %v", v, err)
+		}
+	}
+	if checkBastion(true)("", nil) != nil || checkBastion(true)("b", nil) == nil {
+		t.Error("optional")
 	}
 }

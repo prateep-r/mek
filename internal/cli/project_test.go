@@ -129,7 +129,8 @@ func TestCtxRm(t *testing.T) {
 		answers = answers[1:]
 		return a, nil
 	}
-	h.mustRun("ctx", "rm", "gcp") // declined: kept
+	_, err := h.run("ctx", "rm", "gcp") // declined: kept, and a failure for scripts
+	wantErr(t, err, "aborted")
 	if b, _ := os.ReadFile(filepath.Join(repo, config.LocalFile)); !strings.Contains(string(b), "gcp:") {
 		t.Error("removed though declined")
 	}
@@ -142,7 +143,7 @@ func TestCtxRm(t *testing.T) {
 	}
 
 	confirm = func(string) (bool, error) { return false, ui.ErrNoTTY }
-	_, err := h.run("ctx", "rm", "orders-dev")
+	_, err = h.run("ctx", "rm", "orders-dev")
 	wantErr(t, err, "pass --yes")
 	out = stderr(t, func() { h.mustRun("ctx", "rm", "orders-dev", "--yes") })
 	if !strings.Contains(out, "removed orders-dev from ./mek.yaml") {
@@ -245,4 +246,20 @@ func TestRmTakesY(t *testing.T) {
 	if out := stderr(t, func() { h.mustRun("-c", "a", "ctx", "tunnel", "rm", "db", "-y") }); !strings.Contains(out, "removed tunnel db") {
 		t.Errorf("tunnel rm -y: %s", out)
 	}
+}
+
+// An invalid context doesn't stop you from removing it, or another one.
+func TestCtxRmWhileInvalid(t *testing.T) {
+	h := newHarness(t, "contexts:\n  bad: {provider: gcp}\n  good: {provider: gcp, project: p}\n  other: {provider: gcp, project: o}\n")
+	if _, err := h.run("ctx", "ls"); err == nil {
+		t.Fatal("bad is valid")
+	}
+	h.mustRun("ctx", "rm", "good", "--yes") // bad stays as bad as it was
+	h.mustRun("ctx", "rm", "bad", "--yes")
+	if out := h.mustRun("ctx", "ls"); !strings.Contains(out, "other") || strings.Contains(out, "good") {
+		t.Errorf("ls: %s", out)
+	}
+	os.WriteFile(filepath.Join(h.home, "config.yaml"), []byte("contexts: [\n"), 0o600)
+	_, err := h.run("ctx", "rm", "other", "--yes")
+	wantErr(t, err, "config.yaml")
 }

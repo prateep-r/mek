@@ -19,6 +19,14 @@ type ExitError struct{ Code int }
 
 func (e *ExitError) Error() string { return fmt.Sprintf("exit status %d", e.Code) }
 
+// NotFoundError is a CLI that isn't installed: mek exits 127 for it, as a
+// shell does.
+type NotFoundError struct{ Name string }
+
+func (e *NotFoundError) Error() string {
+	return fmt.Sprintf("%s not found in PATH — run `mek doctor`", e.Name)
+}
+
 // RunIO starts argv with env, stdin/stderr of mek and stdout sent to stdout,
 // waits, and returns the exit code. Ctrl-C goes to the child (same process
 // group); mek itself ignores it while waiting.
@@ -34,7 +42,7 @@ func RunStoppable(argv []string, env []string, stdin io.Reader, stdout, stderr i
 	}
 	path, err := exec.LookPath(argv[0])
 	if err != nil {
-		return 127, fmt.Errorf("%s not found in PATH — run `mek doctor`", argv[0])
+		return 127, &NotFoundError{argv[0]}
 	}
 	// Subscribe before starting so a signal can't slip through in between.
 	sig := make(chan os.Signal, 1)

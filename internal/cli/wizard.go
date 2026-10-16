@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/prateep-r/mek/internal/config"
+	"github.com/prateep-r/mek/internal/kube"
 	"github.com/prateep-r/mek/internal/provider"
 	"github.com/prateep-r/mek/internal/ui"
 	"github.com/prateep-r/mek/internal/wizard"
@@ -58,7 +60,7 @@ type ctxWizard struct {
 }
 
 func newCtxWizard(app *app) (*ctxWizard, error) {
-	cfg, err := provider.Load()
+	cfg, err := loadForEdit()
 	if errors.Is(err, config.ErrNoConfig) { // the first context: the wizard creates the file
 		cfg, err = &config.Config{Contexts: map[string]*config.Context{}}, nil
 		_, cfg.Project = config.Sources()
@@ -279,6 +281,7 @@ func (w *ctxWizard) run(title string) error {
 		return err
 	}
 	w.keepLogin(a, e.Path)
+	w.keepFiles(a, e.Path)
 	return w.report(a, e.Path)
 }
 
@@ -312,7 +315,29 @@ func (w *ctxWizard) keepLogin(a wizard.Answers, path string) {
 		return
 	}
 	os.Remove(to) // only when empty
-	os.Rename(from, to)
+	if err := os.Rename(from, to); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		ui.Info("%s the login stayed behind (%v): mek login %s", ui.Yellow("⚠"), err, a["name"])
+	}
+}
+
+// keepFiles follows a renamed context with its SSH keys. Its kubeconfig
+// names the old context in every token command, so it goes: mek kube
+// writes it again.
+func (w *ctxWizard) keepFiles(a wizard.Answers, path string) {
+	if w.old == nil || path != w.old.Source {
+		return
+	}
+	from, to := w.old.Key(), w.draftCtx(a).Key()
+	if from == to {
+		return
+	}
+	ssh := filepath.Join(config.Dir(), "ssh")
+	if err := os.Rename(filepath.Join(ssh, from), filepath.Join(ssh, to)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		ui.Info("%s its SSH keys stayed in %s (%v)", ui.Yellow("⚠"), config.Show(filepath.Join(ssh, from)), err)
+	}
+	if os.Remove(kube.Path(from)) == nil {
+		ui.Info("  its kubeconfig named %s: mek -c %s kube writes it again", w.old.Name, a["name"])
+	}
 }
 
 // draftCtx is the context the answers make, as if saved already.

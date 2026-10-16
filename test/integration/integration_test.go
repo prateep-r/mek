@@ -218,7 +218,7 @@ func TestExitCodes(t *testing.T) {
 		t.Errorf("child exit: code %d stderr %q, want 5 and no mek error", r.Code, r.Stderr)
 	}
 	r = e.with("PATH="+t.TempDir()).run("-c", "gcp", "gcloud", "compute", "instances", "list") // no CLIs at all
-	if r.Code != 1 || !strings.Contains(r.Stderr, "gcloud not found in PATH") {
+	if r.Code != 127 || !strings.Contains(r.Stderr, "gcloud not found in PATH") {
 		t.Errorf("missing CLI: code %d stderr %q", r.Code, r.Stderr)
 	}
 	if r := e.run("nope"); r.Code != 1 || !strings.Contains(r.Stderr, "unknown command") {

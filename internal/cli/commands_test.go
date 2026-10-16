@@ -390,6 +390,16 @@ func TestUseShell(t *testing.T) {
 	if out != "export MEK_CONTEXT='prod'\n" {
 		t.Errorf("use --shell printed %q", out)
 	}
+	old := outIsTerminal
+	t.Cleanup(func() { outIsTerminal = old })
+	outIsTerminal = func(io.Writer) bool { return true } // typed without eval or shell-init
+	if msg := stderr(t, func() { h.mustRun("use", "-s", "prod") }); !strings.Contains(msg, "this shell didn't switch") {
+		t.Errorf("no note: %s", msg)
+	}
+	outIsTerminal = old
+	if outIsTerminal(&bytes.Buffer{}) {
+		t.Error("a buffer is a terminal")
+	}
 	if config.Current() != "uat" {
 		t.Errorf("use --shell must not change the saved context, now %q", config.Current())
 	}

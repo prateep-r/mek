@@ -39,7 +39,7 @@ func (azureFlow) steps(f *wizard.Form, w *ctxWizard) {
 		Help("the Microsoft Entra tenants your login reaches")
 	f.Load("subscription", "Subscription", w.azureSubscriptions).When(on).Check(checkSubscription).
 		Help("the tenant's subscriptions you can see")
-	f.Load("bastion", "Bastion", w.azureBastions).When(on).
+	f.Load("bastion", "Bastion", w.azureBastions).When(on).Check(checkBastion(true)).
 		Help("the Azure Bastion that shells and tunnels go through — none: add it later")
 	f.Select("az_region", "Region", wizard.Options(regionOptions(azureRegions, "az's default")...), true).
 		When(on).Help("where new resources go (AZURE_DEFAULTS_LOCATION)")
@@ -61,9 +61,7 @@ func (azureFlow) prefill(c *config.Context, a wizard.Answers) {
 
 func (azureFlow) apply(_ *ctxWizard, a wizard.Answers, c *config.Context) {
 	c.TenantID, c.SubscriptionID, c.Region = a["tenant"], a["subscription"], a["az_region"]
-	if group, name, ok := strings.Cut(a["bastion"], "/"); ok {
-		c.Bastion = &config.Bastion{Name: name, ResourceGroup: group}
-	}
+	c.Bastion = bastionOf(a["bastion"])
 }
 
 // azureDir is where the wizard's az commands run: the edited context's own
