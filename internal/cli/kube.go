@@ -132,7 +132,7 @@ func (a *app) newKubeTokenCmd() *cobra.Command {
 		Args:   cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			if a.opts.context == "" {
-				return errors.New("mek kube token needs --context")
+				return errors.New("kube token needs --context")
 			}
 			l, err := a.load("")
 			if err != nil {

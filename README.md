@@ -146,18 +146,7 @@ in first if need be); for GCP, your projects:
 
 ```console
 $ mek ctx add dev
-Add a context
-✓ Name: dev
-✓ Cloud: AWS
-✓ Sign in with: IAM Identity Center (SSO)
-✓ Access portal: https://acme.awsapps.com/start
-✓ Portal region: ap-southeast-1
-✓ Log in to the portal: done
-✓ Account: acme-dev
-✓ Role: Developer
-✓ Region: ap-southeast-1
-✓ Guard: normal
-✓ Save?: saved
+  … the portal, the account and role from lists, the region, the guard …
 ✓ added dev to ~/.mek/config.yaml
   next: mek login dev (or mek use dev)
 ```
@@ -367,9 +356,8 @@ mek -c prod --yes aws ecs update-service …
 mek -c prod --confirm prod aws ec2 terminate-instances --instance-ids i-0abc
 ```
 
-`mek exec` can't tell what an arbitrary command does, so on a protected context it always
-asks, and a readonly context refuses it. See [How the guard works](#how-the-guard-works) (or
-`mek help guard`) for how commands are classified, and what the guard doesn't cover.
+[How the guard works](#how-the-guard-works) (or `mek help guard`) has the rules, command by
+command — `mek exec` included — and what the guard doesn't cover.
 
 ### The audit log
 
@@ -1464,8 +1452,8 @@ it is an error. "—" means the key doesn't apply to that cloud: under `clusters
 | **Every context** | | | | | | | |
 | `provider` | string | **yes** | — | `aws` | `gcp` | one of the two | which cloud and CLI the context drives |
 | `region` | string | no | none | ✓ | ✓ | no line breaks | AWS: `AWS_REGION` / `AWS_DEFAULT_REGION`, the profile's region, the default for `sso_region` and EKS clusters. GCP: `CLOUDSDK_COMPUTE_REGION` |
-| `protected` | bool | no | `false` | ✓ | ✓ | | writes, shells, tunnels and `mek exec` ask y/N; destructive commands need the context name typed |
-| `readonly` | bool | no | `false` | ✓ | ✓ | | blocks writes, destructive commands, shells and `mek exec`; reads and tunnels run (with `protected` too, tunnels ask) |
+| `protected` | bool | no | `false` | ✓ | ✓ | | changes ask first ([how the guard works](#how-the-guard-works)) |
+| `readonly` | bool | no | `false` | ✓ | ✓ | | changes are blocked; with `protected` too, tunnels ask ([how the guard works](#how-the-guard-works)) |
 | **AWS — IAM Identity Center (SSO)** | | | | | | | |
 | `sso_start_url` | string (URL) | **yes** (SSO) | — | ✓ | — | no line breaks | the portal. Contexts with the same URL share one `[sso-session]`: one `mek login` covers them all |
 | `sso_region` | string | **yes** (SSO), unless `region` is set | `region` | ✓ | — | equal across contexts sharing an `sso_start_url` | the region IAM Identity Center lives in |
@@ -1704,9 +1692,7 @@ current context). For mek's own description of those commands, use `mek help aws
 | `mek ui` | contexts, tunnels, shells, clusters and the audit log in one terminal screen |
 | `mek ctx ls` | list contexts (`*` = current; a project's with its file) |
 | `mek ctx [--short]` | show the current context (`--short`: just the name, for prompts); `mek context` is the same command |
-| `mek ctx add [name]` / `mek ctx edit [name]` | add or change a context, a question at a time ([the wizard](#editing-config-with-the-wizard)) |
-| `mek ctx rm <ctx> [--yes]` | remove a context from the file it is in |
-| `mek ctx target\|cluster\|tunnel add\|edit\|rm [name]` | a context's targets, clusters or tunnels, by wizard (`-c` picks the context) |
+| `mek ctx add\|edit\|rm`, `mek ctx target\|cluster\|tunnel add\|edit\|rm` | the config wizard: contexts, and a context's targets, clusters and tunnels ([commands and how](#editing-config-with-the-wizard)) |
 | `mek use <ctx>` | switch the saved context (every terminal without its own) |
 | `mek use -s <ctx>` | switch only this terminal (and `KUBECONFIG`, when the context has clusters); needs `mek shell-init`, else `eval "$(mek use -s <ctx>)"` |
 | `mek login [ctx] [--adc] [-- <flags>]` | `aws sso login` / `gcloud auth login` (+ application-default with `--adc`) |
@@ -1780,7 +1766,7 @@ official tools need. Ask whoever runs the account for:
 | kubectl: `getting credentials: exec: … mek …` | the kubeconfig remembers where mek was; run `mek -c <context> kube` again after moving mek |
 | the wizard: `couldn't list them: … (UnauthorizedException) …` | the portal login expired: *Run it* on the wizard's login step, or `mek login <a context on that portal>`; or type the value |
 | the wizard: `couldn't list them: … AccessDenied` / `UnauthorizedOperation` / `PERMISSION_DENIED` | your role lacks the permission in [What the wizard looks up](#what-the-wizard-looks-up): type the value, or ask for it |
-| `mek ctx add asks questions and needs a terminal` | run it in a terminal; in CI or a script, edit the file |
+| `mek: ctx add asks questions and needs a terminal` | run it in a terminal; in CI or a script, edit the file |
 | `not saved — ./mek.yaml would be invalid: …` | what the change would break: go Back and fix that answer (or fix the file) |
 | anything else | `mek doctor`, and the audit log for what ran |
 

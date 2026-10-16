@@ -42,7 +42,7 @@ func TestCtxAddNeedsATerminal(t *testing.T) {
 	h := newHarness(t, testConfig)
 	for _, verb := range []string{"add", "edit"} {
 		_, err := h.run("ctx", verb)
-		wantErr(t, err, "mek ctx "+verb+" asks questions and needs a terminal")
+		wantErr(t, err, "ctx "+verb+" asks questions and needs a terminal")
 	}
 }
 

@@ -202,11 +202,11 @@ func TestEntryCommands(t *testing.T) {
 	t.Cleanup(func() { confirm = old })
 
 	_, err := h.run("ctx", "tunnel", "add")
-	wantErr(t, err, "mek ctx tunnel add asks questions and needs a terminal")
+	wantErr(t, err, "ctx tunnel add asks questions and needs a terminal")
 	_, err = h.run("ctx", "tunnel", "edit")
 	wantErr(t, err, "needs a terminal")
 	_, err = h.run("ctx", "tunnel", "rm", "db")
-	wantErr(t, err, "mek ctx tunnel rm without -c asks questions")
+	wantErr(t, err, "ctx tunnel rm without -c asks questions")
 	_, err = h.run("ctx", "tunnel", "rm", "db", "--yes")
 	wantErr(t, err, "which context? mek -c <context> ctx tunnel rm db --yes")
 

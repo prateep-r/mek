@@ -91,7 +91,7 @@ func ownContexts(path string) map[string]*config.Context {
 // needTerminal refuses to start a form where nobody can answer it.
 func needTerminal(cmd string) error {
 	if !isTerminal() {
-		return fmt.Errorf("mek %s asks questions and needs a terminal — in a script, edit the file instead (see: mek help config)", cmd)
+		return fmt.Errorf("%s asks questions and needs a terminal — in a script, edit the file instead (see: mek help config)", cmd)
 	}
 	return nil
 }
