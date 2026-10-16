@@ -49,12 +49,12 @@ func sample() *fakeSource {
 	return &fakeSource{
 		current: "dev",
 		contexts: []Context{
-			{Name: "dev", Summary: "aws profile dev",
+			{Name: "dev", Summary: "aws profile dev", Cloud: "aws",
 				Targets:  []Target{{"bastion", "i-0abc"}},
 				Clusters: []Cluster{{"main", "dev-eks"}},
 				Tunnels:  []Tunnel{{"db", "db.internal:5432 via bastion", 15432}, {"cache", "port 6379 on bastion", 16379}}},
-			{Name: "gcp", Summary: "gcp p", ReadOnly: true},
-			{Name: "prod", Summary: "aws profile prod", Protected: true, Tunnels: []Tunnel{{"db", "prod-db:5432 via i-0abc", 25432}}},
+			{Name: "gcp", Summary: "gcp p", Cloud: "gcp", ReadOnly: true},
+			{Name: "prod", Summary: "aws profile prod", Cloud: "aws", Protected: true, Tunnels: []Tunnel{{"db", "prod-db:5432 via i-0abc", 25432}}},
 		},
 	}
 }
@@ -239,7 +239,7 @@ func TestRoot(t *testing.T) {
 	for _, c := range []struct {
 		key  string
 		want int
-	}{{"2", 1}, {"4", 3}, {"tab", 0}, {"shift+tab", 3}, {"shift+tab", 2}, {"1", 0}} {
+	}{{"2", 1}, {"5", 4}, {"tab", 0}, {"shift+tab", 4}, {"shift+tab", 3}, {"1", 0}} {
 		h.press(c.key)
 		if h.m.active != c.want {
 			t.Errorf("after %s: tab %d, want %d", c.key, h.m.active, c.want)

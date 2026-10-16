@@ -15,6 +15,7 @@ import (
 // Context is a context as the UI lists it.
 type Context struct {
 	Name, Summary       string
+	Cloud               string // its provider: "aws", "gcp"
 	Protected, ReadOnly bool
 	Targets             []Target
 	Clusters            []Cluster
@@ -66,7 +67,7 @@ func (Live) Log(id string) string {
 }
 
 func contextOf(c *config.Context, summary string) Context {
-	out := Context{Name: c.Name, Summary: summary, Protected: c.Protected, ReadOnly: c.ReadOnly}
+	out := Context{Name: c.Name, Summary: summary, Cloud: c.Provider, Protected: c.Protected, ReadOnly: c.ReadOnly}
 	for _, n := range slices.Sorted(maps.Keys(c.Targets)) {
 		out.Targets = append(out.Targets, Target{n, c.Targets[n].Instance})
 	}

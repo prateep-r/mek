@@ -70,7 +70,7 @@ func tick() tea.Cmd { return tea.Tick(refreshEvery, func(time.Time) tea.Msg { re
 
 func newModel(src Source, mek, selected string) *model {
 	m := &model{src: src, mek: mek, selected: selected}
-	m.tabs = []tab{&contextsTab{}, &tunnelsTab{}, &accessTab{}, &auditTab{}}
+	m.tabs = []tab{&contextsTab{}, &tunnelsTab{}, &accessTab{}, &auditTab{}, &resourcesTab{}}
 	m.reload()
 	return m
 }
@@ -115,6 +115,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tick()
 	case doneMsg:
 		return m, m.done(msg)
+	case listedMsg, describedMsg:
+		for _, t := range m.tabs {
+			if r, ok := t.(*resourcesTab); ok {
+				r.receive(msg)
+			}
+		}
 	case tea.KeyPressMsg:
 		return m, m.key(msg)
 	}
@@ -131,7 +137,7 @@ func (m *model) key(k tea.KeyPressMsg) tea.Cmd {
 	switch s := k.String(); s {
 	case "q":
 		return tea.Quit
-	case "1", "2", "3", "4":
+	case "1", "2", "3", "4", "5":
 		m.active = int(s[0] - '1')
 	case "tab":
 		m.active = (m.active + 1) % len(m.tabs)
@@ -141,6 +147,9 @@ func (m *model) key(k tea.KeyPressMsg) tea.Cmd {
 		m.overlay = keysScreen{}
 	case "r":
 		m.reload()
+		if r, ok := m.tabs[m.active].(*resourcesTab); ok {
+			return r.refresh(m)
+		}
 	default:
 		return m.tabs[m.active].key(m, k)
 	}
@@ -180,7 +189,7 @@ func (m *model) render() string {
 	lines = append(lines[:min(len(lines), h)], make([]string, max(0, h-len(lines)))...)
 	keys := s.help()
 	if m.overlay == nil {
-		keys += " · 1-4/tab switch · ? keys · q quit"
+		keys += " · 1-5/tab switch · ? keys · q quit"
 	}
 	out := append([]string{bold.Render("mek") + "  " + strings.Join(bar, " ")}, lines...)
 	out = append(out, ansi.Truncate(m.status, m.width, "…"), dim.Render(ansi.Truncate(keys, m.width, "…")))
