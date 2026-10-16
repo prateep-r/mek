@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/prateep-r/mek/internal/config"
 	"github.com/prateep-r/mek/internal/guard"
@@ -98,7 +99,11 @@ func (m iapSSH) Command(in Instance, local int) (Command, error) {
 	if err != nil {
 		return Command{}, err
 	}
-	return b.args("--", "-N", "-L", fmt.Sprintf("127.0.0.1:%d:%s:%d", local, m.host, m.port)).build(), nil
+	host := m.host
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]" // an IPv6 address, as ssh -L takes it
+	}
+	return b.args("--", "-N", "-L", fmt.Sprintf("127.0.0.1:%d:%s:%d", local, host, m.port)).build(), nil
 }
 
 // cloudSQL runs the Cloud SQL Auth Proxy, which authenticates with the

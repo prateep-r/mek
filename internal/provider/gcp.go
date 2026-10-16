@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/prateep-r/mek/internal/config"
 	"github.com/prateep-r/mek/internal/guard"
@@ -17,7 +18,7 @@ var gcpCloud = Cloud{
 	},
 	Classify: guard.ClassifyGCloud,
 	Validate: func(c *config.Context) error {
-		if err := cmpErr(notAzure(c), notHuawei(c)); err != nil {
+		if err := azureEntryKeys(c); err != nil {
 			return err
 		}
 		if c.Project == "" {
@@ -47,6 +48,8 @@ var gcpCloud = Cloud{
 		return nil
 	},
 	Tool: Tool{VersionArgs: []string{"--version"}, URL: "https://cloud.google.com/sdk/docs/install"},
+	Exports: []string{"CLOUDSDK_CONFIG", "CLOUDSDK_CORE_PROJECT", "GOOGLE_CLOUD_PROJECT", "GOOGLE_PROJECT",
+		"CLOUDSDK_CORE_ACCOUNT", "CLOUDSDK_COMPUTE_REGION", "CLOUDSDK_CORE_CHECK_GCE_METADATA", "GOOGLE_APPLICATION_CREDENTIALS"},
 	Plugins: []Plugin{{
 		Bin: "ssh", Purpose: "GCP shells and tunnels to another host (gcloud compute ssh)", Needed: needsOpenSSH,
 		Tool: Tool{VersionArgs: []string{"-V"}, URL: "https://www.openssh.com (Debian/Ubuntu: apt install openssh-client)"},
@@ -89,13 +92,23 @@ func (g *GCP) Prepare() (Env, error) {
 	return GCloudEnv(g.ctx, dir), nil
 }
 
+// Credentials and identities from the environment would win over the
+// context's login, in gcloud (CLOUDSDK_AUTH_*) or in terraform (GOOGLE_*).
+var gcpUnset = []string{
+	"GOOGLE_APPLICATION_CREDENTIALS", "CLOUDSDK_ACTIVE_CONFIG_NAME",
+	"CLOUDSDK_AUTH_ACCESS_TOKEN_FILE", "CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT",
+	"CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE", "CLOUDSDK_COMPUTE_ZONE",
+	"GOOGLE_CREDENTIALS", "GOOGLE_OAUTH_ACCESS_TOKEN", "GOOGLE_IMPERSONATE_SERVICE_ACCOUNT",
+}
+
 // GCloudEnv is a context's environment for gcloud, its config in dir.
 func GCloudEnv(c *config.Context, dir string) Env {
 	env := Env{Set: map[string]string{
 		"CLOUDSDK_CONFIG":       dir,
 		"CLOUDSDK_CORE_PROJECT": c.Project,
 		"GOOGLE_CLOUD_PROJECT":  c.Project,
-	}, Unset: []string{"GOOGLE_APPLICATION_CREDENTIALS", "CLOUDSDK_ACTIVE_CONFIG_NAME"}}
+		"GOOGLE_PROJECT":        c.Project, // terraform's google provider reads it first
+	}, Unset: slices.Clone(gcpUnset)}
 	// Unset what this context doesn't set, so another context's `mek env`
 	// can't leak its account or region in.
 	if c.Account != "" {

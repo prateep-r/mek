@@ -95,6 +95,10 @@ func TestGCPTunnelMethods(t *testing.T) {
 		strings.Join(c.Argv, " ") != "gcloud compute ssh ops@web-1 --zone z --tunnel-through-iap --ssh-key-file "+filepath.Join(ssh, "google_compute_engine")+" -- -N -L 127.0.0.1:15432:10.0.0.9:5432" {
 		t.Errorf("iap ssh: %+v %+v", m, c)
 	}
+	m, _ = g.TunnelMethod(config.Tunnel{Via: "web", Host: "fd00::9", Port: 5432})
+	if c := argv(t, m, in, 15432); !strings.HasSuffix(strings.Join(c.Argv, " "), "-L 127.0.0.1:15432:[fd00::9]:5432") {
+		t.Errorf("iap ssh to IPv6: %q", c.Argv)
+	}
 	g.dir = filepath.Join(ssh, "google_compute_engine-dir")
 	os.WriteFile(g.dir, nil, 0o600)
 	m, _ = g.TunnelMethod(config.Tunnel{Via: "web", Host: "h", Port: 1})

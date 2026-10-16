@@ -613,11 +613,12 @@ file says. ([What protected and readonly do](#how-the-guard-works).)
 
 The project is the nearest directory, from where you are up, that holds `mek.yaml` or
 `mek.local.yaml` (either is enough). The search stops at a repository's root (a `.git`) and
-never looks at your home directory or above it.
+never looks at your home directory or above it. A `mek.yaml` someone else owns (one another
+user left in `/tmp`) is ignored.
 
 | Flag | Does |
 |---|---|
-| `--project DIR` | use `DIR`'s files, from anywhere — mek's kubeconfigs do this, since kubectl runs `mek kube token` in any directory |
+| `--project DIR` (or `MEK_PROJECT=DIR`) | use `DIR`'s files, from anywhere — mek's kubeconfigs do this, since kubectl runs `mek kube token` in any directory |
 | `--no-local` (or `MEK_NO_LOCAL=1`) | ignore the project's files: only `~/.mek/config.yaml` |
 
 ### For the team: set up mek.yaml
@@ -1646,11 +1647,9 @@ tokens stay in the AWS CLI's own cache (`~/.aws/sso/cache`); mek stores no keys.
 `config.yaml` is YAML — and so are a project's `mek.yaml` and `mek.local.yaml`, with the same
 keys except `settings:`, which only `~/.mek/config.yaml` may have. Every key mek reads is in
 this one table; paths under a context are relative to `contexts.<name>`; a key that isn't in
-it is an error. "—" means the key doesn't apply to that cloud: under `clusters`, `targets` and
-`tunnels`, for `use_metadata`, for the Azure and Huawei keys, and on an Azure or Huawei
-context, setting it is an error; an AWS key on a GCP context (or the other way round) is
-ignored. Rules marked
-*arg* mean no leading `-` and no control characters, because the value becomes a CLI argument.
+it is an error. "—" means the key doesn't apply to that cloud, and setting it there is an
+error too. Rules marked *arg* mean no leading `-` and no control characters, because the
+value becomes a CLI argument.
 
 | Key | Type | Required | Default | AWS | GCP | Azure | Huawei | Rules | Effect |
 |---|---|---|---|---|---|---|---|---|---|
@@ -1658,26 +1657,26 @@ ignored. Rules marked
 | `contexts.<name>` | map | — | — | ✓ | ✓ | ✓ | ✓ | name: `^[A-Za-z0-9][A-Za-z0-9._-]*$`; can't be empty | one context. The name becomes a directory and an AWS profile name (`mek-<name>`) |
 | **Every context** | | | | | | | | | |
 | `provider` | string | **yes** | — | `aws` | `gcp` | `azure` | `huawei` | one of the four | which cloud and CLI the context drives |
-| `region` | string | no | none | ✓ | ✓ | ✓ | ✓ | no line breaks | AWS: `AWS_REGION` / `AWS_DEFAULT_REGION`, the profile's region, the default for `sso_region` and EKS clusters. GCP: `CLOUDSDK_COMPUTE_REGION`. Azure: `AZURE_DEFAULTS_LOCATION`, where new resources go. Huawei: `--cli-region` on each API command, `HW_REGION_NAME` |
+| `region` | string | no | none | ✓ | ✓ | ✓ | ✓ | *arg* | AWS: `AWS_REGION` / `AWS_DEFAULT_REGION`, the profile's region, the default for `sso_region` and EKS clusters. GCP: `CLOUDSDK_COMPUTE_REGION`. Azure: `AZURE_DEFAULTS_LOCATION`, where new resources go. Huawei: `--cli-region` on each API command, `HW_REGION_NAME` |
 | `protected` | bool | no | `false` | ✓ | ✓ | ✓ | ✓ | | changes ask first ([how the guard works](#how-the-guard-works)) |
 | `readonly` | bool | no | `false` | ✓ | ✓ | ✓ | ✓ | | changes are blocked; with `protected` too, tunnels ask ([how the guard works](#how-the-guard-works)) |
 | **AWS — IAM Identity Center (SSO)** | | | | | | | | | |
-| `sso_start_url` | string (URL) | **yes** (SSO) | — | ✓ | — | — | — | no line breaks | the portal. Contexts with the same URL share one `[sso-session]`: one `mek login` covers them all |
+| `sso_start_url` | string (URL) | **yes** (SSO) | — | ✓ | — | — | — | *arg* | the portal. Contexts with the same URL share one `[sso-session]`: one `mek login` covers them all |
 | `sso_region` | string | **yes** (SSO), unless `region` is set | `region` | ✓ | — | — | — | equal across contexts sharing an `sso_start_url` | the region IAM Identity Center lives in |
 | `account_id` | string | **yes** (SSO) | — | ✓ | — | — | — | exactly 12 digits; quote it | the account |
-| `role` | string | **yes** (SSO) | — | ✓ | — | — | — | no line breaks | the permission set |
+| `role` | string | **yes** (SSO) | — | ✓ | — | — | — | *arg* | the permission set |
 | **AWS — existing profile** | | | | | | | | | |
-| `aws_profile` | string | **yes** (instead of the SSO keys) | — | ✓ | — | — | — | no line breaks | use this profile from your own `~/.aws/config` untouched (SSO, keys, `credential_process`, assume-role…); the SSO keys are then ignored |
+| `aws_profile` | string | **yes** (instead of the SSO keys) | — | ✓ | — | — | — | *arg* | use this profile from your own `~/.aws/config` untouched (SSO, keys, `credential_process`, assume-role…); the SSO keys are then ignored |
 | **GCP** | | | | | | | | | |
-| `project` | string | **yes** | — | — | ✓ | — | — | no line breaks | the project ID: `CLOUDSDK_CORE_PROJECT`, `GOOGLE_CLOUD_PROJECT` |
-| `account` | string (e-mail) | no | gcloud's active account | — | ✓ | — | — | no line breaks | `gcloud auth login <account>`, `CLOUDSDK_CORE_ACCOUNT` |
+| `project` | string | **yes** | — | — | ✓ | — | — | *arg* | the project ID: `CLOUDSDK_CORE_PROJECT`, `GOOGLE_CLOUD_PROJECT` |
+| `account` | string (e-mail) | no | gcloud's active account | — | ✓ | — | — | *arg* | `gcloud auth login <account>`, `CLOUDSDK_CORE_ACCOUNT` |
 | `use_metadata` | bool | no | `false` | — | ✓ | — | — | AWS, Azure, Huawei: an error | on a GCP VM: let gcloud act as the VM's service account when the context has no login. Off, mek sets `CLOUDSDK_CORE_CHECK_GCE_METADATA=false`, so a context that isn't logged in fails instead of quietly using the machine's identity |
 | **Azure** | | | | | | | | | |
-| `tenant_id` | string | **yes** | — | — | — | ✓ | — | no line breaks | the Microsoft Entra tenant, by id or domain: `az login --tenant`, `AZURE_TENANT_ID`, `ARM_TENANT_ID` |
+| `tenant_id` | string | **yes** | — | — | — | ✓ | — | *arg* | the Microsoft Entra tenant, by id or domain: `az login --tenant`, `AZURE_TENANT_ID`, `ARM_TENANT_ID` |
 | `subscription_id` | string (GUID) | **yes** | — | — | — | ✓ | — | a GUID | `az account set`, `AZURE_SUBSCRIPTION_ID`, `ARM_SUBSCRIPTION_ID` |
 | `bastion` | map | no (yes for shells and tunnels) | none | — | — | ✓ | — | `name` and `resource_group`, both *arg* | the Azure Bastion (Standard SKU or above, native client support on) that shells and tunnels go through |
 | **Huawei Cloud** | | | | | | | | | |
-| `hcloud_profile` | string | **yes** | — | — | — | — | ✓ | no line breaks (`mek login` checks it is in `~/.hcloud/config.json`) | the KooCLI profile (SSO, keys or an agency) — mek adds `--cli-profile` to each API command and sets `HW_PROFILE`; `mek login` runs `hcloud configure sso` for an SSO profile. `clusters`, `targets` and `tunnels` are errors on a Huawei context |
+| `hcloud_profile` | string | **yes** | — | — | — | — | ✓ | *arg* (`mek login` checks it is in `~/.hcloud/config.json`) | the KooCLI profile (SSO, keys or an agency) — mek adds `--cli-profile` to each API command and sets `HW_PROFILE`; `mek login` runs `hcloud configure sso` for an SSO profile. `clusters`, `targets` and `tunnels` are errors on a Huawei context |
 | **Kubernetes clusters** (`mek kube`, `mek kubectl`) | | | | | | | | | |
 | `clusters` | map: *alias* → cluster | no | none | ✓ | ✓ | ✓ | — | alias: name rule, not `token` | the kube context is `<name>/<alias>`; `mek kube <alias>` makes it current |
 | `clusters.<alias>.name` | string | **yes** | — | EKS name | GKE name | AKS name | — | *arg* | the cluster in the cloud (must be `ACTIVE` / `RUNNING`) |
@@ -1773,6 +1772,7 @@ contexts:
 |---|---|
 | `MEK_HOME` | where mek keeps everything (default `~/.mek`) |
 | `MEK_NO_LOCAL` | `1`: ignore project config files, like `--no-local` |
+| `MEK_PROJECT` | a directory: read its project config, like `--project` |
 | `MEK_CONTEXT` | this shell's context, over the saved one (set by `mek use -s`) |
 | `MEK_SHOW_CMD` | `1` / `0`: print each command mek runs as typed yourself, or don't ([show-cmd](#seeing-the-native-command)) |
 | `NO_COLOR` | plain output |

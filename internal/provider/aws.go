@@ -28,6 +28,7 @@ var awsCloud = Cloud{
 	ValidateAll: validateSSOSessions,
 	Tool: Tool{VersionArgs: []string{"--version"}, Check: awsCLIv2, Brew: "brew install awscli",
 		URL: "https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"},
+	Exports: []string{"AWS_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION", "AWS_CONFIG_FILE"},
 	Plugins: []Plugin{{
 		Bin: "session-manager-plugin", Purpose: "SSM sessions (mek shell, mek tunnel)",
 		Needed: func(c *config.Context) bool { return hasTargets(c) || len(c.Tunnels) > 0 },
@@ -60,11 +61,8 @@ func ssoRegion(c *config.Context) string {
 }
 
 func validateAWS(c *config.Context) error {
-	if err := cmpErr(notAzure(c), notHuawei(c)); err != nil {
+	if err := azureEntryKeys(c); err != nil {
 		return err
-	}
-	if c.UseMetadata {
-		return errors.New("use_metadata is for gcp contexts")
 	}
 	for alias, cl := range c.Clusters {
 		if cl.Location != "" {
@@ -152,10 +150,12 @@ type AWS struct {
 	dir string
 }
 
-// Static credentials in the environment would silently win over the profile.
+// Static credentials and a web identity (EKS pods, CI OIDC) in the
+// environment would silently win over the profile.
 var awsUnset = []string{
 	"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
 	"AWS_SECURITY_TOKEN", "AWS_DEFAULT_PROFILE",
+	"AWS_ROLE_ARN", "AWS_WEB_IDENTITY_TOKEN_FILE", "AWS_ROLE_SESSION_NAME",
 }
 
 // profileName is a context's generated AWS profile, by its Key: project
@@ -171,6 +171,11 @@ func (a *AWS) configPath() string {
 	}
 	sum := sha256.Sum256([]byte(a.cfg.Project))
 	return filepath.Join(a.dir, "aws", "config-"+hex.EncodeToString(sum[:4]))
+}
+
+// owned reports whether path is one of the AWS configs mek generates.
+func (a *AWS) owned(path string) bool {
+	return path != "" && filepath.Dir(path) == filepath.Join(a.dir, "aws")
 }
 
 func (a *AWS) profile() string {
@@ -189,7 +194,7 @@ func (a *AWS) Prepare() (Env, error) {
 		env.Unset = append(env.Unset, "AWS_REGION", "AWS_DEFAULT_REGION")
 	}
 	if a.ctx.AWSProfile != "" {
-		if os.Getenv("AWS_CONFIG_FILE") == a.configPath() { // left by an SSO context's `mek env`
+		if a.owned(os.Getenv("AWS_CONFIG_FILE")) { // left by an SSO context's `mek env`, any project's
 			env.Unset = append(env.Unset, "AWS_CONFIG_FILE")
 		}
 		return env, nil // use the user's own ~/.aws/config untouched

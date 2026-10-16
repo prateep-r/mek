@@ -192,7 +192,11 @@ func TestEnvDoesNotLeakBetweenContexts(t *testing.T) {
 	if env, _ := legacy.Prepare(); slices.Contains(env.Unset, "AWS_CONFIG_FILE") {
 		t.Error("the user's own AWS_CONFIG_FILE was removed")
 	}
-	if !slices.Equal(awsUnset, []string{"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_SECURITY_TOKEN", "AWS_DEFAULT_PROFILE"}) {
+	t.Setenv("AWS_CONFIG_FILE", filepath.Join(dir, "aws", "config-0a1b2c3d")) // another project's
+	if env, _ := legacy.Prepare(); !slices.Contains(env.Unset, "AWS_CONFIG_FILE") {
+		t.Error("another project's generated AWS config was kept")
+	}
+	if len(awsUnset) != 8 || awsUnset[len(awsUnset)-1] != "AWS_ROLE_SESSION_NAME" {
 		t.Errorf("Prepare changed the shared awsUnset: %v", awsUnset)
 	}
 
@@ -200,6 +204,65 @@ func TestEnvDoesNotLeakBetweenContexts(t *testing.T) {
 	genv, _ := g.Prepare()
 	if !slices.Contains(genv.Unset, "CLOUDSDK_CORE_ACCOUNT") || !slices.Contains(genv.Unset, "CLOUDSDK_COMPUTE_REGION") {
 		t.Errorf("gcp: %v", genv.Unset)
+	}
+}
+
+// A shell that ran a GCP context's mek use -s, then moves to an AWS one,
+// loses the GCP variables; to another GCP context, they are replaced.
+func TestDropPrevious(t *testing.T) {
+	cfg := &config.Config{Contexts: map[string]*config.Context{
+		"g":  {Name: "g", Provider: config.ProviderGCP},
+		"g2": {Name: "g2", Provider: config.ProviderGCP},
+		"a":  {Name: "a", Provider: config.ProviderAWS},
+	}}
+	env := Env{Set: map[string]string{"AWS_PROFILE": "p"}, Unset: []string{"AWS_REGION"}}
+	DropPrevious(cfg, cfg.Contexts["a"], &env, "g")
+	if !slices.Contains(env.Unset, "CLOUDSDK_CONFIG") || !slices.Contains(env.Unset, "GOOGLE_PROJECT") {
+		t.Errorf("gcp variables kept: %v", env.Unset)
+	}
+	n := len(env.Unset)
+	DropPrevious(cfg, cfg.Contexts["a"], &env, "g") // twice: nothing listed twice
+	DropPrevious(cfg, cfg.Contexts["g2"], &env, "g")
+	DropPrevious(cfg, cfg.Contexts["g"], &env, "unknown")
+	if len(env.Unset) != n {
+		t.Errorf("unset grew: %v", env.Unset)
+	}
+	aws := Env{Set: map[string]string{"AWS_PROFILE": "p"}}
+	DropPrevious(cfg, cfg.Contexts["g"], &aws, "a")
+	if slices.Contains(aws.Unset, "AWS_PROFILE") || !slices.Contains(aws.Unset, "AWS_REGION") {
+		t.Errorf("a variable the context sets was unset, or one it doesn't was kept: %v", aws.Unset)
+	}
+}
+
+// Every variable a cloud's Prepare sets is in its Exports, so DropPrevious
+// can't miss one.
+func TestExportsCoverPrepare(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("MEK_HOME", home)
+	t.Setenv("AZURE_EXTENSION_DIR", filepath.Join(home, "ext"))
+	full := []*config.Context{
+		{Name: "a", Provider: config.ProviderAWS, Region: "r", SSOStartURL: "https://x.awsapps.com/start", SSORegion: "r", AccountID: "111122223333", Role: "R"},
+		{Name: "g", Provider: config.ProviderGCP, Project: "p", Account: "a@x", Region: "r"},
+		{Name: "z", Provider: config.ProviderAzure, TenantID: "t", SubscriptionID: "00000000-1111-2222-3333-444444444444", Region: "r"},
+		{Name: "h", Provider: config.ProviderHuawei, HcloudProfile: "p", Region: "r"},
+	}
+	cfg := &config.Config{Contexts: map[string]*config.Context{}}
+	for _, c := range full {
+		cfg.Contexts[c.Name] = c
+	}
+	os.MkdirAll(GCloudDir(full[1]), 0o700)
+	os.WriteFile(filepath.Join(GCloudDir(full[1]), "application_default_credentials.json"), nil, 0o600)
+	for _, c := range full {
+		env, err := For(cfg, c).Prepare()
+		if err != nil {
+			t.Fatalf("%s: %v", c.Provider, err)
+		}
+		cl, _ := Lookup(c.Provider)
+		for k := range env.Set {
+			if !slices.Contains(cl.Exports, k) {
+				t.Errorf("%s sets %s, not in its Exports", c.Provider, k)
+			}
+		}
 	}
 }
 

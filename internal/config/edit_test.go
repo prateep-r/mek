@@ -123,6 +123,19 @@ func TestEditorShapes(t *testing.T) {
 		t.Error("flow delete twice")
 	}
 
+	// contexts: null (or ~) too; a nested comment above an entry stays.
+	for _, null := range []string{"null", "~"} {
+		e, _ = editFile(t, "contexts: "+null+"\n")
+		e.Set("g", c)
+		if got := string(e.Bytes()); got != "contexts:\n  g:\n    provider: gcp\n    project: p\n" {
+			t.Errorf("contexts: %s: %q", null, got)
+		}
+	}
+	e, _ = editFile(t, "contexts:\n  a:\n    provider: gcp\n    project: x\n    # about a\n  # about g\n  g: {provider: gcp, project: p}\n")
+	if err := e.Delete("g"); err != nil || string(e.Bytes()) != "contexts:\n  a:\n    provider: gcp\n    project: x\n    # about a\n" {
+		t.Errorf("delete took another's comment: %q %v", e.Bytes(), err)
+	}
+
 	// Other keys around contexts: stay where they are.
 	e, _ = editFile(t, "first: 1\ncontexts:\n  a: {provider: gcp, project: x}\n\n# about later\nlater: 2\n")
 	e.Set("g", c)
@@ -189,7 +202,10 @@ func TestPreview(t *testing.T) {
 	if _, err := Preview(team, []byte("contexts: [")); err == nil {
 		t.Error("broken preview")
 	}
-	if c, _ := Preview(filepath.Join(repo, "elsewhere.yaml"), nil); c.Contexts["orders-dev"] == nil { // not a layer: as on disk
+	if _, err := Preview(filepath.Join(repo, "sub", LocalFile), []byte("contexts:\n  x: {provider: gcp, project: [\n")); err == nil {
+		t.Error("a file mek doesn't read yet went unchecked")
+	}
+	if c, _ := Preview(filepath.Join(repo, "elsewhere.yaml"), nil); c.Contexts["orders-dev"] == nil { // not a layer: on top of the others
 		t.Error("unrelated path")
 	}
 }

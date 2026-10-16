@@ -21,35 +21,15 @@ var huaweiCloud = Cloud{
 	Classify: guard.ClassifyHuawei,
 	Validate: validateHuawei,
 	Tool:     Tool{VersionArgs: []string{"version"}, URL: "https://support.huaweicloud.com/intl/en-us/qs-hcli/hcli_02_003.html"},
+	Exports:  []string{"HW_PROFILE", "HW_REGION_NAME"},
 }
 
 func validateHuawei(c *config.Context) error {
-	if err := notAzure(c); err != nil {
-		return err
-	}
 	if c.HcloudProfile == "" {
 		return errors.New("huawei context needs hcloud_profile (a KooCLI profile: hcloud configure list)")
 	}
-	for _, f := range []struct {
-		key string
-		set bool
-	}{
-		{"sso_start_url", c.SSOStartURL != ""}, {"sso_region", c.SSORegion != ""}, {"account_id", c.AccountID != ""},
-		{"role", c.Role != ""}, {"aws_profile", c.AWSProfile != ""}, {"project", c.Project != ""},
-		{"account", c.Account != ""}, {"use_metadata", c.UseMetadata},
-		{"clusters", len(c.Clusters) > 0}, {"targets", len(c.Targets) > 0},
-	} {
-		if f.set {
-			return fmt.Errorf("%s is not for huawei contexts", f.key)
-		}
-	}
-	return nil
-}
-
-// notHuawei rejects the Huawei-only field on another cloud's context.
-func notHuawei(c *config.Context) error {
-	if c.HcloudProfile != "" {
-		return errors.New("hcloud_profile is for huawei contexts")
+	if len(c.Clusters) > 0 || len(c.Targets) > 0 {
+		return errors.New("clusters and targets are not for huawei contexts")
 	}
 	return nil
 }

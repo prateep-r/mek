@@ -91,9 +91,9 @@ func TestValidateAzure(t *testing.T) {
 	for in, want := range map[string]string{
 		head + "    tenant_id: t\n":                                                             "needs tenant_id and subscription_id",
 		head + "    tenant_id: t\n    subscription_id: nope\n":                                  "subscription_id must be a GUID",
-		head + "    tenant_id: t\n    subscription_id: " + subID + "\n    project: p\n":         "project is not for azure contexts",
-		head + "    tenant_id: t\n    subscription_id: " + subID + "\n    use_metadata: true\n": "use_metadata is not for azure contexts",
-		"contexts:\n  a:\n    provider: gcp\n    project: p\n    tenant_id: t\n":                "tenant_id and subscription_id are for azure contexts",
+		head + "    tenant_id: t\n    subscription_id: " + subID + "\n    project: p\n":         "project is for gcp contexts",
+		head + "    tenant_id: t\n    subscription_id: " + subID + "\n    use_metadata: true\n": "use_metadata is for gcp contexts",
+		"contexts:\n  a:\n    provider: gcp\n    project: p\n    tenant_id: t\n":                "tenant_id is for azure contexts",
 	} {
 		if err := parse(in); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("parse(%q) = %v, want %q", in, err, want)

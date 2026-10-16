@@ -27,7 +27,8 @@ func TestValidate(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"contexts:\n  a b:\n    provider: aws\n    aws_profile: p\n", "may only contain"},
 		{"contexts:\n  ..:\n    provider: gcp\n    project: p\n", "may only contain"},
-		{"contexts:\n  a:\n    provider: gcp\n    project: \"p\\nx = y\"\n", "line breaks"},
+		{"contexts:\n  a:\n    provider: gcp\n    project: \"p\\nx = y\"\n", "control characters"},
+		{"contexts:\n  Prod: {provider: gcp, project: p}\n  prod: {provider: gcp, project: p}\n", `contexts "Prod" and "prod" differ only in case`},
 		{"contexts:\n  a:\n", "is empty"},
 	}
 	for _, c := range cases {
