@@ -224,3 +224,43 @@ func TestCheckAliasAndSnippetOf(t *testing.T) {
 		t.Errorf("snippet:\n%s", got)
 	}
 }
+
+func TestSetSetting(t *testing.T) {
+	for _, c := range []struct{ name, in, want string }{
+		{"no section: added at the end", "# mine\ncontexts: {}\n", "# mine\ncontexts: {}\n\nsettings:\n  show_cmd: true\n"},
+		{"empty file", "", "settings:\n  show_cmd: true\n"},
+		{"replaced in place, comments kept", "settings:\n  # say what runs\n  show_cmd: false # for now\ncontexts: {}\n",
+			"settings:\n  # say what runs\n  show_cmd: true\ncontexts: {}\n"},
+		{"another key: added under it", "settings:\n    other: 1\n# end\n", "settings:\n    other: 1\n    show_cmd: true\n# end\n"},
+		{"flow style: rewritten as a block", "contexts: {}\nsettings: {show_cmd: false, other: x}\n# end\n",
+			"contexts: {}\nsettings:\n  other: x\n  show_cmd: true\n# end\n"},
+		{"empty section", "settings:\ncontexts: {}\n", "settings:\n  show_cmd: true\ncontexts: {}\n"},
+	} {
+		e := &Editor{Path: "c.yaml", src: []byte(c.in)}
+		if err := e.SetSetting("show_cmd", true); err != nil || string(e.Bytes()) != c.want {
+			t.Errorf("%s: %v\n got %q\nwant %q", c.name, err, e.Bytes(), c.want)
+		}
+	}
+	e := &Editor{Path: "c.yaml", src: []byte("contexts: [\n")}
+	if err := e.SetSetting("show_cmd", true); err == nil {
+		t.Error("broken file: no error")
+	}
+}
+
+func TestSettingsLayers(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("MEK_HOME", home)
+	t.Setenv("HOME", t.TempDir())
+	os.WriteFile(Path(), []byte("settings: {show_cmd: true}\ncontexts:\n  a: {provider: aws, aws_profile: a}\n"), 0o600)
+	c, err := Load()
+	if err != nil || c.Settings == nil || c.Settings.ShowCmd == nil || !*c.Settings.ShowCmd {
+		t.Fatalf("settings: %+v %v", c.Settings, err)
+	}
+	repo := t.TempDir()
+	os.Mkdir(filepath.Join(repo, ".git"), 0o700)
+	os.WriteFile(filepath.Join(repo, TeamFile), []byte("settings: {show_cmd: false}\ncontexts: {}\n"), 0o644)
+	t.Chdir(repo)
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "settings: belong in") {
+		t.Errorf("a project's settings: %v", err)
+	}
+}

@@ -22,6 +22,8 @@ type globalOpts struct {
 	context string // --context / -c
 	yes     bool   // --yes / -y : accept y/N confirmations
 	confirm string // --confirm <ctx> : accept typed confirmations non-interactively
+	// --show-cmd / --no-show-cmd: print each command as typed without mek
+	showCmd, noShowCmd bool
 }
 
 // app holds the state one command tree shares, instead of package globals, so
@@ -29,6 +31,11 @@ type globalOpts struct {
 type app struct {
 	opts globalOpts
 	exec runner.Runner // runs processes; tests swap in a fake
+	// machine: the output is for a program (mek kube token): show-cmd stays off.
+	machine bool
+	// settings.show_cmd from ~/.mek/config.yaml, read once (savedShowCmd).
+	settingsRead   bool
+	settingShowCmd *bool
 }
 
 // NewRoot builds the command tree.
@@ -55,6 +62,8 @@ What protected and readonly do: mek help guard.`,
 	pf.StringVar(&a.opts.confirm, "confirm", "", "confirm destructive commands non-interactively by passing the context name")
 	pf.StringVar(&config.ProjectFlag, "project", "", "read the project config (mek.yaml, mek.local.yaml) from this directory instead of looking up from here")
 	pf.BoolVar(&config.NoProject, "no-local", false, "ignore project config files (mek.yaml, mek.local.yaml); also MEK_NO_LOCAL=1")
+	pf.BoolVar(&a.opts.showCmd, "show-cmd", false, "print each command mek runs as you would type it yourself (see mek show-cmd)")
+	pf.BoolVar(&a.opts.noShowCmd, "no-show-cmd", false, "don't print it, whatever MEK_SHOW_CMD or settings.show_cmd say")
 	_ = root.RegisterFlagCompletionFunc("context", completeContexts)
 
 	// Groups for `mek help`; cobra lists each group's commands alphabetically.
@@ -76,7 +85,7 @@ What protected and readonly do: mek help guard.`,
 	}
 	add("run", a.newKubectlCmd(), a.newExecCmd(), a.newEnvCmd())
 	add("access", a.newShellCmd(), a.newTunnelCmd(), a.newKubeCmd())
-	add("setup", newShellInitCmd(), newCompletionCmd(root), newDoctorCmd(), newVersionCmd(), newSelfUpdateCmd())
+	add("setup", newShellInitCmd(), newCompletionCmd(root), a.newShowCmdCmd(), newDoctorCmd(), newVersionCmd(), newSelfUpdateCmd())
 	root.AddCommand(
 		helpTopic("config", "Where contexts come from: ~/.mek/config.yaml, a project's mek.yaml and mek.local.yaml", configHelp),
 		helpTopic("guard", "What protected and readonly do, command by command", guardHelp()),

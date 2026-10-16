@@ -137,7 +137,6 @@ func trimBack(lines []string, first, last int) int {
 	return last
 }
 
-// render writes one context as YAML lines, indented.
 // SnippetOf is any value as YAML, the way Set writes it (for a preview).
 func SnippetOf(v any) string {
 	b, _ := yaml.MarshalWithOptions(v, yaml.Indent(2)) // config types always marshal
@@ -147,6 +146,7 @@ func SnippetOf(v any) string {
 // Snippet is a context as Set writes it, unindented (for a preview).
 func Snippet(name string, c *Context) string { return strings.Join(render(name, c, 0), "\n") }
 
+// render writes one context as YAML lines, indented.
 func render(name string, c *Context, indent int) []string {
 	b, _ := yaml.MarshalWithOptions(map[string]*Context{name: c}, yaml.Indent(2)) // a Context always marshals
 	out := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
@@ -241,6 +241,56 @@ func (e *Editor) Delete(name string) error {
 		}
 	}
 	return missing
+}
+
+// SetSetting sets one key under settings: (adding the section at the end
+// of the file when there is none), leaving the rest of the file as it was.
+func (e *Editor) SetSetting(key string, value any) error {
+	if _, err := e.layout(); err != nil { // parses, and says so when it can't
+		return err
+	}
+	f, _ := parser.ParseBytes(e.src, parser.ParseComments)
+	lines := strings.Split(string(e.src), "\n")
+	root := pairs(f.Docs[0].Body)
+	for i, p := range root {
+		if keyName(p) != "settings" {
+			continue
+		}
+		if m, ok := p.Value.(*ast.MappingNode); ok && !m.IsFlowStyle {
+			indent := strings.Repeat(" ", m.Values[0].Key.GetToken().Position.Column-1)
+			kv := indent + SnippetOf(map[string]any{key: value})
+			for _, c := range m.Values {
+				if keyName(c) == key {
+					e.splice(lines, line(c.Key), line(c.Key), []string{kv})
+					return nil
+				}
+			}
+			at := line(m.Values[len(m.Values)-1].Key)
+			e.splice(lines, at+1, at, []string{kv})
+			return nil
+		}
+		// settings: {…}, or empty: rewritten as a block.
+		var cur struct {
+			Settings map[string]any `yaml:"settings"`
+		}
+		yaml.Unmarshal(e.src, &cur) // parsed above
+		if cur.Settings == nil {
+			cur.Settings = map[string]any{}
+		}
+		cur.Settings[key] = value
+		last := len(lines) - 1
+		if i+1 < len(root) {
+			last = line(root[i+1].Key) - 1
+		}
+		e.splice(lines, line(p.Key), trimBack(lines, line(p.Key), last), strings.Split(SnippetOf(map[string]any{"settings": cur.Settings}), "\n"))
+		return nil
+	}
+	text := strings.TrimRight(string(e.src), "\n")
+	if text != "" {
+		text += "\n\n"
+	}
+	e.src = []byte(text + SnippetOf(map[string]any{"settings": map[string]any{key: value}}) + "\n")
+	return nil
 }
 
 // Save writes the file atomically (creating its directory).

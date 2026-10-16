@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -76,6 +77,7 @@ func key(s string) tea.KeyPressMsg {
 type ran struct {
 	args        []string
 	interactive bool
+	env         []string
 }
 
 // harness is a model on a fake source, with what it runs recorded and
@@ -96,12 +98,12 @@ func newHarness(t *testing.T, src *fakeSource, selected string) *harness {
 	t.Cleanup(func() { execInTerminal, output = oldExec, oldOut })
 	execInTerminal = func(c *exec.Cmd, fn tea.ExecCallback) tea.Cmd {
 		return func() tea.Msg {
-			h.runs = append(h.runs, ran{c.Args[1:], true})
+			h.runs = append(h.runs, ran{c.Args[1:], true, c.Env})
 			return fn(h.fail)
 		}
 	}
 	output = func(c *exec.Cmd) ([]byte, error) {
-		h.runs = append(h.runs, ran{c.Args[1:], false})
+		h.runs = append(h.runs, ran{c.Args[1:], false, c.Env})
 		return []byte(h.out), h.fail
 	}
 	h.m = newModel(src, "/bin/mek", selected)
@@ -170,6 +172,9 @@ func TestContextsTab(t *testing.T) {
 	h.want("✓ use gcp — ✓ now using gcp")
 	h.press("l")
 	h.wantRun(true, "login", "gcp")
+	if slices.Contains(h.lastRun().env, "MEK_SHOW_CMD=0") || !slices.Contains(h.runs[0].env, "MEK_SHOW_CMD=0") {
+		t.Errorf("show-cmd: off in the background (its output is the status line), as set on the terminal: %v / %v", h.runs[0].env, h.lastRun().env)
+	}
 	h.press("x") // not a key of this tab
 	if len(h.runs) != 2 {
 		t.Errorf("runs: %v", h.runs)

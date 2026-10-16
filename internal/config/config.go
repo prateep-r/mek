@@ -61,9 +61,17 @@ type Context struct {
 
 type Config struct {
 	Contexts map[string]*Context `yaml:"contexts"`
+	// Settings are how mek behaves for you; only ~/.mek/config.yaml has them.
+	Settings *Settings `yaml:"settings,omitempty"`
 
 	Files   []string `yaml:"-"` // the files read, top layer first
 	Project string   `yaml:"-"` // the project directory ("" outside a project)
+}
+
+// Settings are mek's own options. A field left out is unset (nil), so a
+// flag or an environment variable can tell "off" from "not said".
+type Settings struct {
+	ShowCmd *bool `yaml:"show_cmd,omitempty"` // print the native command before running it
 }
 
 type state struct {
@@ -126,6 +134,9 @@ func decode(b []byte, source string, inProject bool) (*Config, error) {
 	}
 	if c.Contexts == nil {
 		c.Contexts = map[string]*Context{}
+	}
+	if c.Settings != nil && inProject { // a repository doesn't change how mek behaves for you
+		return nil, fmt.Errorf("%s: settings: belong in %s, not in a project's file", Show(source), Show(Path()))
 	}
 	for name, ctx := range c.Contexts {
 		if ctx == nil {

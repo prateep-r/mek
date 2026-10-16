@@ -18,6 +18,7 @@ type Invocation struct {
 	Class   guard.Class
 	Stdout  io.Writer // nil: the terminal
 	Stderr  io.Writer // nil: the terminal
+	Quiet   bool      // a lookup for a form on the screen: nothing of its own is printed
 	Session string    // set for sessions (shell, tunnel): audited at start and end
 	Target  string    // what a session connects to, for the audit log
 	// Detached is set when a session was handed to a background supervisor,

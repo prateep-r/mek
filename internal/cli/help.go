@@ -33,6 +33,9 @@ FILES — all three have the same shape: a "contexts:" map
   mek ctx add / edit / rm change these files for you, a question at a time,
   keeping your comments (see: mek help wizard).
 
+  ~/.mek/config.yaml may also hold settings: (how mek behaves for you), e.g.
+  settings: {show_cmd: true} (see: mek show-cmd). A project's files can't.
+
   protected and readonly can't be switched off from above. If any lower file
   sets them on a context of the same name, it stays guarded; a file above can
   always add them. So a repository's mek.yaml can't remove a guard you set.

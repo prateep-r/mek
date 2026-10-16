@@ -427,7 +427,7 @@ func TestHelpGroups(t *testing.T) {
 		"Contexts:":                             {"ctx", "init", "login", "ui", "use"},
 		"Run commands:":                         {"aws", "env", "exec", "gcloud", "kubectl"},
 		"Access (shells, tunnels, Kubernetes):": {"kube", "shell", "tunnel"},
-		"Setup:":                                {"completion", "doctor", "help", "self-update", "shell-init", "version"},
+		"Setup:":                                {"completion", "doctor", "help", "self-update", "shell-init", "show-cmd", "version"},
 	}
 	for title, cmds := range groups {
 		_, rest, ok := strings.Cut(out, "\n"+title+"\n")

@@ -382,6 +382,60 @@ jq -c 'select(.context == "prod" and .class != "read")' ~/.mek/audit.jsonl   # e
 jq -c 'select(.decision == "blocked")' ~/.mek/audit.jsonl                    # what the guard stopped
 ```
 
+### Seeing the native command
+
+Want to see what mek runs — to learn the CLIs, check what a context does, or copy it into a
+script? Turn on **show-cmd**: before each command, mek prints it as you would type it yourself,
+with the variables it sets or removes:
+
+```console
+$ mek -c prod aws s3 ls
+● prod [protected] aws 444455556666 / Admin / ap-southeast-1
+↳ runs:
+    unset AWS_ACCESS_KEY_ID
+    export AWS_CONFIG_FILE='/Users/you/.mek/aws/config'
+    export AWS_DEFAULT_REGION='ap-southeast-1'
+    export AWS_PROFILE='mek-prod'
+    export AWS_REGION='ap-southeast-1'
+    aws s3 ls
+    # typed yourself, it skips mek's guard and audit log
+2026-10-01 12:00:00 my-bucket
+```
+
+```console
+$ mek -c gcp-dev gcloud compute instances list
+↳ runs:
+    export CLOUDSDK_COMPUTE_REGION='asia-southeast1'
+    export CLOUDSDK_CONFIG='/Users/you/.mek/gcloud/gcp-dev'
+    export CLOUDSDK_CORE_CHECK_GCE_METADATA='false'
+    export CLOUDSDK_CORE_PROJECT='acme-dev'
+    export GOOGLE_CLOUD_PROJECT='acme-dev'
+    gcloud compute instances list
+    # typed yourself, it skips mek's guard and audit log
+```
+
+- **Only what differs from this shell** is listed: after `mek use -s prod` or
+  `eval "$(mek env prod)"`, it is just `aws s3 ls`. An `unset` line appears only for a variable
+  this shell has (like a leftover access key, which would win over the profile).
+- **Every command mek runs** is shown: `kubectl` with its `KUBECONFIG`, `aws ssm start-session` for
+  `mek shell`, the `aws ec2 describe-instances` that finds a `tag:` target first, `aws sso login`
+  for `mek login`. A command the guard blocks or you decline isn't (it doesn't run).
+- **It goes to stderr**, so `mek aws … | jq` gets only the command's output.
+- **Never shown:** in `mek kube token` (kubectl reads its output on every request), in `mek ui`'s
+  background actions (their output is the status line), and in the wizard's lookups.
+
+Turn it on or off — the first that says wins:
+
+| How | Example | For |
+|---|---|---|
+| a flag, before the CLI name | `mek --show-cmd -c prod aws s3 ls`, `--no-show-cmd` | this command |
+| an environment variable | `MEK_SHOW_CMD=1` / `MEK_SHOW_CMD=0` | this shell, or a script |
+| a setting | `mek show-cmd on` / `off` — writes `settings: {show_cmd: true}` in `~/.mek/config.yaml` (comments kept) | every terminal |
+| none of them | | off |
+
+`mek show-cmd` on its own says whether it is on and what decided it
+(`show-cmd is off — MEK_SHOW_CMD=0 in this shell`).
+
 ### Using the native CLIs alongside mek
 
 mek doesn't replace `aws` or `gcloud`; it runs them with the context's settings.
@@ -1381,6 +1435,7 @@ argument.
 | Key | Type | Required | Default | AWS | GCP | Rules | Effect |
 |---|---|---|---|---|---|---|---|
 | `contexts` | map: *name* → context | no | no contexts | ✓ | ✓ | top-level key | every cloud target, by the name you type (`mek use <name>`, `-c <name>`) |
+| `settings.show_cmd` | bool | no | `false` | ✓ | ✓ | `~/.mek/config.yaml` only (`settings:` in a project's file is an error) | print each command mek runs as typed yourself ([show-cmd](#seeing-the-native-command)); `mek show-cmd on` / `off` sets it |
 | `contexts.<name>` | map | — | — | ✓ | ✓ | name: `^[A-Za-z0-9][A-Za-z0-9._-]*$`; can't be empty | one context. The name becomes a directory and an AWS profile name (`mek-<name>`) |
 | **Every context** | | | | | | | |
 | `provider` | string | **yes** | — | `aws` | `gcp` | one of the two | which cloud and CLI the context drives |
@@ -1472,6 +1527,7 @@ contexts:
 | `MEK_HOME` | where mek keeps everything (default `~/.mek`) |
 | `MEK_NO_LOCAL` | `1`: ignore project config files, like `--no-local` |
 | `MEK_CONTEXT` | this shell's context, over the saved one (set by `mek use -s`) |
+| `MEK_SHOW_CMD` | `1` / `0`: print each command mek runs as typed yourself, or don't ([show-cmd](#seeing-the-native-command)) |
 | `NO_COLOR` | plain output |
 
 What mek gives the commands it runs: AWS gets `AWS_PROFILE`, `AWS_CONFIG_FILE` (SSO) and
@@ -1583,6 +1639,7 @@ Setup:
   help        Help about any command
   self-update Update mek to the latest release (installs via install.sh / manual download)
   shell-init  Set up mek use -s to switch this shell: eval "$(mek shell-init zsh)"
+  show-cmd    Print each command mek runs as you would type it yourself (on, off, or say which)
   version     Print mek's version
 
 Flags:
@@ -1590,7 +1647,9 @@ Flags:
   -c, --context string   context for this command (overrides the current context and $MEK_CONTEXT)
   -h, --help             help for mek
       --no-local         ignore project config files (mek.yaml, mek.local.yaml); also MEK_NO_LOCAL=1
+      --no-show-cmd      don't print it, whatever MEK_SHOW_CMD or settings.show_cmd say
       --project string   read the project config (mek.yaml, mek.local.yaml) from this directory instead of looking up from here
+      --show-cmd         print each command mek runs as you would type it yourself (see mek show-cmd)
   -y, --yes              answer yes to write confirmations on protected contexts
 
 Additional help topics:
@@ -1635,6 +1694,7 @@ current context). For mek's own description of those commands, use `mek help aws
 | `mek kube [cluster] [--name N --region R \| --location L]` | write the context's kubeconfig |
 | **Setup** | |
 | `mek shell-init zsh\|bash` | print the shell integration that makes `mek use -s` work by itself |
+| `mek show-cmd [on\|off]` | print each command mek runs as you would type it yourself: on, off, or say which ([how](#seeing-the-native-command)) |
 | `mek doctor` | check the config and tools, with install hints |
 | `mek help [command]` / `mek <command> --help` | how a command works, with examples (`-h` for short) |
 | `mek version` | print the version |
@@ -1652,6 +1712,7 @@ Global flags go **before** the CLI name: `mek -c prod --yes aws ecs update-servi
 | `--confirm <ctx>` | accept destructive confirmations non-interactively; must name the context |
 | `--project <dir>` | read the project config (`mek.yaml`, `mek.local.yaml`) from `dir`, from anywhere |
 | `--no-local` | ignore project config files; `MEK_NO_LOCAL=1` does the same |
+| `--show-cmd` / `--no-show-cmd` | print (or don't) each command mek runs as typed yourself, whatever `MEK_SHOW_CMD` or the setting say |
 
 ## What the cloud side needs
 
