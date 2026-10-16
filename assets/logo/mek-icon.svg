@@ -6,9 +6,10 @@
   </defs>
   <rect width="512" height="512" rx="112" fill="#F6F1E7"/>
   <!-- one translucent circle per supported cloud, together making one cloud:
-       AWS (the larger) and GCP -->
+       Azure, AWS (the larger) and GCP; the two blues are kept apart -->
   <g clip-path="url(#base)" fill-opacity="0.85">
-    <circle cx="214" cy="248" r="118" fill="#FF9900"/>
-    <circle cx="328" cy="290" r="84" fill="#4285F4"/>
+    <circle cx="150" cy="306" r="70" fill="#0078D4"/>
+    <circle cx="232" cy="250" r="108" fill="#FF9900"/>
+    <circle cx="338" cy="286" r="84" fill="#4285F4"/>
   </g>
 </svg>
