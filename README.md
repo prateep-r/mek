@@ -359,39 +359,6 @@ enter details · a actions · / filter · r reload · esc back · 1-5/tab switch
   [Development](#development)), and built into mek. The tab names the CLI version they came
   from.
 
-### The desktop app
-
-**mek-desktop** is the same in a window: the contexts on the left; the chosen one's tunnels,
-targets and clusters, resources and the audit log on the right.
-
-- **Everything it does runs mek** (`mek use`, `mek -c prod tunnel db -b`, `mek -c dev aws ec2
-  stop-instances …`), so the guard and the audit log apply as when typed. The window asks the
-  guard's question first: yes or no, or the context's name typed for a destructive command on
-  a protected context; a readonly context still blocks.
-- **What needs a terminal opens one** — logging in, shells, K9s and the wizard (*Add a
-  context*, *Edit*, *Add a tunnel*): Terminal on macOS, your terminal on Linux.
-- **The Resources tab** is the [one in `mek ui`](#the-resources-tab): pick a kind of resource,
-  click one for its details, and act on it from its buttons.
-
-Install it:
-
-```bash
-brew install --cask prateep-r/tap/mek-desktop     # macOS: mek.app in /Applications
-sudo apt install ./mek-desktop_<version>_linux_amd64.deb   # Debian/Ubuntu, from the releases page
-```
-
-Or download it from the [releases](https://github.com/prateep-r/mek/releases) page:
-
-| Where | File | Notes |
-|---|---|---|
-| macOS (Apple silicon / Intel) | `mek-desktop_<version>_darwin_arm64.zip` / `_amd64.zip` | `mek.app`, with the mek it runs inside. It isn't signed yet: the first time, right-click it → *Open* → *Open* (the cask does that for you) |
-| Debian / Ubuntu | `mek-desktop_<version>_linux_amd64.deb` | installs in `/usr/lib/mek-desktop`, with a menu entry; apt brings GTK 4 and WebKitGTK 6.0 |
-| Other Linux | `mek-desktop_<version>_linux_amd64.tar.gz` | `mek-desktop` and `mek`; needs GTK 4 and WebKitGTK 6.0 |
-
-Each file has its SHA-256 beside it (`shasum -a 256 -c <file>.sha256`). It uses the `mek` next
-to it, else the one on your `PATH`, and the cloud CLIs on your login
-shell's `PATH` (an app started from the Dock gets a bare one).
-
 ### Several accounts at once
 
 Runs on different contexts never mix credentials, so use as many at once as you like:
@@ -2076,7 +2043,6 @@ official tools need. Ask whoever runs the account for:
 5. ✅ Resources in the terminal UI, generated from the AWS CLI's, gcloud's and az's command models
 6. ✅ Azure
 7. ✅ Huawei Cloud (KooCLI profiles, the guard and the audit log)
-8. ✅ Desktop app (`mek-desktop`, Wails)
 
 ## Development
 
@@ -2110,12 +2076,6 @@ How the code fits together (the GoF patterns are named where they shape it):
 - **`internal/tui`** is `mek ui` (Bubble Tea): each tab and overlay is a State handling its
   own keys, and every key that acts is an `action` (a Command) holding mek's own arguments,
   run in the terminal or in the background — the UI never talks to a cloud itself.
-- **The desktop app:** `cmd/mek-desktop` (built with `-tags desktop`; `make desktop`) is a
-  Wails v3 window with a Svelte frontend (`cmd/mek-desktop/frontend`). It binds
-  `internal/desktop`'s `Service` — the same reads as `mek ui` through `internal/view`, the
-  same catalog, and every action a run of mek — which imports no GUI toolkit, so it is tested
-  like any package. `make desktop-package` builds `mek.app` (macOS), or a Linux archive and
-  `.deb`; a release also writes the `mek-desktop` cask to the tap (`cmd/mek-desktop/cask.sh`).
 - **The resource catalog:** `tools/catalog` (`make catalog`, or `make catalog-docker` with the
   CLIs in mek's test image) reads the installed AWS CLI's command index and botocore models,
   gcloud's command tree and az's command loader, and writes
@@ -2135,10 +2095,9 @@ make run ARGS="doctor"
 make install     # build with version info and copy to ~/.local/bin
 make vuln        # govulncheck
 make snapshot    # goreleaser build of all archives into dist/ (no publish)
-make desktop     # bin/mek-desktop (needs npm and cgo; Linux: GTK 4 and WebKitGTK 6.0)
 ```
 
-Tests come in six layers, all run by CI (integration, e2e and the desktop app on Linux and macOS):
+Tests come in five layers, all run by CI (integration and e2e on Linux and macOS):
 
 | Layer | Where | What it covers |
 |---|---|---|
@@ -2147,7 +2106,6 @@ Tests come in six layers, all run by CI (integration, e2e and the desktop app on
 | E2E (`-tags e2e`) | `test/e2e` | release archives served over HTTP, installed by the real `install.sh` (including tampered / unlisted archives being refused), a new user's first session on AWS and GCP, the confirmation prompts (including shells and tunnels) answered on a real pseudo-terminal, a background tunnel outliving the terminal that started it, `mek ui` driven by keys (switch, start and stop a tunnel, open a shell, quit with the terminal restored), and the config wizard by arrow keys (accounts and roles from a stub portal, a team context copied into `mek.local.yaml`, `mek ui` opening it) |
 | Contract (`-tags contract`) | `test/contract` | mek with the **real** `aws`, `gcloud`, `gke-gcloud-auth-plugin`, `az` (with its bastion and ssh extensions) and `kubectl`, offline: every Azure Bastion and AKS command mek builds parsed by the real `az`; each CLI reads the config, directories, kubeconfigs and session commands mek hands it, against local fake APIs where one is needed; the wizard's lookups (`--query` / `--format` expressions and the portal token in a file), show-cmd's printed commands run in `sh`, and the resource catalog's commands (every one for the popular AWS resources parsed by the real `aws`; an EC2 and a Compute Engine instance listed, described and stopped). A missing CLI is skipped; `MEK_CONTRACT_REQUIRE=1` makes it fail. `sh test/contract/install-clis.sh` installs the CLIs on Debian/Ubuntu |
 | Emulator (`-tags emulator`) | `test/emulator` | the **full AWS IAM Identity Center login** with the real `aws` against the [Floci](https://floci.io) emulator in docker — `mek login` → `aws sso login` (device code) → approval → role credentials through the profile mek generates — then a real call, a readonly block and a confirmed delete with them; and **the config wizard** on a real terminal — `mek ctx add` listing that login's accounts and roles, `mek ctx tunnel/target/cluster add` listing the account's EC2 instances, RDS databases and EKS clusters — with show-cmd's output run by hand and the portal token kept out of the audit log; and **the Resources tab** of `mek ui` listing an EC2 instance, stopping and terminating it, and blocked on a readonly context. It starts its own container on a random local port (never an emulator you already run); a small test proxy adds the `x-amzn-ErrorType` header Floci 2.1.0 leaves out of pending-token responses. A missing docker or CLI is skipped; `MEK_EMULATOR_REQUIRE=1` makes it fail |
-| Desktop | `internal/desktop`, `cmd/mek-desktop/frontend`, `test/desktop` | the desktop app's service with the unit tests (every action planned and run as mek, its guard questions, the terminal it opens); the frontend's logic with vitest and its components with `svelte-check`; **the window end to end** with Playwright — the built frontend in a browser, the real service behind it (`test/desktop/uiserver`) and a stub mek: contexts, using one, starting tunnels (a protected context asks), listing and describing resources, acting on one through the guard (typed confirmation on a protected context), the audit log's filters (`make desktop-e2e`); and the app built with cgo on Linux and macOS (`make desktop-check`, `make desktop`) |
 
 `make cover` merges unit coverage with coverage from the instrumented binary the
 integration tests run, so `main()` and real process paths count too. Tests that
