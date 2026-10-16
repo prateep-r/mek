@@ -380,7 +380,8 @@ Download it from the [releases](https://github.com/prateep-r/mek/releases) page:
 | macOS (Apple silicon / Intel) | `mek-desktop_<version>_darwin_arm64.zip` / `_amd64.zip` | `mek.app`, with the mek it runs inside. It isn't signed yet: the first time, right-click it → *Open* → *Open* |
 | Linux | `mek-desktop_<version>_linux_amd64.tar.gz` | `mek-desktop` and `mek`; needs GTK 4 and WebKitGTK 6.0 (`apt install libgtk-4-1 libwebkitgtk-6.0-4`) |
 
-It uses the `mek` next to it, else the one on your `PATH`, and the cloud CLIs on your login
+Each file has its SHA-256 beside it (`shasum -a 256 -c <file>.sha256`). It uses the `mek` next
+to it, else the one on your `PATH`, and the cloud CLIs on your login
 shell's `PATH` (an app started from the Dock gets a bare one).
 
 ### Several accounts at once
