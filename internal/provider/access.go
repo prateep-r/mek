@@ -78,10 +78,12 @@ func FindPlugin(bin string) (Plugin, bool) {
 
 // Instance is a resolved host that a session (or tunnel) connects to.
 type Instance struct {
-	ID    string // aws instance id, gcp VM name
-	Zone  string // gcp
-	User  string // gcp SSH user ("" = gcloud's default)
-	Alias string // the configured target name, if it came from config
+	ID      string          // aws instance id, gcp VM name, azure VM resource id
+	Zone    string          // gcp
+	User    string          // gcp, azure SSH user ("" = the CLI's default)
+	Alias   string          // the configured target name, if it came from config
+	Auth    string          // azure: config.AuthAAD or config.AuthSSHKey
+	Bastion *config.Bastion // azure: the target's own Bastion, if any
 }
 
 // Label names the instance for messages and the audit log.
@@ -100,7 +102,7 @@ func (i Instance) Label() string {
 }
 
 // TargetOptions are per-command overrides of a target (mek shell flags).
-type TargetOptions struct{ Zone, User string }
+type TargetOptions struct{ Zone, ResourceGroup, User string }
 
 // Command is a process mek runs for an access path.
 type Command struct {

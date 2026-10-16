@@ -29,6 +29,14 @@ func TestDiscoveryCommands(t *testing.T) {
 		{GCEInstancesCommand(), "gcloud compute instances list --filter=status=RUNNING --format=json(name,zone.basename(),networkInterfaces[0].networkIP)"},
 		{CloudSQLInstancesCommand(), "gcloud sql instances list --format=json(connectionName,databaseVersion)"},
 		{GKEClustersCommand(), "gcloud container clusters list --format=json(name,location)"},
+		{AzureLoginCommand(""), "az login"},
+		{AzureLoginCommand("acme.onmicrosoft.com"), "az login --tenant acme.onmicrosoft.com"},
+		{AzureTenantsCommand(), "az account tenant list --query [].{id:tenantId,name:displayName,domain:defaultDomain} --output json"},
+		{AzureSubscriptionsCommand("t-1"), "az account list --all --query [?tenantId=='t-1'].{id:id,name:name,state:state} --output json"},
+		{AzureBastionsCommand("s-1"), "az network bastion list --subscription s-1 --query [].{name:name,group:resourceGroup,sku:sku.name} --output json"},
+		{AzureBastionsCommand(""), "az network bastion list --query [].{name:name,group:resourceGroup,sku:sku.name} --output json"},
+		{AzureVMsCommand(), "az vm list --show-details --query [?powerState=='VM running'].{name:name,group:resourceGroup,ip:privateIps} --output json"},
+		{AKSClustersCommand(), "az aks list --query [].{name:name,group:resourceGroup,location:location} --output json"},
 	} {
 		if got := strings.Join(c.got, " "); got != c.want {
 			t.Errorf("got  %s\nwant %s", got, c.want)
@@ -85,7 +93,28 @@ func TestParseDiscoveries(t *testing.T) {
 	if !reflect.DeepEqual(unnamed, []Found{{Value: "111122223333"}, {Value: "444455556666"}}) {
 		t.Errorf("accounts without names: %v", unnamed)
 	}
-	for _, f := range []func([]byte) ([]Found, error){ParseAccounts, ParseRoles, ParseProjects, ParseEC2Instances, ParseRDS, ParseEKSClusters, ParseGCEInstances, ParseCloudSQL, ParseGKEClusters} {
+	tenants, err := ParseAzureTenants([]byte(`[{"id":"t-2","name":"Zeta","domain":"z.onmicrosoft.com"},{"id":"t-1","name":"Acme","domain":"acme.onmicrosoft.com"}]`))
+	if err != nil || !reflect.DeepEqual(tenants, []Found{{Value: "t-1", Label: "Acme", Hint: "acme.onmicrosoft.com"}, {Value: "t-2", Label: "Zeta", Hint: "z.onmicrosoft.com"}}) {
+		t.Errorf("tenants: %v %v", tenants, err)
+	}
+	subs, err := ParseAzureSubscriptions([]byte(`[{"id":"s-1","name":"Prod","state":"Enabled"},{"id":"s-2","name":"Old","state":"Disabled"},{"id":"s-3","name":"New"}]`))
+	if err != nil || !reflect.DeepEqual(subs, []Found{{Value: "s-3", Label: "New", Hint: "s-3"}, {Value: "s-2", Label: "Old", Hint: "s-2 (Disabled)"}, {Value: "s-1", Label: "Prod", Hint: "s-1"}}) {
+		t.Errorf("subscriptions: %v %v", subs, err)
+	}
+	bastions, err := ParseAzureBastions([]byte(`[{"name":"bas","group":"rg-net","sku":"Standard"},{"name":"old","group":"rg-x","sku":null}]`))
+	if err != nil || !reflect.DeepEqual(bastions, []Found{{Value: "bas", Hint: "rg-net · Standard", Extra: "rg-net"}, {Value: "old", Hint: "rg-x", Extra: "rg-x"}}) {
+		t.Errorf("bastions: %v %v", bastions, err)
+	}
+	azvms, err := ParseAzureVMs([]byte(`[{"name":"vm-jump","group":"rg-app","ip":"10.2.0.4"},{"name":"bare","group":"rg-app","ip":""}]`))
+	if err != nil || !reflect.DeepEqual(azvms, []Found{{Value: "bare", Hint: "rg-app", Extra: "rg-app"}, {Value: "vm-jump", Hint: "rg-app 10.2.0.4", Extra: "rg-app"}}) {
+		t.Errorf("azure vms: %v %v", azvms, err)
+	}
+	aks, err := ParseAKSClusters([]byte(`[{"name":"aks-1","group":"rg-aks","location":"southeastasia"}]`))
+	if err != nil || !reflect.DeepEqual(aks, []Found{{Value: "aks-1", Hint: "rg-aks · southeastasia", Extra: "rg-aks"}}) {
+		t.Errorf("aks: %v %v", aks, err)
+	}
+	for _, f := range []func([]byte) ([]Found, error){ParseAccounts, ParseRoles, ParseProjects, ParseEC2Instances, ParseRDS, ParseEKSClusters, ParseGCEInstances, ParseCloudSQL, ParseGKEClusters,
+		ParseAzureTenants, ParseAzureSubscriptions, ParseAzureBastions, ParseAzureVMs, ParseAKSClusters} {
 		if _, err := f([]byte("<html>")); err == nil || !strings.Contains(err.Error(), "unexpected output") {
 			t.Errorf("bad output: %v", err)
 		}

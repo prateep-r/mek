@@ -129,3 +129,36 @@ func TestClassifyRegressions(t *testing.T) {
 		}
 	}
 }
+
+func TestClassifyAzure(t *testing.T) {
+	cases := map[string]Class{
+		"":                                      Read,
+		"vm list":                               Read,
+		"vm show -g rg -n vm1":                  Read,
+		"-o table vm list":                      Read,
+		"aks get-credentials -g rg -n c":        Read,
+		"webapp log tail -g rg -n app":          Read,
+		"vm create -g rg -n vm1 --image Ubuntu": Write,
+		"vm restart -g rg -n vm1":               Write,
+		"group create -n rg -l eastus":          Write,
+		"vm delete -g rg -n vm1 --yes":          Destructive,
+		"vm deallocate -g rg -n vm1":            Destructive,
+		"vm stop --ids /subscriptions/s/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm1": Destructive,
+		"vm reimage -g rg -n vm":                Destructive,
+		"provider unregister -n Microsoft.Web":  Destructive,
+		"storage account keys regenerate":       Destructive,
+		"account set --subscription s":          Read, // local only
+		"login --tenant t":                      Read,
+		"vm":                                    Read,
+		"vm delete --help":                      Read,
+		"foo bar baz":                           Write,
+		"network bastion ssh --name b -g rg":    Shell,
+		"network bastion tunnel --name b -g rg": Tunnel,
+		"network bastion list":                  Read,
+	}
+	for in, want := range cases {
+		if got := ClassifyAzure(strings.Fields(in)); got != want {
+			t.Errorf("az %q = %s, want %s", in, got, want)
+		}
+	}
+}

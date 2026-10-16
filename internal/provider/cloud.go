@@ -42,7 +42,7 @@ type Tool struct {
 }
 
 // clouds is the registry, in the order mek lists them.
-var clouds = []Cloud{awsCloud, gcpCloud}
+var clouds = []Cloud{awsCloud, gcpCloud, azureCloud}
 
 // Clouds returns every supported cloud.
 func Clouds() []Cloud { return clouds }

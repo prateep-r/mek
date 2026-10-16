@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 )
 
 // Discovery is a command the config wizard runs to offer a cloud's values
@@ -82,6 +83,39 @@ func GKEClustersCommand() []string {
 	return []string{"gcloud", "container", "clusters", "list", "--format=json(name,location)"}
 }
 
+// AzureLoginCommand logs in to Azure, in tenant when it is given — for the
+// wizard, before the context (and its tenant) exists.
+func AzureLoginCommand(tenant string) []string {
+	return command("az", "login").opt("--tenant", tenant).build().Argv
+}
+
+// AzureTenantsCommand lists the Microsoft Entra tenants the login reaches.
+func AzureTenantsCommand() []string {
+	return []string{"az", "account", "tenant", "list", "--query", "[].{id:tenantId,name:displayName,domain:defaultDomain}", "--output", "json"}
+}
+
+// AzureSubscriptionsCommand lists the subscriptions the login has in tenant.
+func AzureSubscriptionsCommand(tenant string) []string {
+	return []string{"az", "account", "list", "--all", "--query", fmt.Sprintf("[?tenantId=='%s'].{id:id,name:name,state:state}", tenant), "--output", "json"}
+}
+
+// AzureBastionsCommand lists a subscription's Bastion hosts.
+func AzureBastionsCommand(subscription string) []string {
+	return command("az", "network", "bastion", "list").opt("--subscription", subscription).
+		args("--query", "[].{name:name,group:resourceGroup,sku:sku.name}", "--output", "json").build().Argv
+}
+
+// AzureVMsCommand lists running VMs: name, resource group, private IP.
+func AzureVMsCommand() []string {
+	return []string{"az", "vm", "list", "--show-details", "--query",
+		"[?powerState=='VM running'].{name:name,group:resourceGroup,ip:privateIps}", "--output", "json"}
+}
+
+// AKSClustersCommand lists AKS clusters.
+func AKSClustersCommand() []string {
+	return []string{"az", "aks", "list", "--query", "[].{name:name,group:resourceGroup,location:location}", "--output", "json"}
+}
+
 // Discoveries are every discovery command, for mek help wizard.
 func Discoveries() []Discovery {
 	return []Discovery{
@@ -95,6 +129,11 @@ func Discoveries() []Discovery {
 		{"gcp", "VMs (targets, tunnels)", "compute.instances.list", GCEInstancesCommand()},
 		{"gcp", "Cloud SQL instances (tunnels)", "cloudsql.instances.list", CloudSQLInstancesCommand()},
 		{"gcp", "GKE clusters", "container.clusters.list", GKEClustersCommand()},
+		{"azure", "tenants", "your Microsoft Entra login (no Azure role)", AzureTenantsCommand()},
+		{"azure", "subscriptions", "any role on each subscription", AzureSubscriptionsCommand("<tenant>")},
+		{"azure", "Bastion hosts", "Microsoft.Network/bastionHosts/read (Reader)", AzureBastionsCommand("<subscription>")},
+		{"azure", "VMs (targets, tunnels)", "Microsoft.Compute/virtualMachines/read (Reader)", AzureVMsCommand()},
+		{"azure", "AKS clusters", "Microsoft.ContainerService/managedClusters/read (Reader)", AKSClustersCommand()},
 	}
 }
 
@@ -230,6 +269,67 @@ func ParseGKEClusters(b []byte) ([]Found, error) {
 	var out []Found
 	for _, c := range r {
 		out = append(out, Found{Value: c.Name, Hint: c.Location, Extra: c.Location})
+	}
+	return byLabel(out), err
+}
+
+// ParseAzureTenants reads AzureTenantsCommand, by name; the hint is the
+// tenant's domain.
+func ParseAzureTenants(b []byte) ([]Found, error) {
+	r, err := decodeJSON[[]struct{ ID, Name, Domain string }](b, "az account tenant list")
+	var out []Found
+	for _, t := range r {
+		out = append(out, Found{Value: t.ID, Label: t.Name, Hint: t.Domain})
+	}
+	return byLabel(out), err
+}
+
+// ParseAzureSubscriptions reads AzureSubscriptionsCommand, by name; ones
+// that aren't enabled say so.
+func ParseAzureSubscriptions(b []byte) ([]Found, error) {
+	r, err := decodeJSON[[]struct{ ID, Name, State string }](b, "az account list")
+	var out []Found
+	for _, s := range r {
+		f := Found{Value: s.ID, Label: s.Name, Hint: s.ID}
+		if s.State != "" && s.State != "Enabled" {
+			f.Hint += " (" + s.State + ")"
+		}
+		out = append(out, f)
+	}
+	return byLabel(out), err
+}
+
+// ParseAzureBastions reads AzureBastionsCommand: the name, its resource
+// group as Extra.
+func ParseAzureBastions(b []byte) ([]Found, error) {
+	r, err := decodeJSON[[]struct{ Name, Group, SKU string }](b, "az network bastion list")
+	var out []Found
+	for _, x := range r {
+		hint := x.Group
+		if x.SKU != "" {
+			hint += " · " + x.SKU
+		}
+		out = append(out, Found{Value: x.Name, Hint: hint, Extra: x.Group})
+	}
+	return byLabel(out), err
+}
+
+// ParseAzureVMs reads AzureVMsCommand; Extra is the resource group.
+func ParseAzureVMs(b []byte) ([]Found, error) {
+	r, err := decodeJSON[[]struct{ Name, Group, IP string }](b, "az vm list")
+	var out []Found
+	for _, v := range r {
+		out = append(out, Found{Value: v.Name, Hint: strings.TrimSpace(v.Group + " " + v.IP), Extra: v.Group})
+	}
+	return byLabel(out), err
+}
+
+// ParseAKSClusters reads AKSClustersCommand; Extra is the resource group.
+func ParseAKSClusters(b []byte) ([]Found, error) {
+	r, err := decodeJSON[[]struct{ Name, Group, Location string }](b, "az aks list")
+	var out []Found
+	for _, c := range r {
+		out = append(out, Found{Value: c.Name, Hint: c.Group + " · " + c.Location, Extra: c.Group})
 	}
 	return byLabel(out), err
 }

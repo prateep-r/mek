@@ -113,26 +113,3 @@ func (w *ctxWizard) projects(a wizard.Answers) ([]wizard.Option, error) {
 	found, err := provider.ParseProjects(out)
 	return toOptions(found), err
 }
-
-// keepLogin moves the gcloud login the wizard used to the saved context's
-// own directory — from gcloud/.wizard, or from the edited context's old key
-// (renamed, or a project's context whose project changed) — so it needn't
-// log in again. Another context's login stays where it is. Best effort: at
-// worst, mek login.
-func (w *ctxWizard) keepLogin(a wizard.Answers, path string) {
-	if a["cloud"] != config.ProviderGCP {
-		return
-	}
-	from := w.gcloudDir(a)
-	own := w.old != nil && w.old.Provider == config.ProviderGCP && path == w.old.Source && from == provider.GCloudDir(w.old)
-	if from != provider.GCloudWizardDir() && !own {
-		return
-	}
-	c := w.draftCtx(a)
-	to := provider.GCloudDir(c)
-	if from == to {
-		return
-	}
-	os.Remove(to) // only when empty
-	os.Rename(from, to)
-}

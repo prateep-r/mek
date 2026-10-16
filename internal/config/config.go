@@ -17,11 +17,13 @@ import (
 )
 
 const (
-	ProviderAWS = "aws"
-	ProviderGCP = "gcp"
+	ProviderAWS   = "aws"
+	ProviderGCP   = "gcp"
+	ProviderAzure = "azure"
 )
 
-// Context is one cloud target: an AWS account+role or a GCP project.
+// Context is one cloud target: an AWS account+role, a GCP project or an
+// Azure subscription.
 type Context struct {
 	Name     string `yaml:"-"`
 	Provider string `yaml:"provider"`
@@ -50,6 +52,12 @@ type Context struct {
 	// UseMetadata lets gcloud use the GCE metadata server's service account
 	// (on a GCP VM) when the context has no login of its own.
 	UseMetadata bool `yaml:"use_metadata,omitempty"`
+
+	// Azure
+	TenantID       string `yaml:"tenant_id,omitempty"` // Microsoft Entra tenant ID or domain
+	SubscriptionID string `yaml:"subscription_id,omitempty"`
+	// Bastion is the Azure Bastion that shells and tunnels go through.
+	Bastion *Bastion `yaml:"bastion,omitempty"`
 
 	// Kubernetes clusters reachable from this context, by alias (mek kube).
 	Clusters map[string]*Cluster `yaml:"clusters,omitempty"`
@@ -177,6 +185,7 @@ func (c *Context) Validate() error {
 		{"region", c.Region}, {"sso_start_url", c.SSOStartURL}, {"sso_region", c.SSORegion},
 		{"account_id", c.AccountID}, {"role", c.Role}, {"aws_profile", c.AWSProfile},
 		{"project", c.Project}, {"account", c.Account},
+		{"tenant_id", c.TenantID}, {"subscription_id", c.SubscriptionID},
 	} {
 		if strings.ContainsAny(f.val, "\r\n") {
 			return fmt.Errorf("%s must not contain line breaks", f.key)

@@ -15,7 +15,8 @@ import (
 	"github.com/prateep-r/mek/internal/wizard"
 )
 
-func (e *entryWizard) aws() bool { return e.ctx.Provider == config.ProviderAWS }
+func (e *entryWizard) aws() bool   { return e.ctx.Provider == config.ProviderAWS }
+func (e *entryWizard) azure() bool { return e.ctx.Provider == config.ProviderAzure }
 
 // ---------- targets: hosts for mek shell ----------
 
@@ -51,6 +52,22 @@ func (targetKind) steps(f *wizard.Form, e *entryWizard) {
 		e.nameStep(f, func(a wizard.Answers) string { return alias("targets", e.extra[a["instance"]]) })
 		return
 	}
+	if e.azure() {
+		f.Load("instance", "VM", func(wizard.Answers) ([]wizard.Option, error) {
+			return e.lookup(provider.AzureVMsCommand(), provider.ParseAzureVMs)
+		}).Check(required("a VM name or resource id")).Help("running VMs — or type a name or resource id")
+		f.Input("resource_group", "Resource group", func(a wizard.Answers) string { return e.extra[a["instance"]] }, nil).
+			Help("the VM's; empty: looked up when it is used")
+		f.Select("auth", "Log in with", wizard.Options(
+			wizard.Option{Value: "", Label: "Microsoft Entra ID", Hint: "your az login: no key (the VM needs the AAD login extension)"},
+			wizard.Option{Value: config.AuthSSHKey, Label: "an SSH key", Hint: "the context's key, under ~/.mek/ssh"},
+		), false)
+		f.Input("user", "SSH user", nil, required("a user")).When(func(a wizard.Answers) bool { return a["auth"] == config.AuthSSHKey })
+		f.Load("bastion", "Bastion", e.bastions).When(func(wizard.Answers) bool { return e.ctx.Bastion == nil }).
+			Check(required("a Bastion (resource-group/name)")).Help("the context has none: this VM's")
+		e.nameStep(f, func(a wizard.Answers) string { return alias("targets", a["instance"]) })
+		return
+	}
 	f.Load("instance", "VM", func(wizard.Answers) ([]wizard.Option, error) {
 		return e.lookup(provider.GCEInstancesCommand(), provider.ParseGCEInstances)
 	}).Check(required("a VM name")).Help("running VMs — or type a name")
@@ -62,15 +79,26 @@ func (targetKind) steps(f *wizard.Form, e *entryWizard) {
 func (targetKind) prefill(c *config.Context, name string, a wizard.Answers) {
 	t := c.Targets[name]
 	a["instance"], a["by"], a["zone"], a["user"] = t.Instance, t.Instance, t.Zone, t.User
+	a["resource_group"], a["auth"] = t.ResourceGroup, t.Auth
+	if t.Bastion != nil {
+		a["bastion"] = t.Bastion.ResourceGroup + "/" + t.Bastion.Name
+	}
 }
 
 func (targetKind) apply(e *entryWizard, a wizard.Answers, c *config.Context) {
 	t := &config.Target{Instance: a["instance"], Zone: a["zone"], User: a["user"]}
-	if e.aws() {
+	switch {
+	case e.aws():
 		t.Zone, t.User = "", ""
 		if e.extra[a["instance"]] != "" {
 			t.Instance = a["by"]
 		}
+	case e.azure():
+		t.Zone, t.ResourceGroup, t.Auth = "", a["resource_group"], a["auth"]
+		if t.Auth != config.AuthSSHKey {
+			t.User = ""
+		}
+		t.Bastion = bastionOf(a["bastion"])
 	}
 	if c.Targets == nil {
 		c.Targets = map[string]*config.Target{}
@@ -115,6 +143,12 @@ func (clusterKind) steps(f *wizard.Form, e *entryWizard) {
 		f.Load("cluster", "EKS cluster", func(a wizard.Answers) ([]wizard.Option, error) {
 			return e.lookup(provider.EKSClustersCommand(a["region"]), provider.ParseEKSClusters)
 		}).Check(required("a cluster name"))
+	} else if e.azure() {
+		f.Load("cluster", "AKS cluster", func(wizard.Answers) ([]wizard.Option, error) {
+			return e.lookup(provider.AKSClustersCommand(), provider.ParseAKSClusters)
+		}).Check(required("a cluster name"))
+		f.Input("resource_group", "Resource group", func(a wizard.Answers) string { return e.extra[a["cluster"]] }, required("a resource group")).
+			Help("the cluster's")
 	} else {
 		f.Load("cluster", "GKE cluster", func(wizard.Answers) ([]wizard.Option, error) {
 			return e.lookup(provider.GKEClustersCommand(), provider.ParseGKEClusters)
@@ -134,13 +168,17 @@ func (clusterKind) steps(f *wizard.Form, e *entryWizard) {
 func (clusterKind) prefill(c *config.Context, name string, a wizard.Answers) {
 	cl := c.Clusters[name]
 	a["cluster"], a["region"], a["location"], a["endpoint"], a["namespace"] = cl.Name, cl.Region, cl.Location, cl.Endpoint, cl.Namespace
+	a["resource_group"] = cl.ResourceGroup
 }
 
 func (clusterKind) apply(e *entryWizard, a wizard.Answers, c *config.Context) {
 	cl := &config.Cluster{Name: a["cluster"], Namespace: a["namespace"]}
-	if e.aws() {
+	switch {
+	case e.aws():
 		cl.Region = a["region"]
-	} else {
+	case e.azure():
+		cl.ResourceGroup = a["resource_group"]
+	default:
 		cl.Location, cl.Endpoint = a["location"], a["endpoint"]
 	}
 	if c.Clusters == nil {
@@ -173,6 +211,8 @@ func (tunnelKind) describe(c *config.Context, name string) string {
 	switch {
 	case t.CloudSQL != "":
 		return fmt.Sprintf("localhost:%d → %s", t.Local(), t.CloudSQL)
+	case t.Host != "" && t.Via == "":
+		return fmt.Sprintf("localhost:%d → %s:%d via Bastion", t.Local(), t.Host, t.Port)
 	case t.Host != "":
 		return fmt.Sprintf("localhost:%d → %s:%d via %s", t.Local(), t.Host, t.Port, t.Via)
 	}
@@ -184,21 +224,28 @@ func (tunnelKind) steps(f *wizard.Form, e *entryWizard) {
 		{Value: "host", Label: "a host, through an instance", Hint: "e.g. a database: RDS, a private IP, Redis"},
 		{Value: "port", Label: "a port on an instance", Hint: "a service on the instance itself"},
 	}
-	if !e.aws() {
+	if e.azure() {
+		kinds[0] = wizard.Option{Value: "host", Label: "an IP, through Bastion", Hint: "e.g. a database's private IP: Bastion connects to it"}
+		kinds[1].Label = "a port on a VM"
+	} else if !e.aws() {
 		kinds = append(kinds, wizard.Option{Value: "cloudsql", Label: "Cloud SQL", Hint: "through the Cloud SQL Auth Proxy"})
 	}
 	is := func(k string) func(wizard.Answers) bool { return func(a wizard.Answers) bool { return a["kind"] == k } }
-	via := func(a wizard.Answers) bool { return a["kind"] != "cloudsql" }
+	via := func(a wizard.Answers) bool { return a["kind"] == "port" || a["kind"] == "host" && !e.azure() }
+	remote := func(a wizard.Answers) bool { return a["kind"] != "cloudsql" }
 	f.Select("kind", "Forward to", wizard.Options(kinds...), false)
 	f.Load("via", "Through", e.instancesAndTargets).When(via).Check(required("an instance")).
 		Help("one of the context's targets, or a running instance")
-	if e.aws() {
+	switch {
+	case e.aws():
 		f.Load("host", "Host", e.databases).When(is("host")).Check(required("a host")).Help("RDS and Aurora endpoints — or type a host")
-	} else {
+	case e.azure():
+		f.Input("host", "IP address", nil, checkIP).When(is("host")).Help("in the Bastion's network (or one peered to it)")
+	default:
 		f.Input("host", "Host", nil, required("a host")).When(is("host")).Help("its address, as the instance reaches it")
 	}
-	f.Input("port", "Port", func(a wizard.Answers) string { return e.extra[a["host"]] }, checkPort).When(via)
-	if !e.aws() {
+	f.Input("port", "Port", func(a wizard.Answers) string { return e.extra[a["host"]] }, checkPort).When(remote)
+	if !e.aws() && !e.azure() {
 		f.Load("cloudsql", "Instance", func(wizard.Answers) ([]wizard.Option, error) {
 			return e.lookup(provider.CloudSQLInstancesCommand(), provider.ParseCloudSQL)
 		}).When(is("cloudsql")).Check(required("PROJECT:REGION:INSTANCE")).Help("its connection name")
@@ -227,8 +274,11 @@ func (e *entryWizard) instancesAndTargets(wizard.Answers) ([]wizard.Option, erro
 		opts = append(opts, wizard.Option{Value: n, Hint: "target · " + e.ctx.Targets[n].Instance})
 	}
 	argv, parse := provider.GCEInstancesCommand(), provider.ParseGCEInstances
-	if e.aws() {
+	switch {
+	case e.aws():
 		argv, parse = provider.EC2InstancesCommand(), provider.ParseEC2Instances
+	case e.azure():
+		argv, parse = provider.AzureVMsCommand(), provider.ParseAzureVMs
 	}
 	found, err := e.lookup(argv, parse)
 	if err != nil && len(opts) == 0 {
@@ -255,6 +305,37 @@ func (e *entryWizard) databases(wizard.Answers) ([]wizard.Option, error) {
 		return nil, err1
 	}
 	return append(clusters, dbs...), nil
+}
+
+func checkIP(v string, _ wizard.Answers) error {
+	if net.ParseIP(v) == nil {
+		return errors.New("an IP address, please: Bastion connects to IPs, not names")
+	}
+	return nil
+}
+
+// bastions are the subscription's Bastion hosts; a value is
+// resource-group/name.
+func (e *entryWizard) bastions(wizard.Answers) ([]wizard.Option, error) {
+	out, err := e.app.query(e.l)(provider.AzureBastionsCommand(""))
+	if err != nil {
+		return nil, err
+	}
+	found, err := provider.ParseAzureBastions(out)
+	var opts []wizard.Option
+	for _, f := range found {
+		opts = append(opts, wizard.Option{Value: f.Extra + "/" + f.Value, Label: f.Value, Hint: f.Hint})
+	}
+	return opts, err
+}
+
+// bastionOf reads a resource-group/name answer (nil when empty).
+func bastionOf(v string) *config.Bastion {
+	group, name, ok := strings.Cut(v, "/")
+	if !ok {
+		return nil
+	}
+	return &config.Bastion{Name: name, ResourceGroup: group}
 }
 
 func checkPort(v string, _ wizard.Answers) error {
@@ -320,7 +401,10 @@ func (tunnelKind) apply(_ *entryWizard, a wizard.Answers, c *config.Context) {
 	if a["kind"] == "cloudsql" {
 		t.CloudSQL, t.PrivateIP, t.LocalPort = a["cloudsql"], a["private_ip"] == "yes", local
 	} else {
-		t.Via, t.Port = a["via"], atoi(a["port"])
+		t.Port = atoi(a["port"])
+		if a["kind"] == "port" || c.Provider != config.ProviderAzure {
+			t.Via = a["via"]
+		}
 		if a["kind"] == "host" {
 			t.Host = a["host"]
 		}

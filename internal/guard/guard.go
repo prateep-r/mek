@@ -228,6 +228,42 @@ func ClassifyGCloud(args []string) Class {
 	return classifyVerbs(pos[start+1:], gcloudReadVerbs, gcloudWriteVerbs, gcloudDestructiveVerbs)
 }
 
+// ---------- az (Azure) ----------
+
+var azValueFlags = map[string]bool{
+	"--subscription": true, "--resource-group": true, "-g": true, "--output": true, "-o": true,
+	"--query": true, "--name": true, "-n": true, "--location": true, "-l": true, "--ids": true,
+}
+
+var (
+	// Groups that only touch az's own files: its login, config and extensions.
+	azLocalGroups = map[string]bool{
+		"login": true, "logout": true, "account": true, "config": true, "configure": true,
+		"extension": true, "version": true, "upgrade": true, "interactive": true, "find": true,
+		"init": true, "feedback": true, "cloud": true, "self-test": true, "bicep": true,
+	}
+	azReadVerbs        = []string{"list", "show", "get", "exists", "check", "wait", "query", "tail", "download", "browse"}
+	azDestructiveVerbs = []string{"delete", "remove", "purge", "deallocate", "stop", "reset", "revoke", "detach", "disable", "cancel", "abort", "failover", "regenerate", "reimage", "unregister"}
+	azWriteVerbs       = []string{"create", "update", "set", "add", "start", "restart", "deploy", "apply", "import", "enable", "attach", "assign", "scale", "resize", "upgrade", "invoke", "run", "swap", "move", "copy", "upload", "patch", "restore", "approve", "grant", "register", "rotate"}
+)
+
+// ClassifyAzure classifies `az <group>... <command> ...` arguments.
+func ClassifyAzure(args []string) Class {
+	pos := positionals(args, azValueFlags)
+	if len(pos) == 0 || azLocalGroups[pos[0]] || HasFlag(args, "--help") || HasFlag(args, "-h") {
+		return Read
+	}
+	if pos[0] == "network" && len(pos) >= 3 && pos[1] == "bastion" {
+		switch pos[2] {
+		case "ssh", "rdp":
+			return Shell
+		case "tunnel":
+			return Tunnel
+		}
+	}
+	return classifyVerbs(pos[1:], azReadVerbs, azWriteVerbs, azDestructiveVerbs)
+}
+
 // classifyVerbs lets the first known verb after the top-level group decide,
 // for CLIs shaped like `<cli> <group> [<subgroup>...] <verb>`.
 func classifyVerbs(rest []string, read, write, destructive []string) Class {
