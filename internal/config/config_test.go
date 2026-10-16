@@ -4,7 +4,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -72,7 +71,6 @@ func TestDir(t *testing.T) {
 	t.Setenv("MEK_HOME", "")
 	t.Setenv("XDG_CONFIG_HOME", "/x") // no longer where mek lives
 	t.Setenv("HOME", "/h")
-	t.Setenv("USERPROFILE", "/h") // Windows' home
 	if Dir() != filepath.Join("/h", ".mek") {
 		t.Errorf("home: %s", Dir())
 	}
@@ -130,7 +128,7 @@ func TestInit(t *testing.T) {
 	if b, _ := os.ReadFile(p); string(b) != string(Example()) {
 		t.Error("Init must write the example config")
 	}
-	if fi, _ := os.Stat(home); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o700 { // Windows has no mode bits
+	if fi, _ := os.Stat(home); fi.Mode().Perm() != 0o700 {
 		t.Errorf("config dir perm %v", fi.Mode().Perm())
 	}
 	if _, err := Init(false); err == nil || !strings.Contains(err.Error(), "already exists") {
@@ -149,9 +147,6 @@ func TestInit(t *testing.T) {
 	t.Setenv("MEK_HOME", filepath.Join(file, "mek")) // Stat fails with ENOTDIR
 	if _, err := Init(false); err == nil {
 		t.Error("Init under a file must fail")
-	}
-	if runtime.GOOS == "windows" {
-		return // no read-only directories
 	}
 	locked := filepath.Join(t.TempDir(), "locked")
 	os.Mkdir(locked, 0o500)

@@ -9,8 +9,7 @@ import (
 // shellInit is a shell function named mek: `mek use -s <context>` (or
 // --shell) runs the exports mek prints, so this shell switches; anything else
 // goes to the mek program unchanged.
-var shellInit = map[string]string{
-	"posix": `# mek shell integration — https://github.com/prateep-r/mek
+const shellInit = `# mek shell integration — https://github.com/prateep-r/mek
 mek() {
   if [ "${1-}" = use ]; then
     local __mek_arg __mek_out
@@ -25,53 +24,52 @@ mek() {
   fi
   command mek "$@"
 }
-`,
-	"fish": `# mek shell integration — https://github.com/prateep-r/mek
-function mek --wraps mek --description 'mek; mek use -s switches this shell'
-    if test (count $argv) -gt 0; and test $argv[1] = use; and begin; contains -- -s $argv; or contains -- --shell $argv; end
-        set -l out (command mek $argv --syntax fish); or return
-        printf '%s\n' $out | source
-        return
-    end
-    command mek $argv
-end
-`,
-	"powershell": `# mek shell integration — https://github.com/prateep-r/mek
-function mek {
-    $mek = (Get-Command mek -CommandType Application | Select-Object -First 1).Source
-    if ($args.Count -gt 0 -and $args[0] -eq 'use' -and ($args -contains '-s' -or $args -contains '--shell' -or $args -contains '--shell=true')) {
-        $out = & $mek @args --syntax powershell
-        if ($LASTEXITCODE -ne 0) { return }
-        Invoke-Expression ($out -join "` + "`" + `n")
-        return
-    }
-    & $mek @args
-}
-`,
-}
+`
 
 func newShellInitCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "shell-init zsh|bash|fish|powershell",
+		Use:   "shell-init zsh|bash",
 		Short: "Set up mek use -s to switch this shell: eval \"$(mek shell-init zsh)\"",
 		Long: `Print a shell function that makes "mek use -s <context>" switch the
 current shell by itself, without eval. Add one line to your shell's startup file:
 
   eval "$(mek shell-init zsh)"     # ~/.zshrc
   eval "$(mek shell-init bash)"    # ~/.bashrc
-  mek shell-init fish | source     # ~/.config/fish/config.fish
-  mek shell-init powershell | Out-String | Invoke-Expression   # $PROFILE
 
 Every other mek command runs unchanged.`,
 		Args:      cobra.ExactArgs(1),
-		ValidArgs: []string{"zsh", "bash", "fish", "powershell"},
+		ValidArgs: []string{"zsh", "bash"},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			syntax := map[string]string{"zsh": "posix", "bash": "posix", "fish": "fish", "powershell": "powershell", "pwsh": "powershell"}[args[0]]
-			if syntax == "" {
-				return fmt.Errorf("mek shell-init %s: want zsh, bash, fish or powershell", args[0])
+			if args[0] != "zsh" && args[0] != "bash" {
+				return fmt.Errorf("mek shell-init %s: want zsh or bash", args[0])
 			}
-			fmt.Fprint(cmd.OutOrStdout(), shellInit[syntax])
+			fmt.Fprint(cmd.OutOrStdout(), shellInit)
 			return nil
+		},
+	}
+}
+
+// newCompletionCmd prints the completion script for zsh or bash (contexts,
+// clusters, targets and tunnels complete too).
+func newCompletionCmd(root *cobra.Command) *cobra.Command {
+	return &cobra.Command{
+		Use:   "completion zsh|bash",
+		Short: "Print the shell completion script for zsh or bash",
+		Long: `Print the shell completion script; contexts, clusters, targets and tunnels
+complete too.
+
+  mek completion zsh > "${fpath[1]}/_mek"
+  mek completion bash > ~/.local/share/bash-completion/completions/mek`,
+		Args:      cobra.ExactArgs(1),
+		ValidArgs: []string{"zsh", "bash"},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			switch args[0] {
+			case "zsh":
+				return root.GenZshCompletion(cmd.OutOrStdout())
+			case "bash":
+				return root.GenBashCompletionV2(cmd.OutOrStdout(), true)
+			}
+			return fmt.Errorf("mek completion %s: want zsh or bash", args[0])
 		},
 	}
 }

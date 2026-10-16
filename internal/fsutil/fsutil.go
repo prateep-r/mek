@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-// Test seams; rename retries on Windows (rename_windows.go).
+// Test seams.
 var (
 	createTemp = os.CreateTemp
 	rename     = os.Rename

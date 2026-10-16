@@ -9,7 +9,7 @@
 in, switches between them and runs the official CLIs with the right credentials.
 Think *K9s/Lens, but for cloud accounts*.
 
-**Supported clouds: AWS and Google Cloud (GCP)** — on macOS, Linux and Windows.
+**Supported clouds: AWS and Google Cloud (GCP)** — on macOS and Linux.
 
 | Cloud | Signing in | Shells and tunnels | Kubernetes | Databases |
 |---|---|---|---|---|
@@ -70,15 +70,6 @@ curl -fsSL https://raw.githubusercontent.com/prateep-r/mek/main/install.sh | sh
 curl -fsSLO https://raw.githubusercontent.com/prateep-r/mek/main/install.sh && less install.sh && sh install.sh
 ```
 
-**Windows (PowerShell)** — verifies the SHA-256 checksum, installs to
-`%LOCALAPPDATA%\Programs\mek` and adds it to your user `PATH`, no admin:
-
-```powershell
-irm https://raw.githubusercontent.com/prateep-r/mek/main/install.ps1 | iex
-# options, as for install.sh: $env:MEK_VERSION, $env:MEK_INSTALL_DIR, $env:MEK_DOWNLOAD_URL,
-# and $env:MEK_NO_MODIFY_PATH = '1' to leave PATH alone
-```
-
 **Go**
 
 ```bash
@@ -103,7 +94,7 @@ mek help              # every command; mek help <command> for one in full
 ### Requirements
 
 mek drives the official tools, so install the ones your contexts use (`mek doctor` lists
-exactly which, with `brew` commands on macOS and `winget` commands on Windows):
+exactly which, with `brew` commands on macOS):
 
 | For | Needs |
 |---|---|
@@ -113,7 +104,7 @@ exactly which, with `brew` commands on macOS and `winget` commands on Windows):
 | GKE clusters | [gke-gcloud-auth-plugin](https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_plugin) |
 | `mek shell` / `mek tunnel` on AWS | [session-manager-plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html) |
 | Cloud SQL tunnels | [cloud-sql-proxy](https://cloud.google.com/sql/docs/postgres/connect-auth-proxy#install) |
-| GCP shells, GCP tunnels to another host | `ssh` and `ssh-keygen` ([OpenSSH](https://www.openssh.com); built into macOS, `apt install openssh-client` on Debian/Ubuntu; not on Windows, where gcloud brings PuTTY) |
+| GCP shells, GCP tunnels to another host | `ssh` and `ssh-keygen` ([OpenSSH](https://www.openssh.com); built into macOS, `apt install openssh-client` on Debian/Ubuntu) |
 
 AWS CLI v1 doesn't work: it can't do IAM Identity Center (`sso-session`) logins, and
 `mek doctor` says so.
@@ -127,8 +118,6 @@ AWS CLI v1 doesn't work: it can't do IAM Identity Center (`sso-session`) logins,
 mek completion zsh > "${fpath[1]}/_mek"
 # bash
 mek completion bash > ~/.local/share/bash-completion/completions/mek
-# fish
-mek completion fish > ~/.config/fish/completions/mek.fish
 ```
 
 **Shell integration** — one line in your shell's startup file lets `mek use -s <context>`
@@ -138,18 +127,10 @@ shell's variables):
 ```bash
 eval "$(mek shell-init zsh)"      # ~/.zshrc
 eval "$(mek shell-init bash)"     # ~/.bashrc
-mek shell-init fish | source      # ~/.config/fish/config.fish
 ```
 
-```powershell
-mek shell-init powershell | Out-String | Invoke-Expression   # in $PROFILE (Windows PowerShell or pwsh)
-```
-
-Without it, `mek env --syntax powershell | Out-String | Invoke-Expression` exports a context
-into the session, like `eval "$(mek env)"` does for POSIX shells.
-
-**Update**: `brew upgrade mek` (Homebrew), or `mek self-update` (script / manual installs, and
-Windows; `mek self-update --check` only looks). mek tells Homebrew users to use brew.
+**Update**: `brew upgrade mek` (Homebrew), or `mek self-update` (script / manual installs;
+`mek self-update --check` only looks). mek tells Homebrew users to use brew.
 
 ## Getting started
 
@@ -453,11 +434,6 @@ setopt PROMPT_SUBST
 PROMPT='%F{cyan}$(mek ctx --short 2>/dev/null)%f %~ %# '
 # bash (~/.bashrc)
 PS1='\[\e[36m\]$(mek ctx --short 2>/dev/null)\[\e[0m\] \w \$ '
-```
-
-```powershell
-# PowerShell ($PROFILE)
-function prompt { "($(mek ctx --short 2>$null)) PS $($PWD.Path)> " }
 ```
 
 `mek ctx --short` reads only the config, so it is fast enough to run on every prompt.
@@ -1367,7 +1343,7 @@ start the tunnel again. A tunnel whose first attempt fails isn't retried (`-b` s
 
 ### Where things live
 
-Everything mek keeps is under `~/.mek` (`%USERPROFILE%\.mek` on Windows); `$MEK_HOME`
+Everything mek keeps is under `~/.mek`; `$MEK_HOME`
 overrides it:
 
 | Path | What | Who writes it |
@@ -1387,8 +1363,8 @@ tokens stay in the AWS CLI's own cache (`~/.aws/sso/cache`); mek stores no keys.
 
 **Moving from `~/.config/mek`.** mek before v0.16 kept everything in `~/.config/mek` (or
 `$XDG_CONFIG_HOME/mek`). The first run of a newer mek moves it to `~/.mek` in one rename —
-logins, keys and the audit log come along — and leaves a link at the old path on macOS and
-Linux, so `KUBECONFIG` lines pointing there keep working (on Windows, update them). While
+logins, keys and the audit log come along — and leaves a link at the old path,
+so `KUBECONFIG` lines pointing there keep working. While
 tunnels still run from the old directory it waits; stop them (`mek tunnel stop --all`) and it
 moves on the next run. `XDG_CONFIG_HOME` no longer applies.
 
@@ -1602,7 +1578,7 @@ Access (shells, tunnels, Kubernetes):
   tunnel      Forward a local port to a private host (AWS SSM, GCP IAP, Cloud SQL)
 
 Setup:
-  completion  Generate the autocompletion script for the specified shell
+  completion  Print the shell completion script for zsh or bash
   doctor      Check config and required CLIs, with install hints
   help        Help about any command
   self-update Update mek to the latest release (installs via install.sh / manual download)
@@ -1651,19 +1627,19 @@ current context). For mek's own description of those commands, use `mek help aws
 | `mek aws …` / `mek gcloud …` | the real CLI in the context, through the guard and audit log |
 | `mek kubectl …` | kubectl on the context's clusters, through the guard and audit log |
 | `mek exec -- <cmd> [args…]` | any command with the context's credentials |
-| `eval "$(mek env [ctx])"` | export a context into this shell (bypasses the guard and audit); fish: `mek env --syntax fish \| source` |
+| `eval "$(mek env [ctx])"` | export a context into this shell (bypasses the guard and audit) |
 | **Access (shells, tunnels, Kubernetes)** | |
 | `mek shell <target> [--zone Z] [--user U]` | a shell on an instance (SSM / IAP) |
 | `mek tunnel [name] [--via T] [--to host:port] [--cloudsql C] [--private-ip] [--local N] [-b [--no-restart] [--wait D]]` | forward a local port |
 | `mek tunnel ls` / `stop <name\|id>… \| --all` / `logs <name\|id> [-f]` | list, stop or read tunnels |
 | `mek kube [cluster] [--name N --region R \| --location L]` | write the context's kubeconfig |
 | **Setup** | |
-| `mek shell-init zsh\|bash\|fish` | print the shell integration that makes `mek use -s` work by itself |
+| `mek shell-init zsh\|bash` | print the shell integration that makes `mek use -s` work by itself |
 | `mek doctor` | check the config and tools, with install hints |
 | `mek help [command]` / `mek <command> --help` | how a command works, with examples (`-h` for short) |
 | `mek version` | print the version |
 | `mek self-update [--check]` | update a script-installed binary |
-| `mek completion zsh\|bash\|fish` | shell completion |
+| `mek completion zsh\|bash` | shell completion |
 
 ### Global flags
 
@@ -1731,17 +1707,8 @@ official tools need. Ask whoever runs the account for:
 - If a tunnel's supervisor is killed with `kill -9`, `ls` shows it as dead; on macOS the tunnel's own process can outlive it (`stop` warns when the port is still taken).
 - The wizard rewrites the context it changes: comments inside that context aren't kept (the
   rest of the file's are). Its region lists are built into mek; type a region it doesn't list.
-- The Homebrew cask is macOS-only; use `install.sh` or `go install` on Linux, `install.ps1` on Windows.
-- Windows support is new in v0.16 and tested on CI (unit, integration, contract with the real
-  `aws`, `gcloud.cmd` and `kubectl`, `install.ps1`); GCP shells through gcloud's PuTTY haven't
-  been tried on a real Windows machine yet — please report what you find.
-- Windows: stopping a tunnel ends it at once (Windows has no SIGTERM to let it clean up), and a
-  killed supervisor takes its tunnel with it.
-- Windows: `gcloud` is a `.cmd`, so an argument for it with `%` or `"` is refused (cmd.exe would
-  change it); gcloud takes single quotes in filters.
-- Windows: `mek shell` and `host:` tunnels on GCP use the PuTTY that comes with gcloud; the key
-  stays in the context's own directory, but PuTTY keeps host keys in the registry
-  (`HKCU\Software\SimonTatham\PuTTY\SshHostKeys`), shared by every context.
+- The Homebrew cask is macOS-only; use `install.sh` or `go install` on Linux.
+- macOS and Linux only; zsh and bash for `mek shell-init` and completion.
 
 ## Roadmap
 
@@ -1773,10 +1740,9 @@ How the code fits together (the GoF patterns are named where they shape it):
   fills the steps). **`internal/tunnel`** is a Facade over tunnel records, flock-based
   liveness, port claims and the supervisor, with a State per tunnel deciding what
   listing and stopping it means.
-- **`internal/proc`** is what differs per OS — the implementation side of a Bridge: file
-  locks, process groups, detaching, stop requests and running `.cmd` programs are flock and
-  signals in `proc_unix.go`, LockFileEx, Job Objects, named events and cmd.exe quoting in
-  `proc_windows.go`; `internal/tunnel` and `internal/audit` call one API.
+- **`internal/proc`** is the process and file-lock plumbing — file locks, process groups,
+  detaching and stop requests, with flock and signals — so `internal/tunnel` and
+  `internal/audit` need neither.
 - **`internal/tui`** is `mek ui` (Bubble Tea): each tab and overlay is a State handling its
   own keys, and every key that acts is an `action` (a Command) holding mek's own arguments,
   run in the terminal or in the background — the UI never talks to a cloud itself.
@@ -1806,13 +1772,6 @@ Tests come in five layers, all run by CI (integration and e2e on Linux and macOS
 `make cover` merges unit coverage with coverage from the instrumented binary the
 integration tests run, so `main()` and real process paths count too. Tests that
 check permission errors need a non-root user.
-
-On Windows (CI's `windows-latest` job) the unit, integration and contract tests run too —
-with the real `aws`, `gcloud.cmd`, `gke-gcloud-auth-plugin` and `kubectl`, and background
-tunnels through Job Objects — plus `install.ps1` in Windows PowerShell; every statement in
-`*_windows.go` must be covered (`go run ./test/testkit/cmd/covercheck -suffix _windows.go
-cover.out`), since the 100% gate on Linux and macOS never compiles them. Tests that need a
-POSIX shell or signals skip there.
 
 ### Everything in Docker
 

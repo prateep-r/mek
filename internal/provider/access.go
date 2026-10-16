@@ -1,8 +1,6 @@
 package provider
 
 import (
-	"runtime"
-
 	"github.com/prateep-r/mek/internal/config"
 )
 
@@ -40,11 +38,8 @@ func hasClusters(c *config.Context) bool { return len(c.Clusters) > 0 }
 
 func hasTargets(c *config.Context) bool { return len(c.Targets) > 0 }
 
-var goos = runtime.GOOS // test seam
-
-// needsOpenSSH: gcloud compute ssh uses OpenSSH, except on Windows, where it
-// brings its own PuTTY.
-func needsOpenSSH(c *config.Context) bool { return goos != "windows" && usesSSH(c) }
+// needsOpenSSH: gcloud compute ssh uses OpenSSH.
+func needsOpenSSH(c *config.Context) bool { return usesSSH(c) }
 
 // usesSSH: gcloud compute ssh runs for shells (targets) and tunnels to
 // another host.

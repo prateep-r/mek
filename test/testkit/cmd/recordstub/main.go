@@ -21,7 +21,7 @@ func main() {
 		for os.Mkdir(log+".lock", 0o700) != nil {
 			time.Sleep(10 * time.Millisecond)
 		}
-		name := strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe")
+		name := filepath.Base(os.Args[0])
 		rec := strings.Join(append([]string{name}, os.Args[1:]...), "\037") + "\n" +
 			strings.Join(os.Environ(), "\n") + "\n\036\n"
 		if f, err := os.OpenFile(log, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {

@@ -43,7 +43,7 @@ func Build(dir, ldflags string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	bin := filepath.Join(dir, Exe("mek"))
+	bin := filepath.Join(dir, "mek")
 	args := []string{"build", "-trimpath", "-ldflags", ldflags, "-o", bin}
 	if CoverDir() != "" {
 		args = append(args, "-cover", "-coverpkg=./cmd/...,./internal/...")
@@ -79,12 +79,11 @@ type Result struct {
 	Stdout, Stderr string
 }
 
-// baseEnv is what every OS needs a process to have: on Windows, Go and the
-// cloud CLIs need SystemRoot, PATHEXT, the temp and profile directories.
-var baseEnv = []string{"HOME", "PATH", "SystemRoot", "PATHEXT", "TEMP", "TMP", "USERPROFILE", "LOCALAPPDATA", "APPDATA", "ComSpec"}
+// baseEnv is what a process needs to have.
+var baseEnv = []string{"HOME", "PATH"}
 
 // Command prepares bin with args and env (added to a minimal base env). It
-// runs detached (a new session; on Windows no console), so like a CI job it
+// runs detached (a new session), so like a CI job it
 // has no terminal and mek's confirmation prompts fail closed instead of
 // waiting for input.
 func Command(bin string, env []string, args ...string) *exec.Cmd {
@@ -101,14 +100,6 @@ func Command(bin string, env []string, args ...string) *exec.Cmd {
 	}
 	proc.Detach(cmd)
 	return cmd
-}
-
-// Exe is a program's file name on this OS (aws, or aws.exe on Windows).
-func Exe(name string) string {
-	if runtime.GOOS == "windows" {
-		return name + ".exe"
-	}
-	return name
 }
 
 // RunTimeout bounds every Run.
@@ -158,7 +149,7 @@ func Stubs(t testing.TB, names ...string) (dir, log string) {
 	stub := Tool(t, "recordstub")
 	dir = t.TempDir()
 	for _, n := range names {
-		if err := Install(stub, filepath.Join(dir, Exe(n))); err != nil {
+		if err := Install(stub, filepath.Join(dir, n)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -225,7 +216,7 @@ func Tool(t testing.TB, name string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := filepath.Join(dir, Exe(name))
+	p := filepath.Join(dir, name)
 	cmd := exec.Command("go", "build", "-o", p, "./test/testkit/cmd/"+name)
 	cmd.Dir = root
 	if out, err := cmd.CombinedOutput(); err != nil {

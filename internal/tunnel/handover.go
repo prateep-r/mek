@@ -1,5 +1,3 @@
-//go:build !windows
-
 package tunnel
 
 import (
@@ -28,6 +26,6 @@ func SuperviseMain(in io.Reader, id string) int {
 	return Supervise(in, files[0], files[1], files[2], stop)
 }
 
-// foregroundStop: on Unix `mek tunnel stop` sends a foreground mek SIGTERM,
+// foregroundStop: `mek tunnel stop` sends a foreground mek SIGTERM,
 // which the runner passes on to the tunnel's process.
 func foregroundStop(string) (<-chan struct{}, func()) { return nil, func() {} }

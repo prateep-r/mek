@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -34,9 +33,6 @@ func TestRun(t *testing.T) {
 // The first run of a new mek moves ~/.config/mek to ~/.mek; when that fails
 // it says so and stops, rather than run without the user's config.
 func TestRunMigrates(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("no read-only directories")
-	}
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("MEK_HOME", "")

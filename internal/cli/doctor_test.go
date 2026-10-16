@@ -3,7 +3,6 @@ package cli
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -24,7 +23,7 @@ func stubTools(t *testing.T, tools map[string]fakeTool) string {
 	bin := t.TempDir()
 	stub := testkit.Tool(t, "recordstub")
 	for name, tl := range tools {
-		exe := filepath.Join(bin, testkit.Exe(name))
+		exe := filepath.Join(bin, name)
 		if err := testkit.Install(stub, exe); err != nil {
 			t.Fatal(err)
 		}
@@ -83,15 +82,6 @@ func TestDoctorProblems(t *testing.T) {
 	h = newHarness(t, "contexts:\n  a: {provider: gcp}\n")
 	_, err = h.run("doctor")
 	wantErr(t, err, "1 problem(s)")
-
-	setGOOS(t, "windows") // winget hints, where there is a package
-	h = newHarness(t, testConfig)
-	out, _ = h.run("doctor")
-	for _, want := range []string{"winget install Amazon.AWSCLI", "winget install Google.CloudSDK", "winget install Derailed.k9s"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("windows: missing %q:\n%s", want, out)
-		}
-	}
 }
 
 // doctor finds tools it must never run bare (ssh-keygen would start making a
@@ -108,7 +98,7 @@ func TestDoctorChecks(t *testing.T) {
 	})
 	h := newHarness(t, "contexts:\n  a: {provider: aws, sso_start_url: \"https://o.awsapps.com/start\", sso_region: r, account_id: \"111122223333\", role: R}\n  g: {provider: gcp, project: p, targets: {web: {instance: web-1}}}\n")
 	out, err := h.run("doctor")
-	wantErr(t, err, "1 problem(s)") // only the AWS CLI version: ssh and ssh-keygen are there (or not needed: Windows)
+	wantErr(t, err, "1 problem(s)") // only the AWS CLI version: ssh and ssh-keygen are there
 	for _, want := range []string{"✗ aws", "AWS CLI v1 can't do IAM Identity Center logins", "✓ ssh ", "OpenSSH_9.8p1", "✓ ssh-keygen               " + bin, "Google Cloud SDK 500.0.0"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("doctor missing %q:\n%s", want, out)
@@ -132,9 +122,6 @@ func TestDoctorChecks(t *testing.T) {
 }
 
 func TestDoctorRequiresSSHForGCPShells(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("gcloud brings its own PuTTY on Windows")
-	}
 	stubTools(t, map[string]fakeTool{"gcloud": {out: "gcloud"}})
 	h := newHarness(t, "contexts:\n  g: {provider: gcp, project: p, tunnels: {pg: {via: web-1, host: 10.0.0.5, port: 5432}}}\n")
 	out, err := h.run("doctor")

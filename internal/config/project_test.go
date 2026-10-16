@@ -14,7 +14,6 @@ func layered(t *testing.T, global, team, local string) (repo string) {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
 	t.Setenv("MEK_HOME", filepath.Join(home, ".mek"))
 	t.Setenv("MEK_NO_LOCAL", "")
 	oldFlag, oldNo := ProjectFlag, NoProject
@@ -176,7 +175,6 @@ func TestKey(t *testing.T) {
 func TestShow(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
 	t.Chdir(home)
 	if got := Show(filepath.Join(home, "a", "mek.yaml")); got != "."+string(filepath.Separator)+filepath.Join("a", "mek.yaml") {
 		t.Errorf("under cwd: %s", got)

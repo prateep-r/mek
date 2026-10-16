@@ -203,21 +203,6 @@ func TestEnvDoesNotLeakBetweenContexts(t *testing.T) {
 	}
 }
 
-func TestEnvFish(t *testing.T) {
-	e := Env{Set: map[string]string{"A": `it's a \ path`, "B": "x"}, Unset: []string{"C"}}
-	if got := e.Fish(); got != "set -e C\nset -gx A 'it\\'s a \\\\ path'\nset -gx B 'x'\n" {
-		t.Errorf("fish: %q", got)
-	}
-}
-
-func TestEnvPowerShell(t *testing.T) {
-	e := Env{Set: map[string]string{"A": `it's C:\Users\me $HOME`, "B": "x"}, Unset: []string{"C"}}
-	want := "Remove-Item Env:C -ErrorAction SilentlyContinue\n$env:A = 'it''s C:\\Users\\me $HOME'\n$env:B = 'x'\n"
-	if got := e.PowerShell(); got != want {
-		t.Errorf("powershell: %q", got)
-	}
-}
-
 // Project contexts are stored by Key: two projects' "dev" on different
 // accounts get their own AWS profile, config file, gcloud login and SSH key.
 func TestProjectContextsKeepApart(t *testing.T) {

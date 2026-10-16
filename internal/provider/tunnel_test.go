@@ -3,7 +3,6 @@ package provider
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -92,9 +91,6 @@ func TestGCPTunnelMethods(t *testing.T) {
 	c = argv(t, m, in, 15432)
 	ssh := filepath.Join(dir, "ssh", "g")
 	home := ssh
-	if runtime.GOOS == "windows" {
-		home = "" // gcloud's PuTTY: HOME stays
-	}
 	if m.Class() != guard.Shell || m.Remote() != "10.0.0.9:5432" || c.Env["HOME"] != home ||
 		strings.Join(c.Argv, " ") != "gcloud compute ssh ops@web-1 --zone z --tunnel-through-iap --ssh-key-file "+filepath.Join(ssh, "google_compute_engine")+" -- -N -L 127.0.0.1:15432:10.0.0.9:5432" {
 		t.Errorf("iap ssh: %+v %+v", m, c)

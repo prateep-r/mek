@@ -13,7 +13,6 @@ import (
 func BenchmarkLoadLayers(b *testing.B) {
 	home := b.TempDir()
 	b.Setenv("HOME", home)
-	b.Setenv("USERPROFILE", home)
 	b.Setenv("MEK_HOME", filepath.Join(home, ".mek"))
 	os.MkdirAll(filepath.Join(home, ".mek"), 0o700)
 	os.WriteFile(filepath.Join(home, ".mek", "config.yaml"), []byte(globalYAML), 0o600)

@@ -4,7 +4,6 @@ package integration
 
 import (
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -78,7 +77,7 @@ func TestShellGCPKeepsSSHFilesInMek(t *testing.T) {
 	c := e.calls()[0]
 	ssh := filepath.Join(e.mekHome, "ssh", "gcp")
 	if c.Name != "gcloud" || c.ArgLine() != "compute ssh web-1 --zone asia-southeast1-b --tunnel-through-iap --ssh-key-file "+filepath.Join(ssh, "google_compute_engine") ||
-		(c.Env["HOME"] == ssh) == (runtime.GOOS == "windows") || c.Env["CLOUDSDK_CONFIG"] != filepath.Join(e.mekHome, "gcloud", "gcp") {
+		c.Env["HOME"] != ssh || c.Env["CLOUDSDK_CONFIG"] != filepath.Join(e.mekHome, "gcloud", "gcp") {
 		t.Errorf("gcloud ssh: %+v", c)
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -139,7 +138,7 @@ func TestCtxAddInProject(t *testing.T) {
 	// prod is in mek.yaml and ~/.mek/config.yaml: only mek.local.yaml is free, so it isn't asked.
 	answering(t, []string{"type:prod", "enter", "down", "enter", "enter", "down", "enter", "type:mine", "enter", "enter", "enter", "enter"})
 	out := stderr(t, func() { h.mustRun("ctx", "add") })
-	if !strings.Contains(out, osPath("added prod to ./mek.local.yaml")) || !strings.Contains(out, osPath("in this project it replaces prod from ./mek.yaml")) {
+	if !strings.Contains(out, "added prod to ./mek.local.yaml") || !strings.Contains(out, "in this project it replaces prod from ./mek.yaml") {
 		t.Errorf("output: %s", out)
 	}
 	if !strings.Contains(readFile(t, local), "  prod:\n") {
@@ -149,7 +148,7 @@ func TestCtxAddInProject(t *testing.T) {
 	// A new name: all three files, with what each means.
 	screens := answering(t, []string{"type:extra", "enter"})
 	h.run("ctx", "add")
-	for _, want := range []string{"▸ " + osPath("./mek.local.yaml") + "  yours, this project only (not committed)", osPath("./mek.yaml") + "  the team's — commit it", config.Show(config.Path())} {
+	for _, want := range []string{"▸ " + "./mek.local.yaml" + "  yours, this project only (not committed)", "./mek.yaml" + "  the team's — commit it", config.Show(config.Path())} {
 		if !strings.Contains((*screens)[0], want) {
 			t.Errorf("files lack %q:\n%s", want, (*screens)[0])
 		}
@@ -217,14 +216,14 @@ func TestCtxEditTeamContext(t *testing.T) {
 	h, repo := projectHarness(t)
 	screens := answering(t, []string{"enter"})
 	h.run("ctx", "edit", "orders-dev")
-	for _, want := range []string{osPath("./mek.yaml") + "  the team's — commit the change", osPath("./mek.local.yaml") + "  your own copy — the team's stays as it is"} {
+	for _, want := range []string{"./mek.yaml" + "  the team's — commit the change", "./mek.local.yaml" + "  your own copy — the team's stays as it is"} {
 		if !strings.Contains((*screens)[0], want) {
 			t.Errorf("choices lack %q:\n%s", want, (*screens)[0])
 		}
 	}
 	answering(t, []string{"enter", "down", "enter", "enter", "enter", "down", "enter", "enter", "enter", "enter", "enter"})
 	out := stderr(t, func() { h.mustRun("ctx", "edit", "orders-dev") })
-	if !strings.Contains(out, osPath("copied orders-dev to ./mek.local.yaml")) {
+	if !strings.Contains(out, "copied orders-dev to ./mek.local.yaml") {
 		t.Errorf("output: %s", out)
 	}
 	if got := readFile(t, filepath.Join(repo, config.LocalFile)); !strings.Contains(got, "  orders-dev:\n    provider: gcp\n    project: orders-dev\n") {
@@ -237,7 +236,7 @@ func TestCtxEditTeamContext(t *testing.T) {
 	// mek.local.yaml's own: no choice of file.
 	screens = answering(t, []string{"enter", "enter", "enter", "down", "enter", "enter", "enter", "enter"})
 	h.run("ctx", "edit", "gcp")
-	if strings.Contains((*screens)[0], "Save it in") || !strings.Contains((*screens)[0], osPath("in ./mek.local.yaml:")) {
+	if strings.Contains((*screens)[0], "Save it in") || !strings.Contains((*screens)[0], "in ./mek.local.yaml:") {
 		t.Errorf("own file:\n%s", (*screens)[0])
 	}
 }
@@ -304,7 +303,7 @@ func TestCtxWizardErrors(t *testing.T) {
 }
 
 func TestCtxRenameCurrentUnsaved(t *testing.T) {
-	if runtime.GOOS == "windows" || os.Getuid() == 0 {
+	if os.Getuid() == 0 {
 		t.Skip("needs a directory this user can't write")
 	}
 	h, _ := projectHarness(t)
@@ -366,7 +365,7 @@ func TestCtxEditPickInProject(t *testing.T) {
 	h, _ := projectHarness(t)
 	screens := answering(t, []string{"type:orders"}, nil)
 	h.run("ctx", "edit")
-	if s := (*screens)[0]; !strings.Contains(s, "· "+osPath("./mek.yaml")) {
+	if s := (*screens)[0]; !strings.Contains(s, "· "+"./mek.yaml") {
 		t.Errorf("pick:\n%s", s)
 	}
 }
