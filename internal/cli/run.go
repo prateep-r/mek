@@ -9,13 +9,11 @@ import (
 	"io"
 	"os"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/prateep-r/mek/internal/audit"
-	"github.com/prateep-r/mek/internal/config"
 	"github.com/prateep-r/mek/internal/guard"
 	"github.com/prateep-r/mek/internal/provider"
 	"github.com/prateep-r/mek/internal/runner"
@@ -34,17 +32,15 @@ func (a *app) plainTo(argv, env []string, w io.Writer) error {
 }
 
 // newPassthroughCmd forwards everything after `mek <cli>` to the real CLI.
-// mek's own flags (-c/--context, -y/--yes, --confirm) must come before <cli>.
+// mek's own flags (-c/--context, -y/--yes, --confirm) come before <cli>;
+// cobra parses those (the root traverses to its children), and every
+// flag after <cli> is the CLI's, even one named like mek's (--project).
 func (a *app) newPassthroughCmd(c provider.Cloud) *cobra.Command {
 	return &cobra.Command{
 		Use:                c.CLI + " [args...]",
 		Short:              "Run any " + c.Title + " command in the current context",
 		DisableFlagParsing: true, // every flag belongs to the wrapped CLI
 		RunE: func(_ *cobra.Command, args []string) error {
-			args, err := a.takeGlobalFlags(args)
-			if err != nil {
-				return err
-			}
 			l, err := a.load("")
 			if err != nil {
 				return err
@@ -258,48 +254,3 @@ func confirmResult(ok bool, err error, flag string) (string, error) {
 	return "confirmed", nil
 }
 
-// takeGlobalFlags parses mek flags that appear before the wrapped CLI's
-// arguments (cobra hands them to us raw because DisableFlagParsing is on).
-func (a *app) takeGlobalFlags(args []string) ([]string, error) {
-	for len(args) > 0 {
-		name, val, hasVal := strings.Cut(args[0], "=")
-		switch name {
-		case "-c", "--context", "--confirm", "--project":
-			if !hasVal {
-				if len(args) < 2 {
-					return nil, fmt.Errorf("%s needs a value", name)
-				}
-				val, args = args[1], args[1:]
-			}
-			switch name {
-			case "--confirm":
-				a.opts.confirm = val
-			case "--project":
-				config.ProjectFlag = val
-			default:
-				a.opts.context = val
-			}
-		case "-y", "--yes", "--no-local", "--show-cmd", "--no-show-cmd":
-			on := true
-			if hasVal {
-				b, err := strconv.ParseBool(val)
-				if err != nil {
-					return nil, fmt.Errorf("%s: %q isn't true or false", name, val)
-				}
-				on = b
-			}
-			switch name {
-			case "--show-cmd", "--no-show-cmd":
-				showCmdValue{&a.opts.showCmd, name, name == "--show-cmd"}.Set(strconv.FormatBool(on))
-			case "--no-local":
-				config.NoProject = on
-			default:
-				a.opts.yes = on
-			}
-		default:
-			return args, nil
-		}
-		args = args[1:]
-	}
-	return args, nil
-}

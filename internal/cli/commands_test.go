@@ -352,11 +352,21 @@ func TestCompleteContexts(t *testing.T) {
 	}
 }
 
-func TestTakeGlobalFlagsConsumesAll(t *testing.T) {
-	a := &app{}
-	rest, err := a.takeGlobalFlags([]string{"-c", "uat", "-y"})
-	if err != nil || len(rest) != 0 || a.opts.context != "uat" || !a.opts.yes {
-		t.Errorf("rest=%v opts=%+v err=%v", rest, a.opts, err)
+// mek's flags before the CLI's name are mek's; after it, the CLI's — even
+// one named like mek's.
+func TestFlagsAfterTheCLIAreItsOwn(t *testing.T) {
+	h := newHarness(t, testConfig)
+	h.mustRun("-c", "gcp", "gcloud", "--project", "other", "compute", "instances", "list")
+	if got := h.exec.argv()[0]; got != "gcloud --project other compute instances list" {
+		t.Errorf("gcloud got %q", got)
+	}
+	h.mustRun("-c", "uat", "--yes", "aws", "s3", "ls", "-c", "x", "--yes")
+	if got := h.exec.argv()[1]; got != "aws s3 ls -c x --yes" {
+		t.Errorf("aws got %q", got)
+	}
+	h.mustRun("--context=uat", "aws", "--version")
+	if got := h.exec.argv()[2]; got != "aws --version" {
+		t.Errorf("aws got %q", got)
 	}
 }
 

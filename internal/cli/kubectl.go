@@ -17,10 +17,6 @@ func (a *app) newKubectlCmd() *cobra.Command {
 		Short:              "Run kubectl on the current context's clusters (see `mek kube`)",
 		DisableFlagParsing: true, // every flag belongs to kubectl
 		RunE: func(_ *cobra.Command, args []string) error {
-			args, err := a.takeGlobalFlags(args)
-			if err != nil {
-				return err
-			}
 			l, err := a.load("")
 			if err != nil {
 				return err

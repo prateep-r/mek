@@ -55,6 +55,9 @@ Add one by answering questions: mek ctx add (mek help wizard).
 What protected and readonly do: mek help guard.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		// mek's flags before a wrapped CLI's name are mek's; those after it
+		// are the CLI's (mek -c prod gcloud --project other …).
+		TraverseChildren: true,
 	}
 	pf := root.PersistentFlags()
 	pf.StringVarP(&a.opts.context, "context", "c", "", "context for this command (overrides the current context and $MEK_CONTEXT)")
