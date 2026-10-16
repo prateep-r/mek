@@ -31,6 +31,10 @@ type Cloud struct {
 
 	Tool    Tool     // how `mek doctor` checks for the CLI
 	Plugins []Plugin // extra tools some features need
+
+	// Exports are the variables its Provider's Prepare may set; a shell
+	// that moves to another cloud's context drops them (DropPrevious).
+	Exports []string
 }
 
 // Tool tells `mek doctor` how to find a CLI and how to install it.
@@ -93,6 +97,46 @@ func Validate(cfg *config.Config) error {
 	return nil
 }
 
+// DropPrevious unsets the variables of prev — the context this shell chose
+// before with mek use -s or mek env ($MEK_CONTEXT) — when it is another
+// cloud's: they would keep pointing that cloud's tools (terraform, SDKs,
+// the CLI run directly) at the old context.
+func DropPrevious(cfg *config.Config, ctx *config.Context, env *Env, prev string) {
+	old, ok := cfg.Contexts[prev]
+	if !ok || old.Provider == ctx.Provider {
+		return
+	}
+	c, _ := Lookup(old.Provider) // validated
+	for _, k := range c.Exports {
+		if _, set := env.Set[k]; !set && !slices.Contains(env.Unset, k) {
+			env.Unset = append(env.Unset, k)
+		}
+	}
+}
+
+// foreignKeys rejects a key of one cloud on another cloud's context: an
+// error, never quietly ignored (a project: on an AWS context is a mistake).
+func foreignKeys(c *config.Context) error {
+	for _, k := range []struct {
+		key, cloud string
+		set        bool
+	}{
+		{"sso_start_url", config.ProviderAWS, c.SSOStartURL != ""}, {"sso_region", config.ProviderAWS, c.SSORegion != ""},
+		{"account_id", config.ProviderAWS, c.AccountID != ""}, {"role", config.ProviderAWS, c.Role != ""},
+		{"aws_profile", config.ProviderAWS, c.AWSProfile != ""},
+		{"project", config.ProviderGCP, c.Project != ""}, {"account", config.ProviderGCP, c.Account != ""},
+		{"use_metadata", config.ProviderGCP, c.UseMetadata},
+		{"tenant_id", config.ProviderAzure, c.TenantID != ""}, {"subscription_id", config.ProviderAzure, c.SubscriptionID != ""},
+		{"bastion", config.ProviderAzure, c.Bastion != nil},
+		{"hcloud_profile", config.ProviderHuawei, c.HcloudProfile != ""},
+	} {
+		if k.set && k.cloud != c.Provider {
+			return fmt.Errorf("%s is for %s contexts", k.key, k.cloud)
+		}
+	}
+	return nil
+}
+
 func validateContext(cfg *config.Config, ctx *config.Context) error {
 	if ctx.Provider == "" {
 		return fmt.Errorf("provider is required (%s)", joinOr(names()))
@@ -100,6 +144,9 @@ func validateContext(cfg *config.Config, ctx *config.Context) error {
 	c, ok := Lookup(ctx.Provider)
 	if !ok {
 		return fmt.Errorf("unknown provider %q (supported: %s)", ctx.Provider, joinOr(names()))
+	}
+	if err := foreignKeys(ctx); err != nil {
+		return err
 	}
 	if err := c.Validate(ctx); err != nil {
 		return err

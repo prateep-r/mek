@@ -25,6 +25,8 @@ var azureCloud = Cloud{
 		Tool: Tool{VersionArgs: []string{"--version"}, Brew: "brew install Azure/kubelogin/kubelogin",
 			URL: "https://azure.github.io/kubelogin/install.html"},
 	}},
+	Exports: []string{"AZURE_CONFIG_DIR", "AZURE_EXTENSION_DIR", "AZURE_CORE_LOGIN_EXPERIENCE_V2", "AZURE_TENANT_ID",
+		"AZURE_SUBSCRIPTION_ID", "ARM_TENANT_ID", "ARM_SUBSCRIPTION_ID", "AZURE_DEFAULTS_LOCATION"},
 }
 
 var guid = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -33,26 +35,11 @@ var guid = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-
 func IsGUID(s string) bool { return guid.MatchString(s) }
 
 func validateAzure(c *config.Context) error {
-	if err := notHuawei(c); err != nil {
-		return err
-	}
 	if c.TenantID == "" || c.SubscriptionID == "" {
 		return errors.New("azure context needs tenant_id and subscription_id")
 	}
 	if !guid.MatchString(c.SubscriptionID) {
 		return fmt.Errorf("subscription_id must be a GUID, got %q", c.SubscriptionID)
-	}
-	for _, f := range []struct {
-		key string
-		set bool
-	}{
-		{"sso_start_url", c.SSOStartURL != ""}, {"sso_region", c.SSORegion != ""}, {"account_id", c.AccountID != ""},
-		{"role", c.Role != ""}, {"aws_profile", c.AWSProfile != ""}, {"project", c.Project != ""},
-		{"account", c.Account != ""}, {"use_metadata", c.UseMetadata},
-	} {
-		if f.set {
-			return fmt.Errorf("%s is not for azure contexts", f.key)
-		}
 	}
 	for alias, cl := range c.Clusters {
 		if cl.Region != "" || cl.Location != "" || cl.Endpoint != "" {
@@ -85,24 +72,9 @@ func validateAzure(c *config.Context) error {
 	return nil
 }
 
-// cmpErr is the first error that isn't nil.
-func cmpErr(errs ...error) error {
-	for _, err := range errs {
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// notAzure rejects the Azure-only fields on another cloud's context.
-func notAzure(c *config.Context) error {
-	if c.TenantID != "" || c.SubscriptionID != "" {
-		return errors.New("tenant_id and subscription_id are for azure contexts")
-	}
-	if c.Bastion != nil {
-		return errors.New("bastion is for azure contexts")
-	}
+// azureEntryKeys rejects the Azure-only keys of targets and clusters on
+// another cloud's context (foreignKeys has the context's own).
+func azureEntryKeys(c *config.Context) error {
 	for alias, t := range c.Targets {
 		if t.ResourceGroup != "" || t.Auth != "" || t.Bastion != nil {
 			return fmt.Errorf("targets.%s: resource_group, auth and bastion are for azure", alias)
@@ -128,8 +100,9 @@ type Azure struct {
 // the context's az login in SDKs and terraform.
 var azureUnset = []string{
 	"AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_CLIENT_CERTIFICATE_PATH",
-	"AZURE_USERNAME", "AZURE_PASSWORD",
-	"ARM_CLIENT_ID", "ARM_CLIENT_SECRET", "ARM_CLIENT_CERTIFICATE_PATH", "ARM_USE_MSI", "ARM_USE_OIDC",
+	"AZURE_USERNAME", "AZURE_PASSWORD", "AZURE_CLIENT_CERTIFICATE_PASSWORD", "AZURE_FEDERATED_TOKEN_FILE",
+	"ARM_CLIENT_ID", "ARM_CLIENT_SECRET", "ARM_CLIENT_CERTIFICATE_PATH", "ARM_CLIENT_CERTIFICATE_PASSWORD",
+	"ARM_USE_MSI", "ARM_USE_OIDC", "ARM_OIDC_TOKEN", "ARM_OIDC_TOKEN_FILE_PATH",
 }
 
 func (z *Azure) configDir() string { return filepath.Join(z.dir, "azure", z.ctx.Key()) }

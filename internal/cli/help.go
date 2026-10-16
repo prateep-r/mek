@@ -44,10 +44,12 @@ FILES — all three have the same shape: a "contexts:" map
 THE PROJECT
   The project is the nearest directory, from where you are up, that holds
   mek.yaml or mek.local.yaml. The search stops at a repository's root (a .git)
-  and never looks at your home directory or above it.
+  and never looks at your home directory or above it. Files someone else owns
+  are ignored.
 
     --project DIR    use DIR's files, from anywhere (mek's kubeconfigs do this,
-                     since kubectl runs "mek kube token" in any directory)
+                     since kubectl runs "mek kube token" in any directory);
+                     MEK_PROJECT=DIR does the same
     --no-local       ignore the project's files; MEK_NO_LOCAL=1 does the same
 
   Outside the project its contexts don't exist. A context chosen there with

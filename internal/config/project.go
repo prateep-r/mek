@@ -1,11 +1,13 @@
 package config
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // The project's files: the team's (committed) and yours (gitignored).
@@ -16,7 +18,7 @@ const (
 
 // Project options, set from mek's --project and --no-local flags.
 var (
-	ProjectFlag string // use this directory as the project
+	ProjectFlag string // use this directory as the project ($MEK_PROJECT too)
 	NoProject   bool   // read no project files ($MEK_NO_LOCAL=1 too)
 )
 
@@ -27,7 +29,7 @@ func Sources() (Layers, string) {
 	if NoProject || os.Getenv("MEK_NO_LOCAL") == "1" {
 		return Layers{global}, ""
 	}
-	dir := ProjectFlag
+	dir := cmp.Or(ProjectFlag, os.Getenv("MEK_PROJECT"))
 	if dir == "" {
 		cwd, _ := os.Getwd()
 		dir = FindProject(cwd)
@@ -42,11 +44,12 @@ func Sources() (Layers, string) {
 
 // FindProject is the nearest directory from start up that has a mek.yaml or
 // mek.local.yaml. It stops at a repository's root (a .git) and never looks
-// at your home directory or above it.
+// at your home directory or above it. Files someone else owns don't count:
+// a mek.yaml another user left in /tmp must not pick your contexts.
 func FindProject(start string) string {
 	home, _ := os.UserHomeDir()
 	for dir := start; dir != "" && dir != home; {
-		if exists(filepath.Join(dir, TeamFile)) || exists(filepath.Join(dir, LocalFile)) {
+		if mine(filepath.Join(dir, TeamFile)) || mine(filepath.Join(dir, LocalFile)) {
 			return dir
 		}
 		parent := filepath.Dir(dir)
@@ -61,6 +64,19 @@ func FindProject(start string) string {
 func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// getuid is a test seam.
+var getuid = os.Getuid
+
+// mine reports whether path exists and is yours (or root's).
+func mine(path string) bool {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	uid := fi.Sys().(*syscall.Stat_t).Uid
+	return int(uid) == getuid() || uid == 0
 }
 
 // Key names what mek keeps for a context (its gcloud login, SSH key,

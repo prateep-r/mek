@@ -58,6 +58,14 @@ What protected and readonly do: mek help guard.`,
 		// mek's flags before a wrapped CLI's name are mek's; those after it
 		// are the CLI's (mek -c prod gcloud --project other …).
 		TraverseChildren: true,
+		PersistentPreRunE: func(*cobra.Command, []string) error {
+			if p := config.ProjectFlag; p != "" {
+				if fi, err := os.Stat(p); err != nil || !fi.IsDir() {
+					return fmt.Errorf("--project %s: no such directory", p)
+				}
+			}
+			return nil
+		},
 		// Traversing skips cobra's check for a mistyped command: do it here.
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
@@ -152,6 +160,7 @@ func (a *app) load(name string) (*loaded, error) {
 	if l.env, err = l.prov.Prepare(); err != nil {
 		return nil, err
 	}
+	provider.DropPrevious(l.cfg, l.ctx, &l.env, os.Getenv("MEK_CONTEXT"))
 	l.env.Set["MEK_CONTEXT"] = l.ctx.Name
 	kubeEnv(l.ctx, &l.env)
 	return l, nil

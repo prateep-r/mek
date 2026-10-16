@@ -164,6 +164,14 @@ func decode(b []byte, source string, inProject bool) (*Config, error) {
 // validate applies the rules every context shares; each cloud's own rules
 // live with it (provider.Validate).
 func (c *Config) validate() error {
+	byKey := map[string]string{} // lower-cased Key → name
+	for _, name := range c.Names() {
+		k := strings.ToLower(c.Contexts[name].Key())
+		if other, ok := byKey[k]; ok { // their files would be one on macOS
+			return fmt.Errorf("contexts %q and %q differ only in case; rename one", other, name)
+		}
+		byKey[k] = name
+	}
 	for _, name := range c.Names() {
 		ctx := c.Contexts[name]
 		if err := ctx.Validate(); err != nil {
@@ -184,16 +192,15 @@ func (c *Context) Validate() error {
 	if !validName.MatchString(c.Name) {
 		return errors.New("name may only contain letters, digits, '.', '_' and '-'")
 	}
-	// Values are written into a generated AWS config file, one per line.
-	for _, f := range []struct{ key, val string }{
-		{"region", c.Region}, {"sso_start_url", c.SSOStartURL}, {"sso_region", c.SSORegion},
-		{"account_id", c.AccountID}, {"role", c.Role}, {"aws_profile", c.AWSProfile},
-		{"project", c.Project}, {"account", c.Account},
-		{"tenant_id", c.TenantID}, {"subscription_id", c.SubscriptionID}, {"hcloud_profile", c.HcloudProfile},
-	} {
-		if strings.ContainsAny(f.val, "\r\n") {
-			return fmt.Errorf("%s must not contain line breaks", f.key)
-		}
+	// Values go into a generated AWS config file, one per line, and on CLI
+	// command lines (gcloud --account …), where "-…" would be a flag.
+	if err := argValues("",
+		field{"region", c.Region}, field{"sso_start_url", c.SSOStartURL}, field{"sso_region", c.SSORegion},
+		field{"account_id", c.AccountID}, field{"role", c.Role}, field{"aws_profile", c.AWSProfile},
+		field{"project", c.Project}, field{"account", c.Account},
+		field{"tenant_id", c.TenantID}, field{"subscription_id", c.SubscriptionID}, field{"hcloud_profile", c.HcloudProfile},
+	); err != nil {
+		return err
 	}
 	return c.validateAccess()
 }

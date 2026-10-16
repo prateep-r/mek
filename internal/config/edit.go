@@ -98,6 +98,11 @@ func (e *Editor) layout() (*layout, error) {
 				return l, nil
 			}
 		case *ast.NullNode, nil:
+			_, after, _ := strings.Cut(l.lines[l.keyLine], ":")
+			if v, _, _ := strings.Cut(after, "#"); strings.TrimSpace(v) != "" {
+				l.flow = true // contexts: null (or ~): rewritten whole too
+				return l, nil
+			}
 		default:
 			return nil, fmt.Errorf("can't edit %s: contexts: isn't a mapping", Show(e.Path))
 		}
@@ -333,8 +338,8 @@ func (e *Editor) DeleteEntry(ctx, name, key string) (ok bool, err error) {
 	return false, fmt.Errorf("%s: context %q has no %s.%s", Show(e.Path), ctx, name, key)
 }
 
-// rewrite turns a flow-style contexts: {…} into block style, changed by
-// change.
+// rewrite turns a flow-style contexts: {…} (or null) into block style,
+// changed by change.
 func (e *Editor) rewrite(l *layout, change func(map[string]*Context) error) error {
 	cur, err := decode(e.src, e.Path, false)
 	if err != nil {
@@ -373,8 +378,10 @@ func (e *Editor) Delete(name string) error {
 	}
 	for _, en := range l.entries {
 		if en.name == name {
-			first := en.first // its own comment, right above it, goes with it
-			for first > l.keyLine+1 && strings.HasPrefix(strings.TrimSpace(l.lines[first-1]), "#") {
+			// Its own comment, right above it at its indent, goes with it —
+			// not one indented under the entry before.
+			first, own := en.first, strings.Repeat(" ", l.indent)+"#"
+			for first > l.keyLine+1 && strings.HasPrefix(l.lines[first-1], own) {
 				first--
 			}
 			e.splice(l.lines, first, en.last, nil)
@@ -454,8 +461,14 @@ func (e *Editor) Save() error {
 // Preview is Load with the file at path holding b instead of what is on
 // disk: what the config would be after an edit, to validate before saving.
 func Preview(path string, b []byte) (*Config, error) {
-	src, project := Sources()
-	c, err := override(src, path, b).Read()
+	layers, project := Sources()
+	found := false
+	src := override(layers, path, b, &found)
+	if !found { // a file mek doesn't read yet (a new mek.local.yaml): check it on top
+		base := filepath.Base(path)
+		src = Layers{bytesSource{File{path, base == TeamFile || base == LocalFile}, b}, src}
+	}
+	c, err := src.Read()
 	if err != nil {
 		return nil, err
 	}
@@ -478,17 +491,19 @@ func (s bytesSource) Read() (*Config, error) {
 	return c, nil
 }
 
-// override swaps the File at path for one holding b, through nested Layers.
-func override(s Source, path string, b []byte) Source {
+// override swaps the File at path for one holding b, through nested Layers,
+// and sets found when there is one.
+func override(s Source, path string, b []byte, found *bool) Source {
 	switch s := s.(type) {
 	case Layers:
 		out := make(Layers, len(s))
 		for i, x := range s {
-			out[i] = override(x, path, b)
+			out[i] = override(x, path, b, found)
 		}
 		return out
 	case File:
 		if s.Path == path {
+			*found = true
 			return bytesSource{s, b}
 		}
 	}

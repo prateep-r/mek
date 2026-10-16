@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"os"
+	"path/filepath"
 
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
@@ -55,8 +56,16 @@ of the chosen resource; mek ui asks before each one, on any context.
 			if err != nil {
 				return err
 			}
-			if f := a.opts.showCmd; f.set { // the mek commands the UI runs follow the flag
+			// The mek commands the UI runs follow its flags.
+			if f := a.opts.showCmd; f.set {
 				os.Setenv("MEK_SHOW_CMD", map[bool]string{true: "1", false: "0"}[f.on])
+			}
+			if config.NoProject {
+				os.Setenv("MEK_NO_LOCAL", "1")
+			}
+			if config.ProjectFlag != "" {
+				abs, _ := filepath.Abs(config.ProjectFlag) // checked: a directory
+				os.Setenv("MEK_PROJECT", abs)
 			}
 			return runUI(tui.Live{}, exe, a.opts.context)
 		},

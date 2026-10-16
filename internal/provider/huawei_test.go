@@ -137,11 +137,14 @@ func TestValidateHuawei(t *testing.T) {
 	head := "contexts:\n  h:\n    provider: huawei\n"
 	for in, want := range map[string]string{
 		head: "needs hcloud_profile",
-		head + "    hcloud_profile: p\n    project: x\n":                                                                      "project is not for huawei contexts",
-		head + "    hcloud_profile: p\n    targets: {vm: {instance: x}}\n":                                                    "targets is not for huawei contexts",
+		head + "    hcloud_profile: p\n    project: x\n":                                                                      "project is for gcp contexts",
+		head + "    hcloud_profile: p\n    targets: {vm: {instance: x}}\n":                                                    "clusters and targets are not for huawei contexts",
 		head + "    hcloud_profile: p\n    tunnels: {db: {host: 10.0.0.1, port: 1}}\n":                                        "huawei contexts have no clusters, shells or tunnels",
-		head + "    hcloud_profile: p\n    tenant_id: t\n":                                                                    "tenant_id and subscription_id are for azure contexts",
+		head + "    hcloud_profile: p\n    tenant_id: t\n":                                                                    "tenant_id is for azure contexts",
 		"contexts:\n  a:\n    provider: aws\n    aws_profile: p\n    hcloud_profile: x\n":                                     "hcloud_profile is for huawei contexts",
+		"contexts:\n  a:\n    provider: aws\n    aws_profile: p\n    project: x\n":                                            "project is for gcp contexts", // never quietly ignored
+		"contexts:\n  a:\n    provider: gcp\n    project: p\n    role: Admin\n":                                               "role is for aws contexts",
+		"contexts:\n  a:\n    provider: gcp\n    project: p\n    bastion: {name: b, resource_group: g}\n":                     "bastion is for azure contexts",
 		"contexts:\n  a:\n    provider: azure\n    tenant_id: t\n    subscription_id: " + subID + "\n    hcloud_profile: x\n": "hcloud_profile is for huawei contexts",
 	} {
 		if err := parse(in); err == nil || !strings.Contains(err.Error(), want) {

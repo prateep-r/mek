@@ -156,6 +156,25 @@ func TestFindProject(t *testing.T) {
 	if got := FindProject(filepath.VolumeName(home) + string(filepath.Separator)); got != "" { // the root: nothing above
 		t.Errorf("root: %q", got)
 	}
+
+	// Someone else's mek.yaml is not a project.
+	getuid = func() int { return os.Getuid() + 1 }
+	t.Cleanup(func() { getuid = os.Getuid })
+	if got := FindProject(repo); got != "" {
+		t.Errorf("another user's file: %q", got)
+	}
+	if mine(filepath.Join(repo, "nope")) {
+		t.Error("a missing file is nobody's")
+	}
+}
+
+func TestProjectFromEnv(t *testing.T) {
+	repo := layered(t, globalYAML, teamYAML, "")
+	t.Chdir(t.TempDir())
+	t.Setenv("MEK_PROJECT", repo)
+	if _, dir := Sources(); dir != repo {
+		t.Errorf("MEK_PROJECT: %q", dir)
+	}
 }
 
 func TestKey(t *testing.T) {

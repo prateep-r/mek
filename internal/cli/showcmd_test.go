@@ -203,6 +203,20 @@ func TestShowCmdReviewFixes(t *testing.T) {
 		return nil
 	}
 	h.mustRun("--no-show-cmd", "ui")
+
+	// …and its project flags; a --project that isn't a directory is an error.
+	t.Setenv("MEK_NO_LOCAL", "")
+	t.Setenv("MEK_PROJECT", "")
+	dir := t.TempDir()
+	runUI = func(tui.Source, string, string) error {
+		if os.Getenv("MEK_NO_LOCAL") != "1" || os.Getenv("MEK_PROJECT") != dir {
+			t.Errorf("MEK_NO_LOCAL=%q MEK_PROJECT=%q", os.Getenv("MEK_NO_LOCAL"), os.Getenv("MEK_PROJECT"))
+		}
+		return nil
+	}
+	h.mustRun("--no-local", "--project", dir, "ui")
+	_, err = h.run("--project", filepath.Join(dir, "nope"), "ctx", "ls")
+	wantErr(t, err, "no such directory")
 }
 
 func TestCLIReason(t *testing.T) {
