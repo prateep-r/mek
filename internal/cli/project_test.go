@@ -92,7 +92,7 @@ func TestDoctorProjectFiles(t *testing.T) {
 	t.Cleanup(func() { gitTracked = old })
 	gitTracked = func(string, string) bool { return false }
 	out, _ := h.run("doctor")
-	for _, want := range []string{"✓ ./mek.local.yaml — 1 contexts, replacing gcp from below", "✓ ./mek.yaml — 2 contexts, replacing prod from below",
+	for _, want := range []string{"✓ ./mek.local.yaml — 1 context, replacing gcp from below", "✓ ./mek.yaml — 2 contexts, replacing prod from below",
 		"config.yaml — 2 contexts"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("doctor missing %q:\n%s", want, out)
@@ -231,4 +231,18 @@ func TestEditConfig(t *testing.T) {
 	os.WriteFile(config.Path(), []byte("contexts: ["), 0o600)
 	_, err := h.run("ctx", "rm", "uat", "--yes")
 	wantErr(t, err, "parse")
+}
+
+// -y works on rm like everywhere else: the global flag, before or after.
+func TestRmTakesY(t *testing.T) {
+	for _, args := range [][]string{{"ctx", "rm", "gcp", "-y"}, {"-y", "context", "rm", "uat"}} {
+		h := newHarness(t, testConfig)
+		if out := stderr(t, func() { h.mustRun(args...) }); !strings.Contains(out, "✓ removed") {
+			t.Errorf("%v: %s", args, out)
+		}
+	}
+	h := newHarness(t, "contexts:\n  a: {provider: aws, aws_profile: p, tunnels: {db: {via: i-0123456789abcdef0, port: 1}}}\n")
+	if out := stderr(t, func() { h.mustRun("-c", "a", "ctx", "tunnel", "rm", "db", "-y") }); !strings.Contains(out, "removed tunnel db") {
+		t.Errorf("tunnel rm -y: %s", out)
+	}
 }

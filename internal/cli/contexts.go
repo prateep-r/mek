@@ -40,7 +40,7 @@ Or skip the example: mek ctx add asks for a context and creates the file
 				if err != nil {
 					return err
 				}
-				ui.Info("%s created %s", ui.Green("✓"), p)
+				ui.Info("%s created %s", ui.Green("✓"), config.Show(p))
 				ui.Info("edit it (or add contexts with: mek ctx add), then run: mek ctx ls && mek login <context>")
 				return nil
 			}
@@ -128,7 +128,7 @@ func (a *app) newCtxCmd() *cobra.Command {
 		Long: `Show the current context; mek ctx ls lists them all (* marks the current one).
 
 A context from a project's files is shown with its file:
-  orders-dev (./mek.yaml)  aws 111122223333 / Developer
+  orders-dev (./mek.yaml)  aws 111122223333 / Developer / ap-southeast-1
 Contexts from ~/.mek/config.yaml show none. See: mek help config
 
   mek ctx --short       just the name, for a shell prompt
@@ -235,7 +235,7 @@ in CI (the login still lands in the context's isolated config):
 			return a.runPlain(l.prov.WhoAmICommand(), env)
 		},
 	}
-	cmd.Flags().BoolVar(&adc, "adc", false, "GCP: also run `gcloud auth application-default login`")
+	cmd.Flags().BoolVar(&adc, "adc", false, "GCP: also run gcloud auth application-default login")
 	return cmd
 }
 

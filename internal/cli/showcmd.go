@@ -183,6 +183,7 @@ shell is shown, as POSIX exports you can copy.
   $ mek -c prod aws s3 ls
   ↳ runs:
       export AWS_CONFIG_FILE='/Users/you/.mek/aws/config'
+      export AWS_DEFAULT_REGION='ap-southeast-1'
       export AWS_PROFILE='mek-prod'
       export AWS_REGION='ap-southeast-1'
       aws s3 ls

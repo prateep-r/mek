@@ -299,17 +299,16 @@ func (a *app) newEntryCmd(k entryKind, short, long string) *cobra.Command {
 }
 
 func (a *app) newEntryRmCmd(k entryKind) *cobra.Command {
-	var yes bool
 	noun := k.noun()
 	cmd := &cobra.Command{
 		Use:   "rm <name>",
 		Short: "Remove a context's " + noun + " (asks first; --yes doesn't)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			if a.opts.context == "" && yes { // no list to pick from: this shell's context, if it has one
+			if a.opts.context == "" && a.opts.yes { // no list to pick from: this shell's context, if it has one
 				a.opts.context = os.Getenv("MEK_CONTEXT")
 			}
-			if a.opts.context == "" && !yes {
+			if a.opts.context == "" && !a.opts.yes {
 				if err := needTerminal("ctx " + noun + " rm without -c"); err != nil {
 					return err
 				}
@@ -324,7 +323,7 @@ func (a *app) newEntryRmCmd(k entryKind) *cobra.Command {
 			if k.entry(e.ctx, name) == nil {
 				return fmt.Errorf("%s has no %s %s (have: %s)", e.ctx.Name, noun, name, strings.Join(k.names(e.ctx), ", "))
 			}
-			if !yes {
+			if !a.opts.yes { // -y / --yes
 				ok, err := confirm(fmt.Sprintf("Remove %s %s from %s (%s)?", noun, name, e.ctx.Name, config.Show(e.ctx.Source)))
 				if errors.Is(err, ui.ErrNoTTY) {
 					return errors.New("no terminal to ask on — pass --yes to remove it")
@@ -347,7 +346,6 @@ func (a *app) newEntryRmCmd(k entryKind) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&yes, "yes", false, "don't ask (needs -c)")
 	return cmd
 }
 
