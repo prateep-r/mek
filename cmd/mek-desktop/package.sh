@@ -2,7 +2,7 @@
 # Builds mek-desktop for this machine (the frontend, then the app with cgo)
 # and packages it with the mek CLI it runs, into dist/desktop:
 #   macOS  mek-desktop_<version>_darwin_<arch>.zip   — mek.app (unsigned)
-#   Linux  mek-desktop_<version>_linux_<arch>.tar.gz — needs GTK 3 and WebKitGTK 4.1
+#   Linux  mek-desktop_<version>_linux_<arch>.tar.gz — needs GTK 4 and WebKitGTK 6.0
 # Usage: package.sh <version> [arch]   (arch: amd64 or arm64; default: this machine's)
 set -eu
 

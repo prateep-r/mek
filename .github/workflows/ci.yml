@@ -72,12 +72,12 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: stable
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - name: Install GTK and WebKitGTK (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq libgtk-3-dev libwebkit2gtk-4.1-dev
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libgtk-4-dev libwebkitgtk-6.0-dev
       - run: make desktop-check
       - run: make desktop
 

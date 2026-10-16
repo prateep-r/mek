@@ -105,7 +105,7 @@ DESKTOP_UI := cmd/mek-desktop/frontend
 # macOS: Go needs 13; the app's cgo parts are built for the same.
 DESKTOP_ENV := $(if $(filter Darwin,$(shell uname)),MACOSX_DEPLOYMENT_TARGET=13.0 CGO_CFLAGS=-mmacosx-version-min=13.0 CGO_LDFLAGS=-mmacosx-version-min=13.0)
 
-desktop: ## Build bin/mek-desktop (needs npm and cgo; on Linux, GTK 3 and WebKitGTK 4.1)
+desktop: ## Build bin/mek-desktop (needs npm and cgo; on Linux, GTK 4 and WebKitGTK 6.0)
 	cd $(DESKTOP_UI) && npm ci --no-fund --no-audit && npm run build
 	$(DESKTOP_ENV) go build -tags desktop -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/mek-desktop ./cmd/mek-desktop
 
