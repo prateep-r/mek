@@ -11,7 +11,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -35,7 +34,7 @@ func freePort(t *testing.T) int {
 // arguments there, one per line in the order given.
 func recorder(t *testing.T, dir, name, out string) (log string) {
 	t.Helper()
-	exe := filepath.Join(dir, testkit.Exe(name))
+	exe := filepath.Join(dir, name)
 	if err := testkit.Install(testkit.Tool(t, "recordstub"), exe); err != nil {
 		t.Fatal(err)
 	}
@@ -106,9 +105,6 @@ func TestTunnelWithRealAWS(t *testing.T) {
 // A GCP tunnel to another host: the real gcloud runs ssh -N -L through IAP,
 // with the context's key and known hosts.
 func TestTunnelWithRealGcloudSSH(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("gcloud uses its own PuTTY on Windows, not ssh")
-	}
 	gcloud := realCLI(t, "gcloud")
 	srv, _ := fakeCompute(t)
 	bin := t.TempDir()

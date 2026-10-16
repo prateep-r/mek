@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -99,7 +98,7 @@ func TestWriteAndEnv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fi, err := os.Stat(p); err != nil || runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
+	if fi, err := os.Stat(p); err != nil || fi.Mode().Perm() != 0o600 {
 		t.Fatalf("written: %v %v", fi, err)
 	}
 	ctx.Clusters = nil // ad-hoc clusters only: the file still counts

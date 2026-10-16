@@ -38,7 +38,6 @@ type Tool struct {
 	VersionArgs []string                   // how to print its version (nil: don't run it, only find it)
 	Check       func(version string) error // problems with the installed version (nil: none)
 	Brew        string                     // macOS install command ("" = none)
-	Winget      string                     // Windows install command ("" = none)
 	URL         string                     // install docs
 }
 

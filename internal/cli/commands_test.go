@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -89,7 +88,6 @@ func newHarness(t *testing.T, cfg string) *harness {
 	home := t.TempDir()
 	t.Setenv("MEK_HOME", home)
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("USERPROFILE", os.Getenv("HOME")) // Windows' home
 	t.Setenv("MEK_CONTEXT", "")
 	if cfg != "" {
 		if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte(cfg), 0o600); err != nil {
@@ -164,9 +162,6 @@ func TestUseAndCtx(t *testing.T) {
 	_, err := h.run("use", "nope")
 	wantErr(t, err, "unknown context")
 
-	if runtime.GOOS == "windows" {
-		return // no read-only directories
-	}
 	os.Chmod(h.home, 0o500) // config readable, state can't be saved
 	t.Cleanup(func() { os.Chmod(h.home, 0o700) })
 	_, err = h.run("use", "uat")
@@ -394,40 +389,34 @@ func TestLoginPassesFlagsToTheCLI(t *testing.T) {
 	wantErr(t, err, "at most 1 context")
 }
 
-func TestUseShellShortFlagAndFish(t *testing.T) {
+func TestUseShellShortFlag(t *testing.T) {
 	h := newHarness(t, testConfig)
 	if out := h.mustRun("use", "-s", "prod"); out != "export MEK_CONTEXT='prod'\n" {
 		t.Errorf("use -s: %q", out)
 	}
-	if out := h.mustRun("use", "-s", "prod", "--syntax", "fish"); out != "set -gx MEK_CONTEXT 'prod'\n" {
-		t.Errorf("use -s --syntax fish: %q", out)
-	}
-	if out := h.mustRun("env", "ro", "--syntax", "fish"); !strings.Contains(out, "set -e GOOGLE_APPLICATION_CREDENTIALS\n") || !strings.Contains(out, "set -gx CLOUDSDK_CORE_PROJECT 'p'\n") {
-		t.Errorf("env --syntax fish: %q", out)
-	}
-	if out := h.mustRun("use", "-s", "prod", "--syntax", "powershell"); out != "$env:MEK_CONTEXT = 'prod'\n" {
-		t.Errorf("use -s --syntax powershell: %q", out)
-	}
-	if out := h.mustRun("env", "ro", "--syntax", "powershell"); !strings.Contains(out, "Remove-Item Env:GOOGLE_APPLICATION_CREDENTIALS -ErrorAction SilentlyContinue\n") ||
-		!strings.Contains(out, "$env:CLOUDSDK_CORE_PROJECT = 'p'\n") {
-		t.Errorf("env --syntax powershell: %q", out)
-	}
-	_, err := h.run("use", "-s", "prod", "--syntax", "tcsh")
-	wantErr(t, err, `--syntax "tcsh": want posix, fish or powershell`)
-	_, err = h.run("env", "ro", "--syntax", "tcsh")
-	wantErr(t, err, "want posix, fish or powershell")
+	_, err := h.run("env", "ro", "--syntax", "fish")
+	wantErr(t, err, "unknown flag: --syntax")
 }
 
-func TestShellInit(t *testing.T) {
+func TestShellInitAndCompletion(t *testing.T) {
 	h := newHarness(t, "")
-	for shell, want := range map[string]string{"zsh": "command mek \"$@\"", "bash": "eval \"$__mek_out\"", "fish": "--syntax fish",
-		"powershell": "--syntax powershell", "pwsh": "Invoke-Expression ($out -join \"`n\")"} {
+	for shell, want := range map[string]string{"zsh": "command mek \"$@\"", "bash": "eval \"$__mek_out\""} {
 		if out := h.mustRun("shell-init", shell); !strings.Contains(out, want) {
 			t.Errorf("shell-init %s:\n%s", shell, out)
 		}
 	}
-	_, err := h.run("shell-init", "tcsh")
-	wantErr(t, err, "want zsh, bash, fish or powershell")
+	for _, shell := range []string{"tcsh", "fish", "powershell"} {
+		_, err := h.run("shell-init", shell)
+		wantErr(t, err, "want zsh or bash")
+		_, err = h.run("completion", shell)
+		wantErr(t, err, "want zsh or bash")
+	}
+	if out := h.mustRun("completion", "zsh"); !strings.HasPrefix(out, "#compdef mek") {
+		t.Errorf("completion zsh:\n%.80s", out)
+	}
+	if out := h.mustRun("completion", "bash"); !strings.Contains(out, "bash completion V2 for mek") {
+		t.Errorf("completion bash:\n%.80s", out)
+	}
 }
 
 // `mek help` lists every command once, under its group.

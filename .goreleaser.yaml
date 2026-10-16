@@ -14,7 +14,7 @@ builds:
     main: ./cmd/mek
     binary: mek
     env: [CGO_ENABLED=0]
-    goos: [darwin, linux, windows]
+    goos: [darwin, linux]
     goarch: [amd64, arm64]
     flags: [-trimpath]
     ldflags:
@@ -25,20 +25,16 @@ builds:
 
 archives:
   - formats: [tar.gz]
-    # Windows gets a .zip (install.ps1, self-update; Expand-Archive reads it).
-    format_overrides:
-      - goos: windows
-        formats: [zip]
-    # No version in the name, so install.sh / install.ps1 / self-update can use
-    # https://github.com/<repo>/releases/latest/download/mek_<os>_<arch>.<tar.gz|zip>
+    # No version in the name, so install.sh / self-update can use
+    # https://github.com/<repo>/releases/latest/download/mek_<os>_<arch>.tar.gz
     name_template: "mek_{{ .Os }}_{{ .Arch }}"
     files: [README.md]
 
 checksum:
   name_template: checksums.txt
 
-# v0.16.0-rc1 is a GitHub pre-release: releases/latest (install.sh,
-# install.ps1, self-update) skips it.
+# A tag like v1.0.0-rc1 is a GitHub pre-release: releases/latest (install.sh,
+# self-update) skips it.
 release:
   prerelease: auto
 

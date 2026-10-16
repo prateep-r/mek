@@ -97,7 +97,7 @@ EXAMPLE
       tunnels: {db: {via: "tag:Name=orders-bastion", host: orders-db.internal, port: 5432}}
 
 WHERE MEK KEEPS THINGS
-  ~/.mek (%USERPROFILE%\.mek on Windows), or $MEK_HOME: config.yaml, the current
+  ~/.mek, or $MEK_HOME: config.yaml, the current
   context, the audit log, kubeconfigs, gcloud logins, SSH keys and tunnels. mek
   before v0.16 used ~/.config/mek: the first run of a newer one moves it there,
   leaving a link at the old path on macOS and Linux.`

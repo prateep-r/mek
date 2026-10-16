@@ -155,8 +155,8 @@ func PortFree(port int) error {
 }
 
 // Foreground records a tunnel that runs in this mek process, so `ls` shows
-// it and `stop` can end it; call done when it ends. stop fires when `mek
-// tunnel stop` asks for it where signals can't (Windows; nil elsewhere).
+// it and `stop` can end it; call done when it ends. stop is nil: `mek tunnel
+// stop` sends this mek SIGTERM, which the runner passes on.
 func Foreground(r Record) (stop <-chan struct{}, done func(), err error) {
 	port, err := claimPort(r.Local)
 	if err != nil {
@@ -176,7 +176,7 @@ func Foreground(r Record) (stop <-chan struct{}, done func(), err error) {
 	stop, unlisten := foregroundStop(r.ID)
 	return stop, func() {
 		unlisten()
-		life.Close() // before removing: Windows can't remove an open file
+		life.Close()
 		port.Close()
 		remove(r.ID)
 	}, nil

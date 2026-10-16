@@ -74,7 +74,7 @@ func TestEditorKeepsTheRest(t *testing.T) {
 	if b, _ := os.ReadFile(p); string(b) != got {
 		t.Error("saved bytes differ")
 	}
-	if fi, _ := os.Stat(p); goos != "windows" && fi.Mode().Perm() != 0o640 { // its mode kept
+	if fi, _ := os.Stat(p); fi.Mode().Perm() != 0o640 { // its mode kept
 		t.Errorf("mode %v", fi.Mode().Perm())
 	}
 }

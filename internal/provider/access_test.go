@@ -4,7 +4,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -178,20 +177,13 @@ func TestGCPShell(t *testing.T) {
 		}
 	}
 
-	old := goos
-	t.Cleanup(func() { goos = old })
-	goos = "windows" // gcloud's PuTTY: HOME stays
-	if c, _ := g.ShellCommand(Instance{ID: "web-1", Zone: "z"}); c.Env["HOME"] != "" {
-		t.Errorf("windows: %v", c.Env)
-	}
-	goos = "linux"
 	c, err := g.ShellCommand(Instance{ID: "web-1", Zone: "z", User: "ops"})
 	ssh := filepath.Join(dir, "ssh", "g")
 	if err != nil || strings.Join(c.Argv, " ") != "gcloud compute ssh ops@web-1 --zone z --tunnel-through-iap --ssh-key-file "+filepath.Join(ssh, "google_compute_engine") ||
 		c.Env["HOME"] != ssh || c.Requires != nil {
 		t.Errorf("shell: %+v %v", c, err)
 	}
-	if fi, err := os.Stat(ssh); err != nil || runtime.GOOS != "windows" && fi.Mode().Perm() != 0o700 {
+	if fi, err := os.Stat(ssh); err != nil || fi.Mode().Perm() != 0o700 {
 		t.Errorf("ssh dir: %v %v", fi, err)
 	}
 	if c, _ := g.ShellCommand(Instance{ID: "vm-1", Zone: "z"}); c.Argv[3] != "vm-1" {
@@ -215,16 +207,8 @@ func TestUsesSSHAndAWSCLIv2(t *testing.T) {
 			t.Errorf("usesSSH(%+v) = %v", c, !want)
 		}
 	}
-	old := goos
-	t.Cleanup(func() { goos = old })
-	shell := &config.Context{Targets: map[string]*config.Target{"w": {}}}
-	goos = "linux"
-	if !needsOpenSSH(shell) {
-		t.Error("linux needs OpenSSH for gcloud compute ssh")
-	}
-	goos = "windows"
-	if needsOpenSSH(shell) {
-		t.Error("windows: gcloud uses its own PuTTY")
+	if !needsOpenSSH(&config.Context{Targets: map[string]*config.Target{"w": {}}}) {
+		t.Error("gcloud compute ssh needs OpenSSH")
 	}
 	if awsCLIv2("aws-cli/1.33.0 Python/3.11") == nil || awsCLIv2("aws-cli/2.17.0 Python/3.12") != nil {
 		t.Error("awsCLIv2")

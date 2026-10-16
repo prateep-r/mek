@@ -76,14 +76,14 @@ What protected and readonly do: mek help guard.`,
 	}
 	add("run", a.newKubectlCmd(), a.newExecCmd(), a.newEnvCmd())
 	add("access", a.newShellCmd(), a.newTunnelCmd(), a.newKubeCmd())
-	add("setup", newShellInitCmd(), newDoctorCmd(), newVersionCmd(), newSelfUpdateCmd())
+	add("setup", newShellInitCmd(), newCompletionCmd(root), newDoctorCmd(), newVersionCmd(), newSelfUpdateCmd())
 	root.AddCommand(
 		helpTopic("config", "Where contexts come from: ~/.mek/config.yaml, a project's mek.yaml and mek.local.yaml", configHelp),
 		helpTopic("guard", "What protected and readonly do, command by command", guardHelp()),
 		helpTopic("wizard", "mek ctx add / edit: the keys, what it looks up in the cloud, how it saves", wizardHelp()),
 	)
 	root.SetHelpCommandGroupID("setup")
-	root.SetCompletionCommandGroupID("setup")
+	root.CompletionOptions.DisableDefaultCmd = true // ours: zsh and bash
 	return root
 }
 

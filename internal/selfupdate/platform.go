@@ -1,5 +1,3 @@
-//go:build !windows
-
 package selfupdate
 
 import "github.com/prateep-r/mek/internal/fsutil"

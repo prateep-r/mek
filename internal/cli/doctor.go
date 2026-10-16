@@ -53,10 +53,8 @@ func anyContext(f func(*config.Context) bool) func(*config.Config) bool {
 
 var extraTools = []tool{
 	{"kubectl", "Kubernetes CLI (mek kubectl)", anyContext(func(x *config.Context) bool { return len(x.Clusters) > 0 }),
-		provider.Tool{VersionArgs: []string{"version", "--client"}, Brew: "brew install kubectl",
-			Winget: "winget install Kubernetes.kubectl", URL: "https://kubernetes.io/docs/tasks/tools/"}},
-	{"k9s", "Kubernetes TUI", nil, provider.Tool{VersionArgs: []string{"version", "--short"}, Brew: "brew install k9s",
-		Winget: "winget install Derailed.k9s", URL: "https://k9scli.io/topics/install/"}},
+		provider.Tool{VersionArgs: []string{"version", "--client"}, Brew: "brew install kubectl", URL: "https://kubernetes.io/docs/tasks/tools/"}},
+	{"k9s", "Kubernetes TUI", nil, provider.Tool{VersionArgs: []string{"version", "--short"}, Brew: "brew install k9s", URL: "https://k9scli.io/topics/install/"}},
 }
 
 // gitTracked reports whether git tracks file in dir (false without git).
@@ -186,10 +184,13 @@ func probeTools(ts []tool) []chan probe {
 	return res
 }
 
-var goos = runtime.GOOS // test seam: install hints differ on macOS and Windows
+var goos = runtime.GOOS // test seam: macOS gets brew commands
 
 func hint(p ui.Palette, t tool) string {
-	cmd := map[string]string{"darwin": t.Brew, "windows": t.Winget}[goos]
+	cmd := ""
+	if goos == "darwin" {
+		cmd = t.Brew
+	}
 	if cmd == "" {
 		return t.URL
 	}
@@ -202,7 +203,7 @@ func firstLine(path string, args []string) string {
 	// stdout first: tools warn on stderr (kubectl about an expired login), but a
 	// few print their version only there (ssh -V).
 	var stdout, stderr bytes.Buffer
-	cmd := proc.CommandContext(ctx, path, args...) // gcloud is a .cmd on Windows
+	cmd := proc.CommandContext(ctx, path, args...)
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
 	text := strings.TrimSpace(stdout.String())

@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -37,9 +36,6 @@ func TestKubeWritesKubeconfig(t *testing.T) {
 	}
 	kc, _ := os.ReadFile(path)
 	command := "command: " + mek
-	if strings.Contains(mek, `\`) { // YAML quotes a Windows path
-		command = `command: "` + strings.ReplaceAll(mek, `\`, `\\`) + `"`
-	}
 	for _, want := range []string{"server: https://ABC.eks.amazonaws.com", command, "current-context: prod/main", "interactiveMode: Never"} {
 		if !strings.Contains(string(kc), want) {
 			t.Errorf("kubeconfig missing %q:\n%s", want, kc)
@@ -126,9 +122,6 @@ func TestKubectlPassthrough(t *testing.T) {
 // eval "$(mek use --shell ...)" in a real shell: kubectl typed directly
 // follows the context, and mek only ever unsets its own KUBECONFIG.
 func TestUseShellKubeconfig(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX shell; PowerShell has its own test")
-	}
 	e := kubeSetup(t)
 	script := `
 eval "$(mek use --shell prod)"; kubectl get ns

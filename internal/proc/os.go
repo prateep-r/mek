@@ -1,5 +1,3 @@
-//go:build !windows
-
 package proc
 
 import (
@@ -72,7 +70,7 @@ func signalPID(pid int, sig syscall.Signal) {
 }
 
 // StopRequests fires when this process is asked to stop: SIGTERM (mek
-// tunnel stop), SIGINT or SIGHUP. id names the tunnel (used on Windows).
+// tunnel stop), SIGINT or SIGHUP.
 func StopRequests(string) (<-chan struct{}, func()) {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)

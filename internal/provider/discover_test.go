@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -104,7 +103,6 @@ func cacheToken(t *testing.T, key, token, expires string) {
 
 func TestSSOToken(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("USERPROFILE", os.Getenv("HOME"))
 	url := "https://acme.awsapps.com/start"
 	if got := SSOToken(url); got != "" {
 		t.Errorf("no cache: %q", got)
@@ -135,7 +133,7 @@ func TestWithTokenFile(t *testing.T) {
 		if string(b) != `{"accessToken":"s3cr3t"}` {
 			t.Errorf("file: %s", b)
 		}
-		if fi, _ := os.Stat(path); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
+		if fi, _ := os.Stat(path); fi.Mode().Perm() != 0o600 {
 			t.Errorf("mode %v", fi.Mode().Perm())
 		}
 		return errors.New("aws failed")

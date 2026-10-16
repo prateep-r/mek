@@ -2,7 +2,6 @@ package selfupdate
 
 import (
 	"archive/tar"
-	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
@@ -12,7 +11,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -115,7 +113,7 @@ func TestUpdate(t *testing.T) {
 	if b, _ := os.ReadFile(exe); string(b) != "NEW" {
 		t.Errorf("binary = %q", b)
 	}
-	if fi, _ := os.Stat(exe); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o755 {
+	if fi, _ := os.Stat(exe); fi.Mode().Perm() != 0o755 {
 		t.Errorf("perm = %v", fi.Mode().Perm())
 	}
 
@@ -142,7 +140,7 @@ func TestUpdateRefuses(t *testing.T) {
 			body := []byte("this is definitely not gzip data")
 			sum := sha256.Sum256(body)
 			return map[string][]byte{assetName(): body, "checksums.txt": []byte(hex.EncodeToString(sum[:]) + "  " + assetName())}
-		}(), "zip"}, // gzip: … or zip: …
+		}(), "gzip"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -172,17 +170,15 @@ func TestUpdateEnvironmentErrors(t *testing.T) {
 	}
 
 	release(t, "v9.0.0", goodAssets("NEW"))
-	if runtime.GOOS != "windows" { // Windows has no read-only directories
-		locked := t.TempDir()
-		exe := installed(t, locked)
-		os.Chmod(locked, 0o500) // can't place the new binary next to the old one
-		t.Cleanup(func() { os.Chmod(locked, 0o700) })
-		if _, err := Update("o/mek", "v9.0.0"); err == nil || !strings.Contains(err.Error(), "cannot replace") {
-			t.Errorf("read-only dir: %v", err)
-		}
-		if b, _ := os.ReadFile(exe); string(b) != "OLD" {
-			t.Error("binary changed despite the error")
-		}
+	locked := t.TempDir()
+	exe := installed(t, locked)
+	os.Chmod(locked, 0o500) // can't place the new binary next to the old one
+	t.Cleanup(func() { os.Chmod(locked, 0o700) })
+	if _, err := Update("o/mek", "v9.0.0"); err == nil || !strings.Contains(err.Error(), "cannot replace") {
+		t.Errorf("read-only dir: %v", err)
+	}
+	if b, _ := os.ReadFile(exe); string(b) != "OLD" {
+		t.Error("binary changed despite the error")
 	}
 
 	baseURL = "http://127.0.0.1:1"
@@ -214,15 +210,5 @@ func TestExtractCorruptTar(t *testing.T) {
 
 // makeArchive is a release archive for this OS holding the binary.
 func makeArchive(bin []byte) []byte {
-	if runtime.GOOS != "windows" {
-		return makeTGZ(nil, binaryName, bin)
-	}
-	var buf bytes.Buffer
-	zw := zip.NewWriter(&buf)
-	w, _ := zw.Create("README.md")
-	w.Write([]byte("hi"))
-	w, _ = zw.Create(binaryName)
-	w.Write(bin)
-	zw.Close()
-	return buf.Bytes()
+	return makeTGZ(nil, binaryName, bin)
 }

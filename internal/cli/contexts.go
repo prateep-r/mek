@@ -69,7 +69,6 @@ Or skip the example: mek ctx add asks for a context and creates the file
 
 func newUseCmd() *cobra.Command {
 	var shell bool
-	var syntax string
 	cmd := &cobra.Command{
 		Use:   "use <context>",
 		Short: "Switch the current context (every shell), or only this shell with -s",
@@ -82,7 +81,7 @@ func newUseCmd() *cobra.Command {
 The saved context is shared by all your terminals; -s (--shell) leaves it
 alone, so terminals can work on different contexts at the same time. A
 program can't change its shell's variables, so -s prints them for the shell
-to run: put eval "$(mek shell-init zsh)" in ~/.zshrc (or bash, fish) and
+to run: put eval "$(mek shell-init zsh)" in ~/.zshrc (or ~/.bashrc) and
 mek use -s does that by itself.`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: completeContexts,
@@ -98,9 +97,7 @@ mek use -s does that by itself.`,
 			if shell {
 				env := provider.Env{Set: map[string]string{"MEK_CONTEXT": ctx.Name}}
 				kubeEnv(ctx, &env) // kubectl and K9s typed in this shell follow the context
-				if err := printEnv(cmd.OutOrStdout(), env, syntax); err != nil {
-					return err
-				}
+				fmt.Fprint(cmd.OutOrStdout(), env.Shell())
 				ui.Info("%s this shell now uses %s %s %s", ui.Green("✓"), ui.Bold(ctx.Name),
 					ui.Dim(provider.For(cfg, ctx).Describe()), tags(ui.Err(), ctx))
 				return nil
@@ -119,7 +116,6 @@ mek use -s does that by itself.`,
 		},
 	}
 	cmd.Flags().BoolVarP(&shell, "shell", "s", false, `switch only this shell (prints exports; mek shell-init runs them for you)`)
-	syntaxFlag(cmd, &syntax)
 	return cmd
 }
 

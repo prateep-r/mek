@@ -16,7 +16,6 @@ func migrateHome(t *testing.T) (home, old string) {
 	t.Helper()
 	home = t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
 	t.Setenv("MEK_HOME", "")
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Cleanup(func() { oldDir = "" })
@@ -39,10 +38,8 @@ func TestMigrate(t *testing.T) {
 	if !strings.Contains(out.String(), "✓ mek moved "+old+" to "+dst) {
 		t.Errorf("message: %q", out.String())
 	}
-	if goos != "windows" { // the old path still leads to the files
-		if b, _ := os.ReadFile(filepath.Join(old, "config.yaml")); len(b) == 0 {
-			t.Error("no link at the old path")
-		}
+	if b, _ := os.ReadFile(filepath.Join(old, "config.yaml")); len(b) == 0 { // the old path still leads to the files
+		t.Error("no link at the old path")
 	}
 	out.Reset()
 	if err := Migrate(&out); err != nil || out.Len() != 0 { // moved already: quiet
@@ -64,7 +61,6 @@ func TestMigrateNothingToDo(t *testing.T) {
 	}
 	t.Setenv("MEK_HOME", "")
 	t.Setenv("HOME", "")
-	t.Setenv("USERPROFILE", "")
 	if err := Migrate(&out); err != nil { // no home at all
 		t.Error(err)
 	}
@@ -114,9 +110,9 @@ func TestMigrateWaitsForTunnels(t *testing.T) {
 }
 
 func TestMigrateFailures(t *testing.T) {
-	_, old := migrateHome(t)
-	oldRename, oldLink, oldGOOS := rename, symlink, goos
-	t.Cleanup(func() { rename, symlink, goos = oldRename, oldLink, oldGOOS })
+	migrateHome(t)
+	oldRename, oldLink := rename, symlink
+	t.Cleanup(func() { rename, symlink = oldRename, oldLink })
 
 	rename = func(string, string) error { return errors.New("cross-device link") }
 	if err := Migrate(&bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "move it yourself") {
@@ -124,18 +120,9 @@ func TestMigrateFailures(t *testing.T) {
 	}
 	rename = oldRename
 
-	goos = "linux" // a link is left on Unix
 	symlink = func(string, string) error { return errors.New("not permitted") }
 	var out bytes.Buffer
 	if err := Migrate(&out); err != nil || !strings.Contains(out.String(), "couldn't leave a link") {
 		t.Errorf("symlink: %v %q", err, out.String())
-	}
-
-	home, _ := migrateHome(t) // Windows: no link, a note instead
-	_ = old
-	goos = "windows"
-	out.Reset()
-	if err := Migrate(&out); err != nil || !strings.Contains(out.String(), "now need "+filepath.Join(home, ".mek")) {
-		t.Errorf("windows: %v %q", err, out.String())
 	}
 }

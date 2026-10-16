@@ -4,16 +4,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/prateep-r/mek/internal/config"
 	"github.com/prateep-r/mek/internal/ui"
 )
-
-// osPath writes ./x with this OS's separator, as mek shows paths.
-func osPath(s string) string { return strings.ReplaceAll(s, "./", "."+string(filepath.Separator)) }
 
 // projectHarness is testConfig plus a project, worked in from its root.
 func projectHarness(t *testing.T) (*harness, string) {
@@ -37,14 +33,14 @@ func TestProjectContexts(t *testing.T) {
 
 	// The team's prod replaces yours — said every time — and stays protected.
 	out := stderr(t, func() { h.mustRun("-c", "prod", "aws", "s3", "ls") })
-	for _, want := range []string{osPath("⚠ prod from ./mek.yaml replaces your prod in"), osPath("● prod (./mek.yaml) [protected] aws profile team-prod")} {
+	for _, want := range []string{"⚠ prod from ./mek.yaml replaces your prod in", "● prod (./mek.yaml) [protected] aws profile team-prod"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("banner missing %q:\n%s", want, out)
 		}
 	}
 	// Your mek.local.yaml replacing your own: shown, not warned about.
 	out = stderr(t, func() { h.mustRun("-c", "gcp", "gcloud", "config", "list") })
-	if !strings.Contains(out, osPath("● gcp (./mek.local.yaml) gcp my-sandbox / -")) || strings.Contains(out, "⚠") {
+	if !strings.Contains(out, "● gcp (./mek.local.yaml) gcp my-sandbox / -") || strings.Contains(out, "⚠") {
 		t.Errorf("local banner:\n%s", out)
 	}
 	// ~/.mek/config.yaml's contexts look as before.
@@ -58,12 +54,12 @@ func TestProjectContexts(t *testing.T) {
 	}
 
 	ls := h.mustRun("ctx", "ls")
-	for _, want := range []string{"orders-dev", osPath("(./mek.yaml)"), osPath("(./mek.local.yaml)")} {
+	for _, want := range []string{"orders-dev", "(./mek.yaml)", "(./mek.local.yaml)"} {
 		if !strings.Contains(ls, want) {
 			t.Errorf("ctx ls missing %q:\n%s", want, ls)
 		}
 	}
-	if out := h.mustRun("-c", "orders-dev", "ctx"); !strings.Contains(out, osPath("orders-dev (./mek.yaml)")) {
+	if out := h.mustRun("-c", "orders-dev", "ctx"); !strings.Contains(out, "orders-dev (./mek.yaml)") {
 		t.Errorf("ctx: %q", out)
 	}
 	if out := h.mustRun("--no-local", "ctx", "ls"); strings.Contains(out, "orders-dev") {
@@ -76,11 +72,11 @@ func TestInitProjectFiles(t *testing.T) {
 	os.Remove(filepath.Join(repo, config.TeamFile))
 	os.Remove(filepath.Join(repo, config.LocalFile))
 	out := stderr(t, func() { h.mustRun("init", "--project") })
-	if !strings.Contains(out, osPath("created ./mek.yaml")) || !strings.Contains(out, "commit it") {
+	if !strings.Contains(out, "created ./mek.yaml") || !strings.Contains(out, "commit it") {
 		t.Errorf("--project: %s", out)
 	}
 	out = stderr(t, func() { h.mustRun("init", "--local") })
-	if !strings.Contains(out, osPath("created ./mek.local.yaml")) || !strings.Contains(out, osPath("added mek.local.yaml to ./.gitignore")) {
+	if !strings.Contains(out, "created ./mek.local.yaml") || !strings.Contains(out, "added mek.local.yaml to ./.gitignore") {
 		t.Errorf("--local: %s", out)
 	}
 	_, err := h.run("init", "--local")
@@ -96,7 +92,7 @@ func TestDoctorProjectFiles(t *testing.T) {
 	t.Cleanup(func() { gitTracked = old })
 	gitTracked = func(string, string) bool { return false }
 	out, _ := h.run("doctor")
-	for _, want := range []string{osPath("✓ ./mek.local.yaml — 1 contexts, replacing gcp from below"), osPath("✓ ./mek.yaml — 2 contexts, replacing prod from below"),
+	for _, want := range []string{"✓ ./mek.local.yaml — 1 contexts, replacing gcp from below", "✓ ./mek.yaml — 2 contexts, replacing prod from below",
 		"config.yaml — 2 contexts"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("doctor missing %q:\n%s", want, out)
@@ -104,7 +100,7 @@ func TestDoctorProjectFiles(t *testing.T) {
 	}
 	gitTracked = func(string, string) bool { return true }
 	out, err := h.run("doctor")
-	if !strings.Contains(out, osPath("✗ ./mek.local.yaml is committed")) {
+	if !strings.Contains(out, "✗ ./mek.local.yaml is committed") {
 		t.Errorf("tracked:\n%s", out)
 	}
 	wantErr(t, err, "problem(s)")
@@ -138,7 +134,7 @@ func TestCtxRm(t *testing.T) {
 		t.Error("removed though declined")
 	}
 	out := stderr(t, func() { h.mustRun("context", "rm", "gcp") }) // "context" is ctx too
-	if !strings.Contains(out, osPath("removed gcp from ./mek.local.yaml")) || !strings.Contains(out, "is used again") {
+	if !strings.Contains(out, "removed gcp from ./mek.local.yaml") || !strings.Contains(out, "is used again") {
 		t.Errorf("rm: %s", out)
 	}
 	if out := h.mustRun("-c", "gcp", "ctx"); strings.Contains(out, "my-sandbox") || !strings.Contains(out, "acme-dev") {
@@ -149,7 +145,7 @@ func TestCtxRm(t *testing.T) {
 	_, err := h.run("ctx", "rm", "orders-dev")
 	wantErr(t, err, "pass --yes")
 	out = stderr(t, func() { h.mustRun("ctx", "rm", "orders-dev", "--yes") })
-	if !strings.Contains(out, osPath("removed orders-dev from ./mek.yaml")) {
+	if !strings.Contains(out, "removed orders-dev from ./mek.yaml") {
 		t.Errorf("--yes: %s", out)
 	}
 	h.mustRun("use", "uat")
@@ -209,16 +205,15 @@ func TestSaveEdit(t *testing.T) {
 	if err := saveEdit(e); err == nil {
 		t.Error(".gitignore error")
 	}
-	// And a file that can't be written (a read-only directory: not on Windows).
-	if runtime.GOOS != "windows" {
-		ro := t.TempDir()
-		os.Chmod(ro, 0o500)
-		t.Cleanup(func() { os.Chmod(ro, 0o700) })
-		e, _ = config.Open(filepath.Join(ro, "other.yaml"), nil, 0o644)
-		if err := saveEdit(e); err == nil {
-			t.Error("unwritable")
-		}
+	// And a file that can't be written (a read-only directory).
+	ro := t.TempDir()
+	os.Chmod(ro, 0o500)
+	t.Cleanup(func() { os.Chmod(ro, 0o700) })
+	e, _ = config.Open(filepath.Join(ro, "other.yaml"), nil, 0o644)
+	if err := saveEdit(e); err == nil {
+		t.Error("unwritable")
 	}
+
 }
 
 func TestEditConfig(t *testing.T) {

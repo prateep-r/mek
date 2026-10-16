@@ -8,7 +8,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -37,18 +36,14 @@ func bgSetup(t *testing.T) (*env, int) {
   ro:  {provider: aws, aws_profile: viewer, readonly: true, tunnels: {db: {via: i-0123abcd, port: 5432, local_port: %d}}}
 `, port, port))
 	for _, name := range []string{"aws", "session-manager-plugin"} {
-		testkit.Install(testkit.Listenstub(t), filepath.Join(e.stubs, testkit.Exe(name)))
+		testkit.Install(testkit.Listenstub(t), filepath.Join(e.stubs, name))
 	}
 	t.Cleanup(func() { e.run("tunnel", "stop", "--all") }) // no stray processes
 	return e, port
 }
 
-// stoppedCode is a stopped tunnel's exit code: SIGTERM's 143, or Windows'
-// Job Object termination code 1.
+// stoppedCode is a stopped tunnel's exit code: SIGTERM's 143.
 func stoppedCode() int {
-	if runtime.GOOS == "windows" {
-		return 1
-	}
 	return 143
 }
 
@@ -129,9 +124,8 @@ func TestBackgroundDeadSupervisor(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	r := e.run("tunnel", "stop", "db")
-	// On Unix the tunnel's process outlives its killed supervisor; on Windows
-	// its Job Object ends with the supervisor, so the port is free.
-	if outlived := strings.Contains(r.Stderr, fmt.Sprintf("localhost:%d is still in use", port)); r.Code != 0 || outlived != (runtime.GOOS != "windows") {
+	// The tunnel's process outlives its killed supervisor.
+	if outlived := strings.Contains(r.Stderr, fmt.Sprintf("localhost:%d is still in use", port)); r.Code != 0 || !outlived {
 		t.Errorf("stop of a dead tunnel: %+v", r)
 	}
 }

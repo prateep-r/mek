@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 
 	"github.com/prateep-r/mek/internal/proc"
 )
@@ -18,7 +17,6 @@ var oldDir string
 var (
 	rename  = os.Rename
 	symlink = os.Symlink
-	goos    = runtime.GOOS
 )
 
 // oldDirs are where mek kept everything before ~/.mek.
@@ -63,10 +61,6 @@ func move(w io.Writer, src, dst string) error {
 		return fmt.Errorf("can't move %s to %s (%w) — move it yourself, then run mek again", src, dst, err)
 	}
 	fmt.Fprintf(w, "✓ mek moved %s to %s\n", src, dst)
-	if goos == "windows" {
-		fmt.Fprintf(w, "  paths that pointed into %s (KUBECONFIG, K9s) now need %s\n", src, dst)
-		return nil
-	}
 	if err := symlink(dst, src); err != nil {
 		fmt.Fprintf(w, "  couldn't leave a link at %s (%v): update paths that pointed there\n", src, err)
 	}

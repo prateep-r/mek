@@ -26,8 +26,7 @@ func RunIO(argv []string, env []string, stdout io.Writer) (int, error) {
 	return RunStoppable(argv, env, stdout, nil, nil)
 }
 
-// RunStoppable is RunIO that also ends the child when stop fires (a
-// foreground tunnel stopped from another terminal, on Windows), and sends
+// RunStoppable is RunIO that also ends the child when stop fires, and sends
 // its stderr to stderr (nil: mek's).
 func RunStoppable(argv []string, env []string, stdout, stderr io.Writer, stop <-chan struct{}) (int, error) {
 	if len(argv) == 0 {

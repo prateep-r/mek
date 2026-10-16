@@ -1,9 +1,7 @@
-// Package proc is what mek does differently on each OS: file locks, running
+// Package proc is mek's process and file-lock plumbing: file locks, running
 // a program, detaching a process from the terminal, process groups, and
-// asking a tunnel's owner to stop. It is the implementation side of a GoF
-// Bridge: internal/tunnel and internal/audit call this API, and
-// proc_unix.go / proc_windows.go implement it with flock and signals, or
-// LockFileEx, Job Objects and named events.
+// asking a tunnel's owner to stop — flock and signals underneath, so
+// internal/tunnel and internal/audit need neither.
 package proc
 
 import (
@@ -17,7 +15,7 @@ import (
 var ErrLocked = errors.New("locked")
 
 // Group is a started process and everything it starts, so a stop reaches
-// all of them: a process group on Unix, a Job Object on Windows.
+// all of them: a process group.
 type Group struct {
 	cmd *exec.Cmd
 	sys groupSys
