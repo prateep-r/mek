@@ -123,7 +123,8 @@ func (t *gcpTree) resource(n *gcpNode, path []string) catalog.Resource {
 		if r.Location == nil {
 			for _, f := range []string{"location", "zone", "region"} {
 				if i, ok := c.Flags["--"+f]; ok && !t.FlagList[i].IsGlobal {
-					r.Location = &catalog.Location{Flag: "--" + f, Field: f}
+					_, global := c.Flags["--global"] // addresses: a region's, or global
+					r.Location = &catalog.Location{Flag: "--" + f, Field: f, Global: global}
 					break
 				}
 			}

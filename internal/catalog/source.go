@@ -1,6 +1,8 @@
 package catalog
 
 import (
+	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -64,13 +66,17 @@ func (aws) List(s *Service, r *Resource, next string) []string {
 
 func (aws) Rows(r *Resource, out []byte) ([]Row, string, error) {
 	var v map[string]any
-	if err := json.Unmarshal(out, &v); err != nil {
-		return nil, "", fmt.Errorf("reading the list: %w", err)
+	if err := decodeJSON(out, &v); err != nil {
+		return nil, "", err
 	}
-	next, _ := v["NextToken"].(string)
+	next := ""
+	if r.Paged { // else the CLI got every page itself, whatever it says
+		next, _ = v["NextToken"].(string)
+	}
 	var rows []Row
 	for _, item := range items(v, r.Items) {
-		row := rowOf(r, item)
+		raw, _ := json.Marshal(item) // decoded from JSON: always encodes
+		row := rowOf(r, item, raw)
 		if r.Label == "tag:Name" {
 			row.Name = tag(item, "Name")
 		}
@@ -102,13 +108,13 @@ func (gcp) List(s *Service, r *Resource, _ string) []string {
 }
 
 func (gcp) Rows(r *Resource, out []byte) ([]Row, string, error) {
-	var list []any
-	if err := json.Unmarshal(out, &list); err != nil {
-		return nil, "", fmt.Errorf("reading the list: %w", err)
+	list, raws, err := decodeList(out)
+	if err != nil {
+		return nil, "", err
 	}
 	var rows []Row
-	for _, item := range list {
-		row := rowOf(r, item)
+	for i, item := range list {
+		row := rowOf(r, item, raws[i])
 		if row.Name == "" && strings.Contains(row.ID, "/") {
 			row.Name = last(row.ID) // projects/p/locations/l/functions/f
 		}
@@ -131,12 +137,16 @@ func (gcp) Act(s *Service, r *Resource, a Action, row Row) []string {
 	return append(append(gcpCommand(s, r, a, row), a.Flags...), "--quiet") // mek ui has asked already
 }
 
-// gcpCommand names the resource, and where it is unless its id is a full
-// path that says so.
+// gcpCommand names the resource, and where it is — or that it is global —
+// unless its id is a full path that says so.
 func gcpCommand(s *Service, r *Resource, a Action, row Row) []string {
 	argv := append(append([]string{"gcloud", s.Name}, strings.Fields(a.Command)...), row.ID)
-	if r.Location != nil && row.Where != "" && !strings.Contains(row.ID, "/") {
+	switch {
+	case r.Location == nil || strings.Contains(row.ID, "/"):
+	case row.Where != "":
 		argv = append(argv, r.Location.Flag+"="+row.Where)
+	case r.Location.Global: // a global address, not a region's
+		argv = append(argv, "--global")
 	}
 	return argv
 }
@@ -151,13 +161,14 @@ func (azure) List(s *Service, r *Resource, _ string) []string {
 }
 
 func (azure) Rows(r *Resource, out []byte) ([]Row, string, error) {
-	var list []any
-	if err := json.Unmarshal(out, &list); err != nil {
-		return nil, "", fmt.Errorf("reading the list: %w", err)
+	list, raws, err := decodeList(out)
+	if err != nil {
+		return nil, "", err
 	}
 	var rows []Row
-	for _, item := range list {
-		row := rowOf(r, item)
+	for i, item := range list {
+		row := rowOf(r, item, raws[i])
+		row.Name = cmp.Or(row.Name, str(item, "displayName")) // Entra ID objects (az ad)
 		row.Where, row.Group = str(item, "location"), str(item, "resourceGroup")
 		rows = append(rows, row)
 	}
@@ -186,10 +197,34 @@ func azureCommand(s *Service, a Action, row Row) []string {
 	return append(argv, a.Param, row.ID)
 }
 
+// decodeJSON reads a CLI's JSON, numbers as written (an id of 20 digits
+// stays exact).
+func decodeJSON(out []byte, v any) error {
+	d := json.NewDecoder(bytes.NewReader(out))
+	d.UseNumber()
+	if err := d.Decode(v); err != nil {
+		return fmt.Errorf("reading the list: %w", err)
+	}
+	return nil
+}
+
+// decodeList reads a JSON list: each item, and its JSON as printed.
+func decodeList(out []byte) ([]any, []json.RawMessage, error) {
+	var raws []json.RawMessage
+	if err := decodeJSON(out, &raws); err != nil {
+		return nil, nil, err
+	}
+	list := make([]any, len(raws))
+	for i, raw := range raws {
+		decodeJSON(raw, &list[i]) // a part of valid JSON: valid
+	}
+	return list, raws, nil
+}
+
 // rowOf is the id, name and state an item has (when its fields are
-// strings) — or, for a list of strings, the item is the id.
-func rowOf(r *Resource, item any) Row {
-	raw, _ := json.Marshal(item) // decoded from JSON: always encodes
+// strings) — or, for a list of strings, the item is the id. raw is the
+// item's JSON.
+func rowOf(r *Resource, item any, raw json.RawMessage) Row {
 	if s, ok := item.(string); ok {
 		return Row{ID: s, Raw: raw}
 	}
@@ -199,7 +234,7 @@ func rowOf(r *Resource, item any) Row {
 	}
 	row.State = str(item, r.State)
 	if r.State == "" { // gcloud's resources
-		row.State = cmpStr(str(item, "status"), str(item, "state"))
+		row.State = cmp.Or(str(item, "status"), str(item, "state"))
 	}
 	return row
 }
@@ -269,10 +304,3 @@ func tag(item any, key string) string {
 }
 
 func last(s string) string { return s[strings.LastIndex(s, "/")+1:] }
-
-func cmpStr(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
-}

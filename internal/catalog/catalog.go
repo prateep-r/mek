@@ -58,8 +58,9 @@ type Action struct {
 // Location is how a gcloud action says where its resource is: --zone with
 // the item's zone (a URL or a name; the last part is used).
 type Location struct {
-	Flag  string `json:"flag"`  // "--zone"
-	Field string `json:"field"` // "zone"; a path: metadata.labels."cloud.googleapis.com/location"
+	Flag   string `json:"flag"`             // "--zone"
+	Field  string `json:"field"`            // "zone"; a path: metadata.labels."cloud.googleapis.com/location"
+	Global bool   `json:"global,omitempty"` // an item without one is global: --global
 }
 
 //go:embed *.json.gz

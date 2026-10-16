@@ -172,19 +172,61 @@ func rotate() error {
 	return os.Rename(Path(), Path()+".1")
 }
 
-var secretFlag = regexp.MustCompile(`(?i)(password|passwd|secret|token|private-key|key-material|credential|plaintext|auth-key|api-key|account-key|connection-string|from-literal|value|cli-input-json|cli-input-yaml)`)
+var (
+	secretFlag = regexp.MustCompile(`(?i)(password|passwd|secret|token|private-key|key-material|credential|plaintext|auth-key|api-key|account-key|connection-string|from-literal|value|cli-input-json|cli-input-yaml)`)
+	// A KEY=VALUE argument whose key looks like this (kubectl set env
+	// deploy/x DB_PASSWORD=…) has its value masked.
+	secretKey = regexp.MustCompile(`(?i)(password|passwd|pwd|secret|token|credential|private.?key|api.?key|access.?key)`)
+	// user:password@ in a URL (a database URL in an argument).
+	urlPassword = regexp.MustCompile(`(://[^/@:\s]+):[^/@\s]+@`)
+)
+
+// Flags whose value is KEY=VALUE pairs — environments, parameters, app
+// settings — where any value may be a secret: the keys stay, the values go.
+var pairFlags = map[string]bool{
+	"--set-env-vars": true, "--update-env-vars": true, "--environment": true, "--env": true, "-e": true,
+	"--parameter-overrides": true, "--parameters": true, "--settings": true, "--set": true,
+}
+
+// maskPairs masks the values of a comma-separated KEY=VALUE list.
+func maskPairs(v string) string {
+	parts := strings.Split(v, ",")
+	for i, p := range parts {
+		if k, _, ok := strings.Cut(p, "="); ok {
+			parts[i] = k + "=****"
+		}
+	}
+	return strings.Join(parts, ",")
+}
 
 // Mask hides values of secret-looking flags in both `--flag value` and
-// `--flag=value` forms. args[0] is the program name.
+// `--flag=value` forms, the values of KEY=VALUE pairs that may be secrets,
+// and passwords in URLs. args[0] is the program name.
 func Mask(args []string) []string {
 	out := make([]string, len(args))
 	copy(out, args)
 	for i := 0; i < len(out); i++ {
 		a := out[i]
-		if !strings.HasPrefix(a, "-") || !secretFlag.MatchString(a) {
+		k, v, hasValue := strings.Cut(a, "=")
+		switch {
+		case !strings.HasPrefix(a, "-"):
+			if hasValue && secretKey.MatchString(k) {
+				out[i] = k + "=****"
+			}
 			continue
-		}
-		if k, _, ok := strings.Cut(a, "="); ok {
+		case pairFlags[k]:
+			if hasValue {
+				out[i] = k + "=" + maskPairs(v)
+				continue
+			}
+			for i+1 < len(out) && !strings.HasPrefix(out[i+1], "-") && strings.Contains(out[i+1], "=") {
+				i++ // --parameter-overrides A=1 B=2
+				out[i] = maskPairs(out[i])
+			}
+			continue
+		case !secretFlag.MatchString(a):
+			continue
+		case hasValue:
 			out[i] = k + "=****"
 			continue
 		}
@@ -195,6 +237,9 @@ func Mask(args []string) []string {
 			out[i+1] = "****"
 			i++
 		}
+	}
+	for i := range out {
+		out[i] = urlPassword.ReplaceAllString(out[i], "$1:****@")
 	}
 	return out
 }

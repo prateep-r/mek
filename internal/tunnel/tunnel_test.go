@@ -58,6 +58,24 @@ func TestMain(m *testing.M) {
 			}
 			fmt.Println("helper: failing")
 			os.Exit(3)
+		case "helper-up-once": // its port answers briefly the first time, then it fails at once
+			if _, err := os.Stat(os.Args[3]); err != nil {
+				os.WriteFile(os.Args[3], nil, 0o600)
+				ln, err := net.Listen("tcp", "127.0.0.1:"+os.Args[2])
+				if err != nil {
+					os.Exit(2)
+				}
+				go func() {
+					for {
+						if c, err := ln.Accept(); err == nil {
+							c.Close()
+						}
+					}
+				}()
+				time.Sleep(400 * time.Millisecond)
+				os.Exit(0)
+			}
+			os.Exit(3)
 		case "helper-exit":
 			fmt.Println("helper: failing")
 			code, _ := strconv.Atoi(os.Args[2])
@@ -552,6 +570,25 @@ func TestSupervisorKeepsMeksEnvironment(t *testing.T) {
 
 // Checking liveness never creates lock files, and a tunnel named twice is
 // stopped once.
+func TestLogTail(t *testing.T) {
+	setup(t)
+	if LogTail("none", 10) != "" {
+		t.Error("no log")
+	}
+	os.MkdirAll(filepath.Dir(LogPath("t")), 0o700)
+	os.WriteFile(LogPath("t"), []byte("first line\nsecond\nthird\n"), 0o600)
+	if got := LogTail("t", 12); got != "third\n" { // the cut line is left out
+		t.Errorf("tail: %q", got)
+	}
+	if got := LogTail("t", 1<<10); got != "first line\nsecond\nthird\n" {
+		t.Errorf("whole: %q", got)
+	}
+	os.WriteFile(LogPath("t"), []byte("no newline at all"), 0o600)
+	if got := LogTail("t", 5); got != "t all" { // no line to start at: what there is
+		t.Errorf("one long line: %q", got)
+	}
+}
+
 func TestHeldAndStopDedupe(t *testing.T) {
 	setup(t)
 	if held(file("ghost", ".lock")) {
@@ -560,14 +597,14 @@ func TestHeldAndStopDedupe(t *testing.T) {
 	if _, err := os.Stat(file("ghost", ".lock")); !os.IsNotExist(err) {
 		t.Error("held created a lock file")
 	}
-	old := lockFile
-	lockFile = func(*os.File) error { return syscall.EINVAL }
+	old := probeLock
+	probeLock = func(*os.File) error { return syscall.EINVAL }
 	f, _ := os.Create(file("odd", ".lock"))
 	f.Close()
 	if held(file("odd", ".lock")) {
 		t.Error("a lock error is not a held lock")
 	}
-	lockFile = old
+	probeLock = old
 
 	stops := fakeKills(t)
 	lock, _ := tryLock(file("twice000twice000", ".lock"))
@@ -611,6 +648,17 @@ func TestSuperviseReconnects(t *testing.T) {
 	if es := auditEntries(t); len(es) != 1 || es[0].Event != "end" || es[0].ExitCode != 3 {
 		t.Errorf("one end entry for the whole tunnel: %+v", es)
 	}
+
+	// A first run shorter than stable whose port answered worked: reconnect.
+	retry = backoff{first: 10 * time.Millisecond, most: 10 * time.Millisecond, stable: time.Hour, giveUp: 200 * time.Millisecond}
+	port := freePort(t)
+	if code := run(spec("up", "", port, "helper-up-once", strconv.Itoa(port), filepath.Join(t.TempDir(), "ran")), nil); code != 3 {
+		t.Errorf("up once: exit %d", code)
+	}
+	if r, _ := load("up"); r.Restarts == 0 || !strings.Contains(logOf("up"), "reconnecting in 10ms (restart 1)") {
+		t.Errorf("a first run that answered wasn't reconnected: %+v\n%s", r, logOf("up"))
+	}
+	retry = backoff{first: 10 * time.Millisecond, most: 40 * time.Millisecond, stable: 200 * time.Millisecond, giveUp: 500 * time.Millisecond}
 
 	// The first run failed: Start reports it; no reconnecting.
 	if code := run(spec("first", "", 0, "helper-exit", "4"), nil); code != 4 {

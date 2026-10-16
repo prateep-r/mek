@@ -43,6 +43,20 @@ func TestLive(t *testing.T) {
 	if cs[1].Tunnels[0] != (Tunnel{"sql", "Cloud SQL p:r:db", 15432}) {
 		t.Errorf("g: %+v", cs[1])
 	}
+	// Unchanged files aren't read again; a changed one is.
+	again, _, _ := (Live{}).Contexts()
+	if &again[0] != &cs[0] {
+		t.Error("read again though nothing changed")
+	}
+	os.WriteFile(filepath.Join(home, "config.yaml"), []byte("contexts:\n  only: {provider: gcp, project: p}\n"), 0o600)
+	if cs, _, _ := (Live{}).Contexts(); len(cs) != 1 || cs[0].Name != "only" {
+		t.Errorf("after a change: %+v", cs)
+	}
+	os.WriteFile(filepath.Join(home, "config.yaml"), []byte("contexts: [\n"), 0o600)
+	if _, _, err := (Live{}).Contexts(); err == nil {
+		t.Error("a broken file isn't reported")
+	}
+	os.WriteFile(filepath.Join(home, "config.yaml"), []byte("contexts:\n  only: {provider: gcp, project: p}\n"), 0o600)
 	if len((Live{}).Tunnels()) != 0 || (Live{}).Log("nope") != "" {
 		t.Error("tunnels")
 	}

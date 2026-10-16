@@ -43,6 +43,20 @@ func (f File) Read() (*Config, error) {
 // so a repository's mek.yaml can't switch off a guard you set.
 type Layers []Source
 
+// Paths are the files the layers read, top first.
+func (l Layers) Paths() []string {
+	var out []string
+	for _, s := range l {
+		switch s := s.(type) {
+		case File:
+			out = append(out, s.Path)
+		case Layers:
+			out = append(out, s.Paths()...)
+		}
+	}
+	return out
+}
+
 func (l Layers) Read() (*Config, error) {
 	out := &Config{Contexts: map[string]*Context{}}
 	for _, s := range l {

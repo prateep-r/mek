@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -42,10 +43,11 @@ var grace = 5 * time.Second
 
 // backoff decides when a background tunnel whose process ended on its own
 // (the cloud closed an idle session, the network dropped) starts it again.
-// A run that lasted stable worked: the next failure waits first and starts
-// a new outage. Runs shorter than that double the wait, up to most; after
-// giveUp of nothing but short runs (an expired login, a deleted instance)
-// the supervisor stops trying.
+// A run that lasted stable worked, and so did a first run whose port
+// answered: the next failure waits first and starts a new outage. Runs
+// shorter than that double the wait, up to most; after giveUp of nothing
+// but short runs (an expired login, a deleted instance) the supervisor
+// stops trying.
 type backoff struct {
 	first, most, stable, giveUp time.Duration
 }
@@ -91,22 +93,19 @@ func (s supervisor) run(spec Spec, stop <-chan struct{}) int {
 	outage := time.Now()
 	for {
 		began := time.Now()
-		code, stopped := s.once(spec, &r, stop)
+		code, stopped, answered := s.once(spec, &r, stop)
 		r.ExitCode = code
 		ran := time.Since(began)
 		s.logf("exited with code %d after %s", code, ran.Round(time.Second))
 		switch {
-		case stopped || !r.Restart:
-			s.exited(r)
+		case stopped || !r.Restart, r.Restarts == 0 && ran < s.retry.stable && !answered:
+			s.exited(r) // the first run never worked: Start reports that
 			return code
-		case ran >= s.retry.stable: // it worked: a new outage starts now
+		case ran >= s.retry.stable || r.Restarts == 0: // it worked: a new outage starts now
 			wait, outage = s.retry.first, time.Now()
-		case r.Restarts == 0 || time.Since(outage) >= s.retry.giveUp:
-			// The first run never worked (Start reports that), or it keeps failing.
-			if r.Restarts > 0 {
-				s.logf("gave up reconnecting after %s of failures — if the login expired: mek login %s, then start the tunnel again",
-					time.Since(outage).Round(time.Second), r.Context)
-			}
+		case time.Since(outage) >= s.retry.giveUp:
+			s.logf("gave up reconnecting after %s of failures — if the login expired: mek login %s, then start the tunnel again",
+				time.Since(outage).Round(time.Second), r.Context)
 			s.exited(r)
 			return code
 		default: // failing again: wait longer
@@ -136,12 +135,13 @@ func (s supervisor) start(spec Spec, argv []string) (*proc.Group, error) {
 
 // once runs the tunnel's process until it ends, or stop ends it (its whole
 // group: TERM, then KILL after the grace period where TERM is polite).
-// stopped is true when it was stopped, or couldn't start at all.
-func (s supervisor) once(spec Spec, r *Record, stop <-chan struct{}) (code int, stopped bool) {
+// stopped is true when it was stopped, or couldn't start at all; answered,
+// when its local port accepted a connection.
+func (s supervisor) once(spec Spec, r *Record, stop <-chan struct{}) (code int, stopped, answered bool) {
 	g, err := s.start(spec, r.Command)
 	if err != nil {
 		s.note(err)
-		return 127, true
+		return 127, true, false
 	}
 	r.Phase, r.Child = phaseRunning, g.Pid()
 	s.note(save(*r))
@@ -149,17 +149,48 @@ func (s supervisor) once(spec Spec, r *Record, stop <-chan struct{}) (code int, 
 
 	done := make(chan error, 1)
 	go func() { done <- g.Wait() }()
+	up := make(chan struct{})
+	quit := make(chan struct{})
+	defer close(quit)
+	go watchPort(r.Local, up, quit)
+	isUp := func() bool {
+		select {
+		case <-up:
+			return true
+		default:
+			return false
+		}
+	}
 	select {
 	case err := <-done:
-		return runner.ExitCode(err), false
+		g.Kill() // what it started (ssh, a plugin) must not keep the port
+		return runner.ExitCode(err), false, isUp()
 	case <-stop:
 	}
 	g.Terminate()
 	select {
 	case err := <-done:
-		return runner.ExitCode(err), true
+		return runner.ExitCode(err), true, isUp()
 	case <-time.After(s.grace):
 		g.Kill()
-		return runner.ExitCode(<-done), true
+		return runner.ExitCode(<-done), true, isUp()
+	}
+}
+
+// watchPort closes up once localhost:port accepts a connection, or gives up
+// when quit closes.
+func watchPort(port int, up chan<- struct{}, quit <-chan struct{}) {
+	addr := fmt.Sprintf("localhost:%d", port)
+	for {
+		if c, err := net.DialTimeout("tcp", addr, pollEvery); err == nil {
+			c.Close()
+			close(up)
+			return
+		}
+		select {
+		case <-quit:
+			return
+		case <-time.After(pollEvery):
+		}
 	}
 }

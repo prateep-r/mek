@@ -24,12 +24,21 @@ func TestLocks(t *testing.T) {
 	if err := TryLock(b); !errors.Is(err, ErrLocked) {
 		t.Errorf("second lock: %v", err)
 	}
+	if err := TryShared(b); !errors.Is(err, ErrLocked) {
+		t.Errorf("shared, while held: %v", err)
+	}
 	a.Close() // releases it
 	if err := Lock(b); err != nil {
 		t.Errorf("lock after release: %v", err)
 	}
 	if err := TryLock(a); err == nil || errors.Is(err, ErrLocked) { // closed: an error, not "locked"
 		t.Errorf("closed file: %v", err)
+	}
+	c, _ := os.Open(path)
+	defer c.Close()
+	b.Close()
+	if err := TryShared(c); err != nil {
+		t.Errorf("shared, when free: %v", err)
 	}
 }
 

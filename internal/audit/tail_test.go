@@ -39,6 +39,18 @@ func TestTail(t *testing.T) {
 	if es, _ := Tail(0); len(es) != 0 {
 		t.Errorf("tail 0: %v", es)
 	}
+
+	// Just after a rotation, the rest comes from the log before.
+	os.Rename(Path(), Path()+".1")
+	Write(Entry{Context: "new"})
+	es, err = Tail(3)
+	got = nil
+	for _, e := range es {
+		got = append(got, e.Context)
+	}
+	if err != nil || strings.Join(got, " ") != "c19 last new" {
+		t.Errorf("across a rotation: %v %v", got, err)
+	}
 }
 
 type badLog struct {

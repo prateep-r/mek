@@ -93,7 +93,11 @@ func remove(id string) {
 	}
 }
 
-var lockFile = proc.TryLock // test seam
+// Test seams.
+var (
+	lockFile  = proc.TryLock
+	probeLock = proc.TryShared
+)
 
 // tryLock opens a lock file and takes an exclusive lock without waiting.
 // On Unix the lock lives as long as any descriptor of that open file — so
@@ -115,11 +119,13 @@ func tryLock(path string) (*os.File, error) {
 
 // held reports whether someone holds a lock: the liveness test for a
 // tunnel's owner. Unlike a pid, it can't be fooled by pid reuse or a reboot.
+// It probes with a shared lock, so two probes (two mek tunnel ls) never
+// look like an owner to each other.
 func held(path string) bool {
-	f, err := os.OpenFile(path, os.O_RDWR, 0) // never creates: no lock file, no owner
+	f, err := os.OpenFile(path, os.O_RDONLY, 0) // never creates: no lock file, no owner
 	if err != nil {
 		return false
 	}
-	defer f.Close()
-	return errors.Is(lockFile(f), proc.ErrLocked)
+	defer f.Close() // and with it the probe's lock
+	return errors.Is(probeLock(f), proc.ErrLocked)
 }
