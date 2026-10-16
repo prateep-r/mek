@@ -422,7 +422,9 @@ One JSON line per command — including ones the guard blocked — in `~/.mek/au
 ```
 
 Secret-looking flag values (`--password`, `--secret-string`, `--from-literal`, `--token`,
-…) are written as `****`. Shells and tunnels add `"event":"start"` / `"end"` entries that
+…), the values of environment and parameter flags (`--set-env-vars A=****`,
+`--parameter-overrides`, `-e`…), `KEY=VALUE` arguments with a secret-looking key
+(`DB_PASSWORD=****`) and passwords in URLs (`postgres://app:****@db`) are written as `****`. Shells and tunnels add `"event":"start"` / `"end"` entries that
 share a `"session"` id.
 
 ```bash

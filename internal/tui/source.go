@@ -5,6 +5,7 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/prateep-r/mek/internal/audit"
 	"github.com/prateep-r/mek/internal/config"
@@ -45,9 +46,21 @@ type Source interface {
 // Live is the Source of a real mek: its config, tunnels and audit log.
 type Live struct{}
 
+// loaded is the last contexts Live read, and the files they came from as
+// they were then: the UI asks every second, and they rarely change.
+var loaded struct {
+	stamp    string
+	contexts []Context
+}
+
 func (Live) Contexts() ([]Context, string, error) {
+	stamp := configStamp()
+	if stamp == loaded.stamp {
+		return loaded.contexts, config.Current(), nil
+	}
 	cfg, err := config.Load()
 	if err != nil {
+		loaded.stamp = ""
 		return nil, "", err
 	}
 	var out []Context
@@ -55,16 +68,29 @@ func (Live) Contexts() ([]Context, string, error) {
 		c := cfg.Contexts[name]
 		out = append(out, contextOf(c, provider.For(cfg, c).Describe()))
 	}
+	loaded.stamp, loaded.contexts = stamp, out
 	return out, config.Current(), nil
+}
+
+// configStamp is which config files there are and when each last changed.
+func configStamp() string {
+	src, project := config.Sources()
+	var b strings.Builder
+	b.WriteString(project)
+	for _, p := range src.Paths() {
+		if fi, err := os.Stat(p); err == nil {
+			fmt.Fprintf(&b, "\n%s %d %d", p, fi.Size(), fi.ModTime().UnixNano())
+		} else {
+			fmt.Fprintf(&b, "\n%s -", p)
+		}
+	}
+	return b.String()
 }
 
 func (Live) Tunnels() []tunnel.Info             { return tunnel.List("") }
 func (Live) Audit(n int) ([]audit.Entry, error) { return audit.Tail(n) }
 
-func (Live) Log(id string) string {
-	b, _ := os.ReadFile(tunnel.LogPath(id)) // gone: nothing to show
-	return string(b)
-}
+func (Live) Log(id string) string { return tunnel.LogTail(id, 256<<10) } // gone: nothing to show
 
 func contextOf(c *config.Context, summary string) Context {
 	out := Context{Name: c.Name, Summary: summary, Cloud: c.Provider, Protected: c.Protected, ReadOnly: c.ReadOnly}

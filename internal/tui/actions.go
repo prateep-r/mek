@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bufio"
+	"cmp"
 	"fmt"
 	"io"
 	"os"
@@ -77,7 +78,7 @@ func (m *model) run(a action, yes bool) tea.Cmd {
 func (m *model) done(d doneMsg) tea.Cmd {
 	m.reload()
 	if d.err != nil {
-		m.status = red.Render("✗ " + d.a.label + ": " + cmp(d.out, d.err.Error()))
+		m.status = red.Render("✗ " + d.a.label + ": " + cmp.Or(d.out, d.err.Error()))
 		return nil
 	}
 	m.status = green.Render("✓ ") + d.a.label
@@ -91,13 +92,6 @@ func (m *model) done(d doneMsg) tea.Cmd {
 		return d.a.after(m)
 	}
 	return nil
-}
-
-func cmp(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
 }
 
 func lastLine(s string) string {

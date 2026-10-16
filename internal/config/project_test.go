@@ -291,3 +291,10 @@ func TestInitProject(t *testing.T) {
 		t.Error(".gitignore unreadable")
 	}
 }
+
+func TestLayerPaths(t *testing.T) {
+	l := Layers{Layers{File{Path: "a"}, File{Path: "b"}}, File{Path: "c"}}
+	if got := strings.Join(l.Paths(), " "); got != "a b c" {
+		t.Errorf("paths: %s", got)
+	}
+}

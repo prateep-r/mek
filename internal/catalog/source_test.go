@@ -84,6 +84,12 @@ func TestAWS(t *testing.T) {
 	if _, _, err := src.Rows(instances, []byte(`[`)); err == nil {
 		t.Error("bad JSON read")
 	}
+
+	// An unpaged list's NextToken isn't a page to fetch; numbers stay exact.
+	rows, next, _ = src.Rows(functions, []byte(`{"Functions":[{"FunctionName":"f","Size":12345678901234567890}],"NextToken":"x"}`))
+	if next != "" || !strings.Contains(string(rows[0].Raw), "12345678901234567890") {
+		t.Errorf("unpaged: next %q raw %s", next, rows[0].Raw)
+	}
 }
 
 func TestGCP(t *testing.T) {
@@ -128,6 +134,16 @@ func TestGCP(t *testing.T) {
 	if _, _, err := src.Rows(vms, []byte(`{}`)); err == nil {
 		t.Error("an object read as a list")
 	}
+
+	// A global item (no region) is named with --global; its JSON is kept as printed.
+	addrs := &Resource{ID: "name", Location: &Location{Flag: "--region", Field: "region", Global: true}}
+	rows, _, _ = src.Rows(addrs, []byte(`[{"name":"ip-1", "id": 1234567890123456789}]`))
+	if got := words(src.Act(compute, addrs, Action{Command: "addresses delete"}, rows[0])); got != "gcloud compute addresses delete ip-1 --global --quiet" {
+		t.Errorf("global: %s", got)
+	}
+	if string(rows[0].Raw) != `{"name":"ip-1", "id": 1234567890123456789}` {
+		t.Errorf("raw: %s", rows[0].Raw)
+	}
 }
 
 func TestPaths(t *testing.T) {
@@ -167,6 +183,10 @@ func TestAzure(t *testing.T) {
 	show := Action{Command: "show", Param: "--name", ByName: true}
 	if got := words(src.Act(&Service{Name: "acr"}, vms, show, rows[0])); got != "az acr show --name aks-1" {
 		t.Errorf("by name, no group: %s", got)
+	}
+	rows, _, _ = src.Rows(vms, []byte(`[{"id":"0000-1","displayName":"my-app"}]`)) // az ad app list
+	if rows[0].Name != "my-app" {
+		t.Errorf("displayName: %+v", rows[0])
 	}
 	if src.Describe(vm, &Resource{}, rows[0]) != nil {
 		t.Error("no describe command, yet a describe")

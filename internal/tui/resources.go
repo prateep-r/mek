@@ -2,12 +2,14 @@ package tui
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -16,6 +18,7 @@ import (
 	"github.com/prateep-r/mek/internal/catalog"
 	"github.com/prateep-r/mek/internal/config"
 	"github.com/prateep-r/mek/internal/guard"
+	"github.com/prateep-r/mek/internal/provider"
 )
 
 // Levels of the Resources tab — each a step down from the one before.
@@ -44,6 +47,7 @@ type resourcesTab struct {
 	res     *catalog.Resource
 	rows    []catalog.Row
 	next    string // the next page of rows ("" when none)
+	moreErr error  // why the next page didn't come (the rows so far stay)
 	row     *catalog.Row
 	detail  []string // the resource's JSON, line by line
 	loading string   // what is being fetched ("" when nothing)
@@ -89,7 +93,7 @@ func reason(stderr string, err error) string {
 			return strings.TrimSpace(l)
 		}
 	}
-	return cmp(lastLine(stderr), err.Error())
+	return cmp.Or(lastLine(stderr), err.Error())
 }
 
 func (*resourcesTab) title() string { return "Resources" }
@@ -121,11 +125,13 @@ func (t *resourcesTab) sync(m *model) {
 // unfiltered list; an exact match comes first.
 func (t *resourcesTab) names() (names []string, index []int) {
 	f := strings.ToLower(t.filter)
-	add := func(i int, name string) {
-		switch n := strings.ToLower(name); {
-		case n == f && f != "":
-			names, index = append([]string{name}, names...), append([]int{i}, index...)
-		case strings.Contains(n, f):
+	exact := 0 // how many exact matches lead
+	add := func(i int, name string, keys ...string) {
+		switch {
+		case f != "" && slices.ContainsFunc(append(keys, name), func(k string) bool { return strings.ToLower(k) == f }):
+			names, index = slices.Insert(names, exact, name), slices.Insert(index, exact, i)
+			exact++
+		case strings.Contains(strings.ToLower(name), f):
 			names, index = append(names, name), append(index, i)
 		}
 	}
@@ -140,7 +146,7 @@ func (t *resourcesTab) names() (names []string, index []int) {
 		}
 	case levelItems:
 		for i, r := range t.rows {
-			add(i, r.ID+" "+r.Name+" "+r.State+" "+r.Where)
+			add(i, r.ID+" "+r.Name+" "+r.State+" "+r.Where, r.ID, r.Name)
 		}
 	}
 	return names, index
@@ -206,9 +212,9 @@ func (t *resourcesTab) up() {
 	}
 }
 
-// refresh lists the resources again (r).
+// refresh lists the resources again (r) — after a failed list too.
 func (t *resourcesTab) refresh(m *model) tea.Cmd {
-	if t.level == levelItems && t.err == nil {
+	if t.level == levelItems {
 		return t.list(m, "")
 	}
 	return nil
@@ -218,7 +224,7 @@ func (t *resourcesTab) refresh(m *model) tea.Cmd {
 func (t *resourcesTab) list(m *model, next string) tea.Cmd {
 	t.gen++
 	gen, src, svc, res := t.gen, t.src, t.svc, t.res
-	t.loading, t.err = "listing "+svc.Name+" "+res.Name, nil
+	t.loading, t.err, t.moreErr = "listing "+svc.Name+" "+res.Name, nil, nil
 	if next == "" {
 		t.rows, t.next = nil, ""
 	} else {
@@ -256,7 +262,11 @@ func (t *resourcesTab) describe(m *model) tea.Cmd {
 func (t *resourcesTab) receive(msg tea.Msg) bool {
 	switch msg := msg.(type) {
 	case listedMsg:
-		if msg.gen == t.gen {
+		switch {
+		case msg.gen != t.gen:
+		case msg.err != nil && len(t.rows) > 0: // a later page: the rows so far stay
+			t.loading, t.moreErr = "", msg.err
+		default:
 			t.loading = ""
 			t.rows, t.next, t.err = append(t.rows, msg.rows...), msg.next, msg.err
 		}
@@ -330,13 +340,8 @@ func (t *resourcesTab) act(m *model, a catalog.Action) tea.Cmd {
 	argv := t.src.Act(t.svc, t.res, a, *t.row)
 	what := fmt.Sprintf("%s %s (%s)", a.Command, t.row.ID, t.ctx)
 	act := action{label: what, args: append([]string{"-c", t.ctx}, argv...), after: t.refresh, data: true}
-	class := guard.ClassifyAWS(argv[1:])
-	switch t.cloud {
-	case "gcp":
-		class = guard.ClassifyGCloud(argv[1:])
-	case "azure":
-		class = guard.ClassifyAzure(argv[1:])
-	}
+	cloud, _ := provider.Lookup(t.cloud) // it has a catalog: a cloud mek knows
+	class := cloud.Classify(argv[1:])
 	switch guard.Decide(&config.Context{Protected: c.Protected, ReadOnly: c.ReadOnly}, class) {
 	case guard.Block:
 	case guard.ConfirmTyped:
@@ -431,8 +436,13 @@ func (t *resourcesTab) body(w, h int) string {
 			header = append(header, "WHERE")
 		}
 		more := ""
-		if t.next != "" {
+		switch {
+		case t.moreErr != nil:
+			more = "\n" + red.Render("  ✗ the next page: "+t.moreErr.Error()) + dim.Render(" — ↓ at the last row tries again")
+		case t.next != "":
 			more = "\n" + dim.Render("  more below — ↓ at the last row fetches them")
+		case t.cloud == "gcp" && len(t.rows) >= catalog.GCPLimit:
+			more = "\n" + dim.Render(fmt.Sprintf("  the first %d only — for the rest, mek -c %s gcloud … list --filter", catalog.GCPLimit, t.ctx))
 		}
 		if t.loading != "" && len(rows) == 0 {
 			return ""

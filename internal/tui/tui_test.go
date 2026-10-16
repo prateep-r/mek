@@ -461,7 +461,7 @@ func TestList(t *testing.T) {
 }
 
 func TestActions(t *testing.T) {
-	if lastLine("a\nb\n\n") != "b" || cmp("", "x") != "x" || cmp("y", "x") != "y" {
+	if lastLine("a\nb\n\n") != "b" {
 		t.Error("helpers")
 	}
 	var stderr bytes.Buffer

@@ -33,7 +33,9 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	}
 	defer os.Remove(tmp.Name()) // no-op after a successful rename
 	_, werr := tmp.Write(data)
-	if err := errors.Join(werr, tmp.Chmod(perm), tmp.Close()); err != nil {
+	// Synced before the rename: after a crash the file is the old one or the
+	// new one, never an empty one.
+	if err := errors.Join(werr, tmp.Chmod(perm), tmp.Sync(), tmp.Close()); err != nil {
 		return err
 	}
 	return rename(tmp.Name(), path)

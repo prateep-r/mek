@@ -127,9 +127,29 @@ func waitReady(r Record, owner int, wait time.Duration, exited <-chan struct{}) 
 
 // logTail is the last lines of a tunnel's log, for error messages.
 func logTail(id string) string {
-	b, _ := os.ReadFile(LogPath(id))
-	lines := strings.Split(strings.TrimRight(string(b), "\n"), "\n")
+	lines := strings.Split(strings.TrimRight(LogTail(id, 8<<10), "\n"), "\n")
 	return "  " + strings.Join(lines[max(0, len(lines)-10):], "\n  ")
+}
+
+// LogTail is the end of a tunnel's log, at most size bytes of whole lines:
+// a tunnel that reconnects for days has a long log ("" when there is none).
+func LogTail(id string, size int64) string {
+	f, err := os.Open(LogPath(id))
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	end, _ := f.Seek(0, io.SeekEnd) // on an error, 0: nothing read
+	from := max(0, end-size)
+	b := make([]byte, end-from)
+	n, _ := f.ReadAt(b, from)
+	b = b[:n]
+	if from > 0 { // it starts mid-line: from the next one
+		if i := bytes.IndexByte(b, '\n'); i >= 0 {
+			b = b[i+1:]
+		}
+	}
+	return string(b)
 }
 
 // claimPort locks a local port for one tunnel, across every mek process.

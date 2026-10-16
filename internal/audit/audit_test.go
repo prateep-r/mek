@@ -43,12 +43,20 @@ func TestWrite(t *testing.T) {
 
 func TestMaskFlags(t *testing.T) {
 	cases := map[string]string{
-		"az storage blob list --account-key KEY== --account-name a":    "az storage blob list --account-key **** --account-name a",
-		"az storage blob list --connection-string=DefaultEndpoints...": "az storage blob list --connection-string=****",
-		"kubectl create secret generic db --from-literal=password=x":   "kubectl create secret generic db --from-literal=****",
-		"kubectl get pods --token abc":                                 "kubectl get pods --token ****",
-		"aws ssh -p 2222":                                              "aws ssh -p 2222", // short flags are never guessed to be secrets
-		"":                                                             "",
+		"az storage blob list --account-key KEY== --account-name a":               "az storage blob list --account-key **** --account-name a",
+		"az storage blob list --connection-string=DefaultEndpoints...":            "az storage blob list --connection-string=****",
+		"kubectl create secret generic db --from-literal=password=x":              "kubectl create secret generic db --from-literal=****",
+		"kubectl get pods --token abc":                                            "kubectl get pods --token ****",
+		"aws ssh -p 2222":                                                         "aws ssh -p 2222", // short flags are never guessed to be secrets
+		"kubectl set env deploy/api DB_PASSWORD=x MODE=prod":                      "kubectl set env deploy/api DB_PASSWORD=**** MODE=prod",
+		"gcloud run deploy api --set-env-vars=A=1,B=2":                            "gcloud run deploy api --set-env-vars=A=****,B=****",
+		"gcloud run deploy api --update-env-vars A=1":                             "gcloud run deploy api --update-env-vars A=****",
+		"aws cloudformation deploy --parameter-overrides Pw=x Env=prod --stack s": "aws cloudformation deploy --parameter-overrides Pw=**** Env=**** --stack s",
+		"docker run -e TOKEN=x img":                                               "docker run -e TOKEN=**** img",
+		"psql postgres://app:hunter2@db.internal:5432/app":                        "psql postgres://app:****@db.internal:5432/app",
+		"psql --dsn=postgres://app:hunter2@db/app":                                "psql --dsn=postgres://app:****@db/app",
+		"curl https://example.com/a@b":                                            "curl https://example.com/a@b",
+		"":                                                                        "",
 	}
 	for in, want := range cases {
 		if got := strings.Join(Mask(strings.Fields(in)), " "); got != want {

@@ -117,7 +117,7 @@ func azureCatalog(cmds map[string][]azArg, version string) catalog.Catalog {
 				if a.Param, a.Group = azByName(cmds[name]); a.Param == "" {
 					continue
 				}
-				a.ByName = true
+				a.ByName = a.Param != "--id" // az ad … --id: the item's id, not its name
 			}
 			if slices.ContainsFunc(cmds[name], func(x azArg) bool { return x.Dest == "yes" }) {
 				a.Flags = []string{"--yes"} // az's own "are you sure?": mek ui has asked

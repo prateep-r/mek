@@ -104,7 +104,11 @@ const gcpFixture = `{
     "delete": {"positionals": [{"name": "name", "nargs": "1", "is_required": true}],
      "constraints": {"arguments": [{"arguments": [0], "is_required": true}]}}
    }},
-   "disks": {"is_group": true, "commands": {"list": {"flags": {"--region": 1}}}}
+   "disks": {"is_group": true, "commands": {"list": {"flags": {"--region": 1}}}},
+   "addresses": {"is_group": true, "commands": {
+    "list": {},
+    "delete": {"flags": {"--region": 0, "--global": 0}, "positionals": [{"name": "name", "nargs": "1", "is_required": true}]}
+   }}
   }},
   "projects": {"is_group": true, "commands": {
    "list": {},
@@ -124,6 +128,7 @@ func TestGCPCatalog(t *testing.T) {
 	g, _ := json.Marshal(got)
 	want := `{"cloud":"gcp","source":"gcloud/1.0","services":[` +
 		`{"name":"compute","resources":[` +
+		`{"name":"addresses","list":"addresses list","id":"name","location":{"flag":"--region","field":"region","global":true},"actions":[{"command":"addresses delete"}]},` +
 		`{"name":"instances","list":"instances list","id":"name","location":{"flag":"--zone","field":"zone"},"describe":{"command":"instances describe"},"actions":[{"command":"instances stop"}]},` +
 		`{"name":"networks","list":"networks list","id":"name"}]},` +
 		`{"name":"projects","resources":[{"name":"projects","list":"list","id":"name","actions":[{"command":"delete"}]}]}]}`
@@ -156,10 +161,13 @@ func TestAzureCatalog(t *testing.T) {
 		"group list":      {},
 		"group show":      {{Dest: "resource_group_name", Required: true, ID: true}},
 		"group lock list": {},
+		"ad app list":     {},
+		"ad app delete":   {{Dest: "identifier", Required: true, Option: "--id"}},
 	}
 	got, _ := json.Marshal(azureCatalog(cmds, "2.0"))
 	want := `{"cloud":"azure","source":"azure-cli/2.0","services":[` +
 		`{"name":"acr","resources":[{"name":"acr","list":"list","id":"id","label":"name","state":"provisioningState","actions":[{"command":"delete","param":"--name","flags":["--yes"],"byName":true}]}]},` +
+		`{"name":"ad","resources":[{"name":"app","list":"app list","id":"id","label":"name","state":"provisioningState","actions":[{"command":"app delete","param":"--id"}]}]},` +
 		`{"name":"aks","resources":[{"name":"aks","list":"list","id":"id","label":"name","state":"provisioningState","actions":[{"command":"stop","param":"--name","byName":true,"group":true}]}]},` +
 		`{"name":"group","resources":[{"name":"group","list":"list","id":"id","label":"name","state":"provisioningState","describe":{"command":"show","param":"--ids"}}]},` +
 		`{"name":"vm","resources":[{"name":"vm","list":"list","id":"id","label":"name","state":"provisioningState","describe":{"command":"show","param":"--ids"},"actions":[{"command":"delete","param":"--ids","flags":["--yes"]}]}]}]}`

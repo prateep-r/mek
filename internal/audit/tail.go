@@ -22,11 +22,21 @@ var (
 	openLog         = func(path string) (logFile, error) { return os.Open(path) }
 )
 
-// Tail returns the last n entries of the audit log, oldest first. It reads
-// the file backwards, so a large log costs only its last lines; lines that
+// Tail returns the last n entries of the audit log, oldest first — from
+// the log rotated last too, when the log has fewer since. It reads the
+// files backwards, so a large log costs only its last lines; lines that
 // don't parse are skipped. No log is no entries.
 func Tail(n int) ([]Entry, error) {
-	f, err := openLog(Path())
+	out, err := tail(Path(), n)
+	if err != nil || len(out) >= n {
+		return out, err
+	}
+	older, err := tail(Path()+".1", n-len(out))
+	return append(older, out...), err
+}
+
+func tail(path string, n int) ([]Entry, error) {
+	f, err := openLog(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}

@@ -188,6 +188,30 @@ func TestResourcesFetching(t *testing.T) {
 	f.answers["-c dev aws ec2 describe-instances --output json --max-items 100"] = "{"
 	h.press("r")
 	h.want("✗ reading the list")
+	f.answers["-c dev aws ec2 describe-instances --output json --max-items 100"] = page1
+	h.press("r") // after a failed list too
+	h.want("i-1", "more below")
+
+	// A next page that fails keeps the rows, and ↓ tries again.
+	f.fail["-c dev aws ec2 describe-instances --output json --max-items 100 --starting-token t2"] = errors.New("Throttling")
+	h.press("down")
+	h.want("i-1", "i-2", "✗ the next page: Throttling", "tries again")
+	delete(f.fail, "-c dev aws ec2 describe-instances --output json --max-items 100 --starting-token t2")
+	h.press("up", "down")
+	h.want("i-3")
+
+	// An exact id or name comes first, before rows that only contain it.
+	tab.rows = []catalog.Row{{ID: "i-10", Name: "web-1"}, {ID: "i-1", Name: "web"}}
+	h.press("/", "w", "e", "b", "enter")
+	h.want("▸ i-1 ")
+}
+
+// gcloud lists at most GCPLimit: the tab says so.
+func TestResourcesGCPLimit(t *testing.T) {
+	h, f := resourcesHarness(t, "gcp")
+	f.answers["-c gcp gcloud compute instances list --format=json --limit=500"] = "[" + strings.TrimSuffix(strings.Repeat(`{"name":"vm"},`, catalog.GCPLimit), ",") + "]"
+	h.press("enter", "enter")
+	h.want("the first 500 only")
 }
 
 func TestResourcesActions(t *testing.T) {

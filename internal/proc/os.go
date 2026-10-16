@@ -20,6 +20,16 @@ func TryLock(f *os.File) error {
 	return err
 }
 
+// TryShared takes a shared lock on f without waiting: ErrLocked while
+// another file holds it exclusively. Shared locks don't stop each other.
+func TryShared(f *os.File) error {
+	err := syscall.Flock(int(f.Fd()), syscall.LOCK_SH|syscall.LOCK_NB)
+	if errors.Is(err, syscall.EWOULDBLOCK) {
+		return ErrLocked
+	}
+	return err
+}
+
 // Lock waits for an exclusive lock on f.
 func Lock(f *os.File) error { return syscall.Flock(int(f.Fd()), syscall.LOCK_EX) }
 
