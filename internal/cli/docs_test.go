@@ -40,7 +40,7 @@ func TestREADMECoversTheWizard(t *testing.T) {
 		}
 	}
 	for _, want := range []string{"mek context", "mek help wizard", "~/.aws/sso/cache", "`a` add · `e` edit · `d` remove",
-		"## 5. Editing config with the wizard", "--yes"} {
+		"## Editing config with the wizard", "--yes"} {
 		if !strings.Contains(readme, want) {
 			t.Errorf("README lacks %q", want)
 		}
