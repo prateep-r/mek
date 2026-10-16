@@ -139,3 +139,31 @@ func TestTune(t *testing.T) {
 		t.Errorf("tuned: %+v", r)
 	}
 }
+
+func TestAzureCatalog(t *testing.T) {
+	cmds := map[string][]azArg{
+		"vm list":         {{Dest: "resource_group_name", ID: true}},
+		"vm show":         {{Dest: "resource_group_name", Required: true, ID: true}, {Dest: "vm_name", Required: true, ID: true}},
+		"vm delete":       {{Dest: "resource_group_name", Required: true, ID: true}, {Dest: "vm_name", Required: true, ID: true}, {Dest: "yes"}},
+		"vm resize":       {{Dest: "resource_group_name", Required: true, ID: true}, {Dest: "vm_name", Required: true, ID: true}, {Dest: "size", Required: true, Option: "--size"}},
+		"aks list":        {},
+		"aks stop":        {{Dest: "resource_group_name", Required: true, Option: "--resource-group"}, {Dest: "name", Required: true, Option: "--name"}},
+		"acr list":        {},
+		"acr delete":      {{Dest: "registry_name", Required: true, Option: "--name"}, {Dest: "yes"}},
+		"account list":    {},                            // nothing takes one of its items
+		"disk list":       {{Dest: "x", Required: true}}, // needs an argument: not a resource
+		"lonely":          {},
+		"group list":      {},
+		"group show":      {{Dest: "resource_group_name", Required: true, ID: true}},
+		"group lock list": {},
+	}
+	got, _ := json.Marshal(azureCatalog(cmds, "2.0"))
+	want := `{"cloud":"azure","source":"azure-cli/2.0","services":[` +
+		`{"name":"acr","resources":[{"name":"acr","list":"list","id":"id","label":"name","state":"provisioningState","actions":[{"command":"delete","param":"--name","flags":["--yes"],"byName":true}]}]},` +
+		`{"name":"aks","resources":[{"name":"aks","list":"list","id":"id","label":"name","state":"provisioningState","actions":[{"command":"stop","param":"--name","byName":true,"group":true}]}]},` +
+		`{"name":"group","resources":[{"name":"group","list":"list","id":"id","label":"name","state":"provisioningState","describe":{"command":"show","param":"--ids"}}]},` +
+		`{"name":"vm","resources":[{"name":"vm","list":"list","id":"id","label":"name","state":"provisioningState","describe":{"command":"show","param":"--ids"},"actions":[{"command":"delete","param":"--ids","flags":["--yes"]}]}]}]}`
+	if string(got) != want {
+		t.Errorf("azure catalog:\n got %s\nwant %s", got, want)
+	}
+}

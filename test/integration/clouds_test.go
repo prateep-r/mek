@@ -34,6 +34,12 @@ var clouds = []cloud{
 		write:       []string{"compute", "instances", "create", "vm-1"},
 		destructive: []string{"compute", "instances", "delete", "vm-1"},
 		secret:      []string{"sql", "users", "set-password", "root", "--instance=db", "--password=S3cret-gcp"}},
+	{name: "azure", cli: "az",
+		ctx:         `provider: azure, tenant_id: t, subscription_id: 00000000-1111-2222-3333-444444444444`,
+		read:        []string{"vm", "list"},
+		write:       []string{"vm", "create", "-g", "rg", "-n", "vm-1", "--image", "Ubuntu2204"},
+		destructive: []string{"vm", "delete", "-g", "rg", "-n", "vm-1", "--yes"},
+		secret:      []string{"vm", "user", "update", "-g", "rg", "-n", "vm-1", "-u", "ops", "--password=S3cret-azure"}},
 }
 
 // allClouds is a config with, per cloud, a plain, a protected and a readonly context.
@@ -151,8 +157,11 @@ func TestConcurrentAcrossClouds(t *testing.T) {
 		"gcloud": func(env map[string]string) bool {
 			return env["CLOUDSDK_CONFIG"] == filepath.Join(e.mekHome, "gcloud", "gcp")
 		},
+		"az": func(env map[string]string) bool {
+			return env["AZURE_CONFIG_DIR"] == filepath.Join(e.mekHome, "azure", "azure")
+		},
 	}
-	ctxFor := map[string]string{"aws": "aws", "gcloud": "gcp"}
+	ctxFor := map[string]string{"aws": "aws", "gcloud": "gcp", "az": "azure"}
 	calls := e.calls()
 	if len(calls) != perCloud*len(clouds) {
 		t.Fatalf("%d calls, want %d", len(calls), perCloud*len(clouds))

@@ -27,6 +27,12 @@ var testCatalogs = map[string]*catalog.Catalog{
 				Actions: []catalog.Action{{Command: "instances stop"}}},
 		}},
 	}},
+	"azure": {Cloud: "azure", Source: "azure-cli/2.0", Services: []catalog.Service{
+		{Name: "vm", Resources: []catalog.Resource{
+			{Name: "vm", List: "list", ID: "id", Label: "name", State: "provisioningState",
+				Actions: []catalog.Action{{Command: "delete", Param: "--ids", Flags: []string{"--yes"}}}},
+		}},
+	}},
 	"odd": {Cloud: "odd"}, // a catalog with no Source for it
 }
 
@@ -63,6 +69,7 @@ func resourcesHarness(t *testing.T, selected string) (*harness, *fetcher) {
 		"-c gcp gcloud compute instances list --format=json --limit=500":                      `[{"name":"vm","status":"RUNNING","zone":"zones/asia-southeast1-a"}]`,
 		"-c dev aws ec2 describe-regions --output json":                                       `{"Regions":[{"RegionName":"ap-southeast-1"}]}`,
 		"-c dev aws dynamodb list-tables --output json":                                       `{"TableNames":["orders"]}`,
+		"-c az az vm list --output json":                                                      `[{"id":"/subscriptions/s/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm-1","name":"vm-1","provisioningState":"Succeeded","location":"southeastasia"}]`,
 	}, fail: map[string]error{}}
 	oldFetch, oldLoad := fetch, loadCatalog
 	t.Cleanup(func() { fetch, loadCatalog = oldFetch, oldLoad })
@@ -261,10 +268,10 @@ func TestResourcesContexts(t *testing.T) {
 	h.want("prod protected  aws  (aws-cli/2.0.0)", "SERVICE")
 
 	src := sample()
-	src.contexts = append(src.contexts, Context{Name: "az", Cloud: "azure"}, Context{Name: "odd", Cloud: "odd"})
+	src.contexts = append(src.contexts, Context{Name: "az", Cloud: "huawei"}, Context{Name: "odd", Cloud: "odd"})
 	odd := newHarness(t, src, "az")
 	odd.press("5", "enter")
-	odd.want("✗ no resource catalog for azure")
+	odd.want("✗ no resource catalog for huawei")
 	odd.m.selected = "odd"
 	odd.want("✗ no resource catalog for odd")
 
@@ -304,4 +311,15 @@ func TestFetch(t *testing.T) {
 	if _, err = fetch("/nonexistent/mek", nil); err == nil || !strings.Contains(err.Error(), "no such file") {
 		t.Errorf("not found: %v", err)
 	}
+}
+
+func TestResourcesAzure(t *testing.T) {
+	h, _ := resourcesHarness(t, "dev")
+	h.src.contexts = append(h.src.contexts, Context{Name: "az", Cloud: "azure", Protected: true})
+	h.m.reload()
+	h.m.selected = "az"
+	h.press("enter", "enter")
+	h.want("azure › vm › vm", "WHERE", "vm-1", "Succeeded", "southeastasia")
+	h.press("a", "enter")
+	h.want("az is protected — destructive: az vm delete --ids /subscriptions/s/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm-1 --yes")
 }

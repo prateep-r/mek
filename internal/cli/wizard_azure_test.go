@@ -103,7 +103,7 @@ func TestCtxAddAzureLookupsFail(t *testing.T) {
 	screens := answering(t, []string{"type:z", "enter", "down", "down", "enter",
 		"down", "enter", // skip the login
 		"type:acme.onmicrosoft.com", "enter",
-		"type:nope", "enter", "ctrl+u", "type:"+azSub, "enter",
+		"type:nope", "enter", "ctrl+u", "type:" + azSub, "enter",
 		"type:rg-net/bas", "enter"})
 	h.run("ctx", "add")
 	s := (*screens)[0]

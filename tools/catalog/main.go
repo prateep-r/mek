@@ -20,7 +20,7 @@ import (
 
 func main() {
 	awscli := flag.String("awscli", "", "the AWS CLI's awscli package directory (with data/ac.index and botocore/data)")
-	clouds := flag.String("clouds", "aws,gcp", "which catalogs to write")
+	clouds := flag.String("clouds", "aws,gcp,azure", "which catalogs to write")
 	out := flag.String("out", "internal/catalog", "where to write the catalogs")
 	flag.Parse()
 	for _, cloud := range strings.Split(*clouds, ",") {
@@ -52,6 +52,12 @@ func run(cloud, awscli, out string) error {
 			return err
 		}
 		c = t.catalog(version)
+	case "azure":
+		cmds, version, err := loadAzure()
+		if err != nil {
+			return err
+		}
+		c = azureCatalog(cmds, version)
 	default:
 		return fmt.Errorf("unknown cloud %q", cloud)
 	}
